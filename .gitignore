@@ -1,0 +1,12 @@
+# BMAD framework (installed via npx bmad-method install)
+_bmad/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri build output
+target/
