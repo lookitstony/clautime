@@ -1,7 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, Outlet } from 'react-router'
 import {
-  LayoutList,
   Activity,
   FileBarChart,
   Users,
@@ -12,6 +11,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { ActivityBar } from '@/components/shared/ActivityBar'
 import { StatusBar } from '@/components/shared/StatusBar'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { SessionsPage } from '@/features/sessions/SessionsPage'
 import { queryClient } from '@/lib/query-client'
 
 function RootLayout(): React.JSX.Element {
@@ -48,13 +48,7 @@ const router = createMemoryRouter([
       },
       {
         path: 'sessions',
-        element: (
-          <EmptyState
-            icon={LayoutList}
-            title="No Sessions Yet"
-            description="Sessions will appear here once scanning is configured"
-          />
-        )
+        element: <SessionsPage />
       },
       {
         path: 'reports',
