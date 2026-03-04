@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx bmad-method:*)"
+      "Bash(npx bmad-method:*)",
+      "WebSearch",
+      "Bash(npx @quick-start/create-electron@latest clawdtime-scaffold --template react-ts --skip-install)",
+      "Bash(cp:*)",
+      "Bash(npm install:*)",
+      "Bash(npx electron-vite:*)",
+      "Bash(yes:*)",
+      "Bash(npx vitest:*)",
+      "Bash(do touch:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(head:*)",
+      "Bash(gh api:*)"
     ]
   }
 }
