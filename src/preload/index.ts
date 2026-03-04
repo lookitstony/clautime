@@ -12,6 +12,18 @@ const api = {
       ipcRenderer.invoke('settings:set', key, value),
     getAll: (): Promise<IpcResult<Record<string, string>>> =>
       ipcRenderer.invoke('settings:getAll')
+  },
+  sessions: {
+    scan: (claudeDir?: string): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
+      ipcRenderer.invoke('session:scan', claudeDir),
+    getAll: (
+      filters?: import('../shared/types/session').SessionFilters
+    ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
+      ipcRenderer.invoke('session:getAll', filters),
+    getById: (
+      id: number
+    ): Promise<IpcResult<import('../shared/types/session').Session | null>> =>
+      ipcRenderer.invoke('session:getById', id)
   }
 }
 

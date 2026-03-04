@@ -6,8 +6,9 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import log from 'electron-log/main.js'
 import * as sessionsSchema from './schema/sessions'
 import * as appSettingsSchema from './schema/app-settings'
+import * as scanStateSchema from './schema/scan-state'
 
-const schema = { ...sessionsSchema, ...appSettingsSchema }
+const schema = { ...sessionsSchema, ...appSettingsSchema, ...scanStateSchema }
 
 let db: BetterSQLite3Database<typeof schema>
 let sqlite: Database.Database

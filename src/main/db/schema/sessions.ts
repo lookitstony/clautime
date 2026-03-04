@@ -11,6 +11,8 @@ export const sessions = sqliteTable(
     source: text('source').notNull().$type<'auto' | 'manual'>().default('auto'),
     description: text('description'),
     status: text('status').notNull().$type<'active' | 'completed'>().default('completed'),
+    claudeSessionId: text('claude_session_id'),
+    sourceFile: text('source_file'),
     createdAt: text('created_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -20,7 +22,8 @@ export const sessions = sqliteTable(
   },
   (table) => [
     index('idx_sessions_project_path').on(table.projectPath),
-    index('idx_sessions_started_at').on(table.startedAt)
+    index('idx_sessions_started_at').on(table.startedAt),
+    index('idx_sessions_claude_session_id').on(table.claudeSessionId)
   ]
 )
 

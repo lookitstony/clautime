@@ -15,3 +15,4 @@ Thumbs.db
 # Cache & Logs
 .eslintcache
 *.log*
+*.tsbuildinfo
