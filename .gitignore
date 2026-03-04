@@ -4,9 +4,14 @@ _bmad/
 # Node
 node_modules/
 
+# Electron-Vite build output
+dist/
+out/
+
 # OS
 .DS_Store
 Thumbs.db
 
-# Tauri build output
-target/
+# Cache & Logs
+.eslintcache
+*.log*

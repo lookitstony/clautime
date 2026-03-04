@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/* ============================================
+   ViberTime / ClawdTime Design System
+   Tailwind CSS v4 — CSS-first configuration
+   ============================================ */
+
+@theme {
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', 'Fira Code', monospace;
+
+  /* Responsive breakpoints */
+  --breakpoint-compact: 1023px;
+  --breakpoint-standard: 1024px;
+  --breakpoint-spacious: 1440px;
+}
+
+/* ============================================
+   Dark Theme (default)
+   ============================================ */
+:root {
+  /* Background layers */
+  --background-primary: #16162a;
+  --background-secondary: #12121e;
+  --background-elevated: #1e1e32;
+
+  /* Surface & borders */
+  --surface-border: #2a2a3e;
+
+  /* Text hierarchy */
+  --text-primary: #e0e0e0;
+  --text-secondary: #888888;
+  --text-muted: #555555;
+
+  /* Accent (switchable via single variable) */
+  --accent: #14b8a6;
+  --accent-rgb: 20, 184, 166;
+
+  /* 8 project colors */
+  --project-1: #3b82f6;
+  --project-2: #f59e0b;
+  --project-3: #10b981;
+  --project-4: #ef4444;
+  --project-5: #8b5cf6;
+  --project-6: #ec4899;
+  --project-7: #06b6d4;
+  --project-8: #f97316;
+
+  /* Semantic aliases for shadcn/ui compatibility */
+  --background: var(--background-primary);
+  --foreground: var(--text-primary);
+  --card: var(--background-elevated);
+  --card-foreground: var(--text-primary);
+  --popover: var(--background-elevated);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--background-secondary);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--background-secondary);
+  --muted-foreground: var(--text-secondary);
+  --accent-ui: var(--background-elevated);
+  --accent-ui-foreground: var(--text-primary);
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: var(--surface-border);
+  --input: var(--surface-border);
+  --ring: var(--accent);
+  --radius: 0.5rem;
+
+  /* Chart colors */
+  --chart-1: var(--project-1);
+  --chart-2: var(--project-2);
+  --chart-3: var(--project-3);
+  --chart-4: var(--project-4);
+  --chart-5: var(--project-5);
+}
+
+/* ============================================
+   Accent Theme Variants
+   Apply via data attribute: <html data-accent="amber">
+   ============================================ */
+[data-accent="amber"] {
+  --accent: #f59e0b;
+  --accent-rgb: 245, 158, 11;
+}
+
+[data-accent="purple"] {
+  --accent: #a78bfa;
+  --accent-rgb: 167, 139, 250;
+}
+
+[data-accent="blue"] {
+  --accent: #3b82f6;
+  --accent-rgb: 59, 130, 246;
+}
+
+[data-accent="teal"] {
+  --accent: #14b8a6;
+  --accent-rgb: 20, 184, 166;
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
