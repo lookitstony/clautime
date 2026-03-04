@@ -1,6 +1,11 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { IpcResult } from '../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult } from '../shared/types/session'
+import type { Session, SessionFilters, ScanResult, DiscoveredProject } from '../shared/types/session'
+
+interface DialogApi {
+  openFolder(): Promise<IpcResult<string | null>>
+  discoverProjects(folderPath: string): Promise<IpcResult<DiscoveredProject[]>>
+}
 
 interface SettingsApi {
   get(key: string): Promise<IpcResult<string | null>>
@@ -15,6 +20,7 @@ interface SessionsApi {
 }
 
 interface Api {
+  dialog: DialogApi
   settings: SettingsApi
   sessions: SessionsApi
 }

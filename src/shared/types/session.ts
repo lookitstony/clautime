@@ -30,6 +30,14 @@ export interface ScanResult {
   durationMs: number
 }
 
+/** A project discovered during folder scanning */
+export interface DiscoveredProject {
+  projectPath: string
+  projectName: string
+  encodedName: string
+  hasClaudeDir: boolean
+}
+
 /** A detected session before DB insertion (output of detection algorithm) */
 export interface DetectedSession {
   startedAt: string

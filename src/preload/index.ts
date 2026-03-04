@@ -5,6 +5,14 @@ import type { IpcResult } from '../shared/types/ipc'
 
 // Custom APIs for renderer — typed service interfaces
 const api = {
+  dialog: {
+    openFolder: (): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('dialog:openFolder'),
+    discoverProjects: (
+      folderPath: string
+    ): Promise<IpcResult<import('../shared/types/session').DiscoveredProject[]>> =>
+      ipcRenderer.invoke('dialog:discoverProjects', folderPath)
+  },
   settings: {
     get: (key: string): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('settings:get', key),

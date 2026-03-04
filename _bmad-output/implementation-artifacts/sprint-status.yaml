@@ -48,7 +48,7 @@ development_status:
   1-4-claude-session-file-parser: done
   1-5-session-detection-engine: done
   1-6-sessions-view-grouped-by-project: done
-  1-7-welcome-wizard-and-first-scan: backlog
+  1-7-welcome-wizard-and-first-scan: done
   epic-1-retrospective: optional
 
   # Epic 2: Client & Project Management

@@ -1,5 +1,6 @@
+import { useCallback } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider, Outlet } from 'react-router'
+import { createMemoryRouter, RouterProvider, Outlet, useNavigate } from 'react-router'
 import {
   Activity,
   FileBarChart,
@@ -12,9 +13,18 @@ import { ActivityBar } from '@/components/shared/ActivityBar'
 import { StatusBar } from '@/components/shared/StatusBar'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SessionsPage } from '@/features/sessions/SessionsPage'
+import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
+import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
 
 function RootLayout(): React.JSX.Element {
+  const { isFirstLaunch, isLoading } = useIsFirstLaunch()
+  const navigate = useNavigate()
+
+  const handleWizardComplete = useCallback(() => {
+    navigate('/sessions')
+  }, [navigate])
+
   return (
     <TooltipProvider>
       <div className="flex h-screen bg-[var(--background-primary)] text-[var(--text-primary)]">
@@ -26,6 +36,7 @@ function RootLayout(): React.JSX.Element {
           <StatusBar />
         </div>
       </div>
+      {!isLoading && isFirstLaunch && <WelcomeWizard onComplete={handleWizardComplete} />}
       <Toaster />
     </TooltipProvider>
   )
