@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, Outlet } from 'react-router'
 import {
   LayoutList,
@@ -11,6 +12,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { ActivityBar } from '@/components/shared/ActivityBar'
 import { StatusBar } from '@/components/shared/StatusBar'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { queryClient } from '@/lib/query-client'
 
 function RootLayout(): React.JSX.Element {
   return (
@@ -89,7 +91,11 @@ const router = createMemoryRouter([
 ])
 
 function App(): React.JSX.Element {
-  return <RouterProvider router={router} />
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
 }
 
 export default App

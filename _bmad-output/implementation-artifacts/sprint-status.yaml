@@ -43,8 +43,8 @@ development_status:
   # Epic 1: Project Setup & Session Discovery
   epic-1: in-progress
   1-1-initialize-project-with-electron-vite-and-core-dependencies: done
-  1-2-app-shell-and-navigation-layout: review
-  1-3-database-schema-and-service-foundation: backlog
+  1-2-app-shell-and-navigation-layout: done
+  1-3-database-schema-and-service-foundation: ready-for-dev
   1-4-claude-session-file-parser: backlog
   1-5-session-detection-engine: backlog
   1-6-sessions-view-grouped-by-project: backlog

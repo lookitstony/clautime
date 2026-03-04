@@ -7,10 +7,12 @@ log.transports.file.level = 'info'
 log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
 log.transports.console.level = 'debug'
 
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { initializeDatabase, closeDatabase } from './db'
+import { registerIpcHandlers } from './ipc'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -49,12 +51,15 @@ function createWindow(): void {
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.clawdtime.app')
 
+  // Initialize database BEFORE any window is created
+  initializeDatabase()
+
+  // Register IPC handlers after database is ready
+  registerIpcHandlers()
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
-
-  // IPC test
-  ipcMain.on('ping', () => log.info('pong'))
 
   createWindow()
 
@@ -69,4 +74,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('will-quit', () => {
+  closeDatabase()
 })
