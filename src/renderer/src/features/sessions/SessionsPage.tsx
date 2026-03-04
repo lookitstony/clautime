@@ -1,13 +1,15 @@
 import { useState, useCallback } from 'react'
 import { AlertTriangle, LayoutList } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatsBar } from './StatsBar'
 import { ProjectGroup } from './ProjectGroup'
 import { SessionRow } from './SessionRow'
-import { useSessions, useScanSessions, useSessionStats, useGroupedSessions } from './use-sessions'
-import { getProjectColor } from '@/lib/format'
+import { useSessions, useSessionStats, useGroupedSessions } from './use-sessions'
+import { getProjectColor, getDateKey, formatDateLabel, formatDuration } from '@/lib/format'
+import type { Session } from '../../../../shared/types/session'
 
 function SessionListSkeleton(): React.JSX.Element {
   return (
@@ -21,12 +23,22 @@ function SessionListSkeleton(): React.JSX.Element {
 
 export function SessionsPage(): React.JSX.Element {
   const { data: sessions, isLoading, error } = useSessions()
-  const scanMutation = useScanSessions()
   const stats = useSessionStats(sessions)
   const groups = useGroupedSessions(sessions)
+  const queryClient = useQueryClient()
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null)
+
+  // Opens the Welcome Wizard by clearing setup_complete
+  const showWizard = useMutation({
+    mutationFn: async () => {
+      await window.api.settings.set('setup_complete', '')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+    }
+  })
 
   const toggleGroup = useCallback((projectPath: string) => {
     setExpandedGroups((prev) => {
@@ -56,10 +68,6 @@ export function SessionsPage(): React.JSX.Element {
     setSelectedSessionId((prev) => (prev === id ? null : id))
   }, [])
 
-  const handleScan = useCallback(() => {
-    scanMutation.mutate()
-  }, [scanMutation])
-
   const isEmpty = !isLoading && !error && (!sessions || sessions.length === 0)
 
   return (
@@ -87,14 +95,13 @@ export function SessionsPage(): React.JSX.Element {
           <EmptyState
             icon={LayoutList}
             title="No Sessions Found"
-            description="Run a scan to detect your Claude Code sessions"
+            description="Scan for your Claude Code projects and import session history"
             action={
               <Button
-                onClick={handleScan}
-                disabled={scanMutation.isPending}
+                onClick={() => showWizard.mutate()}
                 className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
               >
-                {scanMutation.isPending ? 'Scanning...' : 'Scan Now'}
+                Scan for Projects
               </Button>
             }
           />
@@ -113,14 +120,26 @@ export function SessionsPage(): React.JSX.Element {
                 onToggle={() => handleToggleGroup(group.projectPath)}
               >
                 <div className="pb-1">
-                  {group.sessions.map((session) => (
-                    <SessionRow
-                      key={session.id}
-                      session={session}
-                      projectColor={getProjectColor(group.projectPath)}
-                      isSelected={selectedSessionId === session.id}
-                      onSelect={() => selectSession(session.id)}
-                    />
+                  {groupSessionsByDay(group.sessions).map((dayGroup) => (
+                    <div key={dayGroup.dateKey}>
+                      <div className="flex items-center justify-between px-10 py-1.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                          {dayGroup.label}
+                        </span>
+                        <span className="text-[11px] text-[var(--text-muted)]">
+                          {dayGroup.sessions.length} session{dayGroup.sessions.length !== 1 ? 's' : ''} · {formatDuration(dayGroup.totalMinutes)}
+                        </span>
+                      </div>
+                      {dayGroup.sessions.map((session) => (
+                        <SessionRow
+                          key={session.id}
+                          session={session}
+                          projectColor={getProjectColor(group.projectPath)}
+                          isSelected={selectedSessionId === session.id}
+                          onSelect={() => selectSession(session.id)}
+                        />
+                      ))}
+                    </div>
                   ))}
                 </div>
               </ProjectGroup>
@@ -130,4 +149,30 @@ export function SessionsPage(): React.JSX.Element {
       </div>
     </div>
   )
+}
+
+interface DayGroup {
+  dateKey: string
+  label: string
+  sessions: Session[]
+  totalMinutes: number
+}
+
+function groupSessionsByDay(sessions: Session[]): DayGroup[] {
+  const groups = new Map<string, Session[]>()
+  for (const session of sessions) {
+    const key = getDateKey(session.startedAt)
+    const existing = groups.get(key) ?? []
+    existing.push(session)
+    groups.set(key, existing)
+  }
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => b.localeCompare(a)) // newest day first
+    .map(([dateKey, daySessions]) => ({
+      dateKey,
+      label: formatDateLabel(daySessions[0].startedAt),
+      sessions: daySessions,
+      totalMinutes: daySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+    }))
 }

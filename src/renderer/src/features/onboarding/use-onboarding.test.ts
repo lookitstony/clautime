@@ -73,13 +73,4 @@ describe('useCompleteSetup', () => {
 
     expect(window.api.settings.set).toHaveBeenCalledWith('setup_complete', 'true')
   })
-
-  it('sets claude_dir when provided', async () => {
-    const { result } = renderHook(() => useCompleteSetup(), { wrapper: createWrapper() })
-
-    await result.current.mutateAsync('/home/user/.claude')
-
-    expect(window.api.settings.set).toHaveBeenCalledWith('setup_complete', 'true')
-    expect(window.api.settings.set).toHaveBeenCalledWith('claude_dir', '/home/user/.claude')
-  })
 })

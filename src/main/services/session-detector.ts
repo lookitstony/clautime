@@ -57,24 +57,46 @@ export function detectSessionsFromMultiple(
 /**
  * Resolve the project path from parsed data.
  * Priority: projectDirectory (cwd) > decode projectPathEncoded.
+ * Normalizes to consistent path separators (backslashes on Windows).
  */
 export function resolveProjectPath(parsed: ParsedSessionData): string {
-  if (parsed.projectDirectory) {
-    return parsed.projectDirectory
-  }
-  return decodeProjectPath(parsed.projectPathEncoded)
+  const raw = parsed.projectDirectory || decodeProjectPath(parsed.projectPathEncoded)
+  return normalizePath(raw)
 }
 
 /**
  * Best-effort decode of the encoded project path from .claude folder structure.
- * e.g. "C--apps-ClawdTime" -> "C:/apps/ClawdTime"
+ * e.g. "C--apps-ClawdTime" -> "C:\apps\ClawdTime" (Windows)
  */
 export function decodeProjectPath(encoded: string): string {
   if (!encoded) return 'unknown'
 
-  // Replace double-dash with drive separator (e.g., "C--" -> "C:/")
-  // Then replace remaining single dashes with path separator
-  return encoded.replace(/--/g, ':/').replace(/-/g, '/')
+  // Windows drive letter pattern: C--apps-Foo → C:\apps\Foo
+  const windowsDriveMatch = encoded.match(/^([A-Za-z])-(-?.*)$/)
+  if (windowsDriveMatch) {
+    const drive = windowsDriveMatch[1]
+    const rest = windowsDriveMatch[2]
+    return `${drive}:${rest.replace(/-/g, '\\')}`
+  }
+
+  // Unix path: leading dash means root /
+  if (encoded.startsWith('-')) {
+    return encoded.replace(/-/g, '/')
+  }
+
+  return encoded.replace(/-/g, '/')
+}
+
+/**
+ * Normalize path for consistent grouping.
+ * Windows: forward slashes → backslashes, uppercase drive letter.
+ */
+function normalizePath(p: string): string {
+  const driveMatch = p.match(/^([a-zA-Z]):/)
+  if (driveMatch) {
+    return driveMatch[1].toUpperCase() + ':' + p.slice(2).replace(/\//g, '\\')
+  }
+  return p
 }
 
 function buildDetectedSession(

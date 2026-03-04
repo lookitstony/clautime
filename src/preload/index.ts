@@ -9,7 +9,7 @@ const api = {
     openFolder: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('dialog:openFolder'),
     discoverProjects: (
-      folderPath: string
+      folderPath?: string
     ): Promise<IpcResult<import('../shared/types/session').DiscoveredProject[]>> =>
       ipcRenderer.invoke('dialog:discoverProjects', folderPath)
   },
@@ -22,8 +22,12 @@ const api = {
       ipcRenderer.invoke('settings:getAll')
   },
   sessions: {
-    scan: (claudeDir?: string): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
-      ipcRenderer.invoke('session:scan', claudeDir),
+    scan: (
+      claudeDir?: string,
+      projectFilter?: string[]
+    ): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
+      ipcRenderer.invoke('session:scan', claudeDir, projectFilter),
+    reset: (): Promise<IpcResult<void>> => ipcRenderer.invoke('session:reset'),
     getAll: (
       filters?: import('../shared/types/session').SessionFilters
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>

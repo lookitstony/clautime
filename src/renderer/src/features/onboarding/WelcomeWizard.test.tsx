@@ -20,9 +20,9 @@ beforeEach(() => {
         success: true,
         data: [
           {
-            projectPath: 'C:/apps/ClawdTime',
+            projectPath: 'C:\\apps\\ClawdTime',
             projectName: 'ClawdTime',
-            encodedName: 'C-%5Capps%5CClawdTime',
+            encodedName: 'C--apps-ClawdTime',
             hasClaudeDir: true
           }
         ]
@@ -48,14 +48,15 @@ describe('WelcomeWizard', () => {
   it('renders welcome step with title and buttons', () => {
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
     expect(screen.getByText('Welcome to ViberTime')).toBeInTheDocument()
-    expect(screen.getByText('Scan My Projects Folder')).toBeInTheDocument()
-    expect(screen.getByText("I'll set up manually")).toBeInTheDocument()
+    expect(screen.getByText('Scan for Projects')).toBeInTheDocument()
+    expect(screen.getByText('Pick a Specific Folder')).toBeInTheDocument()
+    expect(screen.getByText('Skip for now')).toBeInTheDocument()
   })
 
   it('calls onComplete when skip is clicked', async () => {
     const onComplete = vi.fn()
     render(<WelcomeWizard onComplete={onComplete} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByText("I'll set up manually"))
+    fireEvent.click(screen.getByText('Skip for now'))
     await waitFor(() => {
       expect(onComplete).toHaveBeenCalled()
     })
@@ -63,23 +64,25 @@ describe('WelcomeWizard', () => {
 
   it('marks setup_complete when skipping', async () => {
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByText("I'll set up manually"))
+    fireEvent.click(screen.getByText('Skip for now'))
     await waitFor(() => {
       expect(window.api.settings.set).toHaveBeenCalledWith('setup_complete', 'true')
     })
   })
 
-  it('opens folder picker when scan button clicked', async () => {
+  it('auto-discovers projects when scan button clicked (no folder picker)', async () => {
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByText('Scan My Projects Folder'))
+    fireEvent.click(screen.getByText('Scan for Projects'))
     await waitFor(() => {
-      expect(window.api.dialog.openFolder).toHaveBeenCalled()
+      expect(window.api.dialog.discoverProjects).toHaveBeenCalledWith(undefined)
     })
+    // Should NOT open folder picker
+    expect(window.api.dialog.openFolder).not.toHaveBeenCalled()
   })
 
-  it('shows confirm step after folder selection and discovery', async () => {
+  it('shows confirm step after auto-scan discovery', async () => {
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByText('Scan My Projects Folder'))
+    fireEvent.click(screen.getByText('Scan for Projects'))
     await waitFor(() => {
       expect(screen.getByText('Found 1 Project')).toBeInTheDocument()
     })
@@ -87,41 +90,19 @@ describe('WelcomeWizard', () => {
     expect(screen.getByText('Confirm & Scan')).toBeInTheDocument()
   })
 
-  it('shows no projects found when discovery returns empty', async () => {
-    vi.stubGlobal('api', {
-      ...window.api,
-      dialog: {
-        openFolder: vi.fn().mockResolvedValue({ success: true, data: '/empty' }),
-        discoverProjects: vi.fn().mockResolvedValue({ success: true, data: [] })
-      }
-    })
-
+  it('opens folder picker when "Pick a Specific Folder" clicked', async () => {
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByText('Scan My Projects Folder'))
+    fireEvent.click(screen.getByText('Pick a Specific Folder'))
     await waitFor(() => {
-      expect(screen.getByText('No Projects Found')).toBeInTheDocument()
+      expect(window.api.dialog.openFolder).toHaveBeenCalled()
+    })
+    // Should pass the selected folder to discover
+    await waitFor(() => {
+      expect(window.api.dialog.discoverProjects).toHaveBeenCalledWith('/projects')
     })
   })
 
-  it('shows complete step after scan finishes', async () => {
-    const onComplete = vi.fn()
-    render(<WelcomeWizard onComplete={onComplete} />, { wrapper: createWrapper() })
-
-    // Click scan
-    fireEvent.click(screen.getByText('Scan My Projects Folder'))
-    await waitFor(() => {
-      expect(screen.getByText('Confirm & Scan')).toBeInTheDocument()
-    })
-
-    // Confirm and scan
-    fireEvent.click(screen.getByText('Confirm & Scan'))
-    await waitFor(() => {
-      expect(screen.getByText("You're All Set!")).toBeInTheDocument()
-    })
-    expect(screen.getByText('Get Started')).toBeInTheDocument()
-  })
-
-  it('does not show wizard when folder picker is cancelled', async () => {
+  it('stays on welcome step when folder picker is cancelled', async () => {
     vi.stubGlobal('api', {
       ...window.api,
       dialog: {
@@ -131,12 +112,43 @@ describe('WelcomeWizard', () => {
     })
 
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByText('Scan My Projects Folder'))
+    fireEvent.click(screen.getByText('Pick a Specific Folder'))
 
-    // Should stay on welcome step since user cancelled
     await waitFor(() => {
       expect(screen.getByText('Welcome to ViberTime')).toBeInTheDocument()
     })
     expect(window.api.dialog.discoverProjects).not.toHaveBeenCalled()
+  })
+
+  it('shows no projects found when discovery returns empty', async () => {
+    vi.stubGlobal('api', {
+      ...window.api,
+      dialog: {
+        ...window.api.dialog,
+        discoverProjects: vi.fn().mockResolvedValue({ success: true, data: [] })
+      }
+    })
+
+    render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
+    fireEvent.click(screen.getByText('Scan for Projects'))
+    await waitFor(() => {
+      expect(screen.getByText('No Projects Found')).toBeInTheDocument()
+    })
+  })
+
+  it('shows complete step after confirm and scan finishes', async () => {
+    const onComplete = vi.fn()
+    render(<WelcomeWizard onComplete={onComplete} />, { wrapper: createWrapper() })
+
+    fireEvent.click(screen.getByText('Scan for Projects'))
+    await waitFor(() => {
+      expect(screen.getByText('Confirm & Scan')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Confirm & Scan'))
+    await waitFor(() => {
+      expect(screen.getByText("You're All Set!")).toBeInTheDocument()
+    })
+    expect(screen.getByText('Get Started')).toBeInTheDocument()
   })
 })

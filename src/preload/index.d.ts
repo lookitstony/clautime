@@ -4,7 +4,7 @@ import type { Session, SessionFilters, ScanResult, DiscoveredProject } from '../
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
-  discoverProjects(folderPath: string): Promise<IpcResult<DiscoveredProject[]>>
+  discoverProjects(folderPath?: string): Promise<IpcResult<DiscoveredProject[]>>
 }
 
 interface SettingsApi {
@@ -14,7 +14,8 @@ interface SettingsApi {
 }
 
 interface SessionsApi {
-  scan(claudeDir?: string): Promise<IpcResult<ScanResult>>
+  scan(claudeDir?: string, projectFilter?: string[]): Promise<IpcResult<ScanResult>>
+  reset(): Promise<IpcResult<void>>
   getAll(filters?: SessionFilters): Promise<IpcResult<Session[]>>
   getById(id: number): Promise<IpcResult<Session | null>>
 }

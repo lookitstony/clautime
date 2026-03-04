@@ -25,7 +25,7 @@ export function useOpenFolderPicker() {
 
 export function useDiscoverProjects() {
   return useMutation({
-    mutationFn: async (folderPath: string): Promise<DiscoveredProject[]> => {
+    mutationFn: async (folderPath?: string): Promise<DiscoveredProject[]> => {
       const result = await window.api.dialog.discoverProjects(folderPath)
       if (!result.success) throw new Error(result.error.message)
       return result.data
@@ -36,13 +36,9 @@ export function useDiscoverProjects() {
 export function useCompleteSetup() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (claudeDir?: string): Promise<void> => {
+    mutationFn: async (): Promise<void> => {
       const result = await window.api.settings.set('setup_complete', 'true')
       if (!result.success) throw new Error(result.error.message)
-      if (claudeDir) {
-        const dirResult = await window.api.settings.set('claude_dir', claudeDir)
-        if (!dirResult.success) throw new Error(dirResult.error.message)
-      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] })

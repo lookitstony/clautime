@@ -12,7 +12,7 @@ import { detectSessionsFromMultiple } from './session-detector'
 import type { SessionFilters, ScanResult } from '../../shared/types/session'
 import type { ParsedSessionData } from '../parsers/types'
 
-const DEFAULT_IDLE_TIMEOUT_MINUTES = 10
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
 const DEFAULT_CLAUDE_DIR = join(homedir(), '.claude')
 
 /**
@@ -24,7 +24,7 @@ export const sessionService = {
    * Scan for new/changed session files, detect sessions, and store in DB.
    * Only processes files modified since last scan (incremental - FR5).
    */
-  async scanSessions(claudeDir?: string): Promise<ScanResult> {
+  async scanSessions(claudeDir?: string, projectFilter?: string[]): Promise<ScanResult> {
     const startTime = Date.now()
     const dir = claudeDir ?? settingsService.getSetting('claude_dir') ?? DEFAULT_CLAUDE_DIR
 
@@ -34,8 +34,8 @@ export const sessionService = {
 
     log.info(`Starting session scan in: ${dir} (idle timeout: ${idleTimeoutMinutes}min)`)
 
-    // 1. Discover all session files
-    const allFiles = await discoverSessionFiles(dir)
+    // 1. Discover session files (optionally filtered to specific projects)
+    const allFiles = await discoverSessionFiles(dir, projectFilter)
     log.info(`Discovered ${allFiles.length} total session files`)
 
     // 2. Filter to only new/changed files (also collects file mtimes)

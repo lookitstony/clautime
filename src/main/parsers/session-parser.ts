@@ -57,7 +57,10 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
  * Discover all .jsonl session files under the claude projects directory.
  * Expects structure: {claudeDir}/projects/{encoded-project-name}/{session-id}.jsonl
  */
-export async function discoverSessionFiles(claudeDir: string): Promise<string[]> {
+export async function discoverSessionFiles(
+  claudeDir: string,
+  projectFilter?: string[]
+): Promise<string[]> {
   const projectsDir = join(claudeDir, 'projects')
   const files: string[] = []
 
@@ -69,8 +72,11 @@ export async function discoverSessionFiles(claudeDir: string): Promise<string[]>
     return files
   }
 
+  const filterSet = projectFilter ? new Set(projectFilter) : null
+
   for (const dir of projectDirs) {
     if (!dir.isDirectory()) continue
+    if (filterSet && !filterSet.has(dir.name)) continue
 
     const projectPath = join(projectsDir, dir.name)
     try {

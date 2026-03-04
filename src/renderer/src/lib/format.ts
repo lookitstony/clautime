@@ -44,6 +44,26 @@ export function formatRelativeTime(isoString: string): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+export function formatDateLabel(isoString: string): string {
+  const date = new Date(isoString)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86_400_000)
+
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) {
+    return date.toLocaleDateString([], { weekday: 'long' })
+  }
+  return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+export function getDateKey(isoString: string): string {
+  const d = new Date(isoString)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function getProjectColor(projectPath: string): string {
   let hash = 0
   for (const char of projectPath) {

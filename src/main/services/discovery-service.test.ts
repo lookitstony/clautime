@@ -1,16 +1,19 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { join } from 'node:path'
 
 vi.mock('electron-log/main.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }))
 
+// Mock os.homedir
+vi.mock('node:os', () => ({
+  homedir: () => '/home/testuser'
+}))
+
 // Mock fs/promises
 const mockReaddir = vi.fn()
 vi.mock('node:fs/promises', () => ({
-  readdir: (...args: unknown[]) => mockReaddir(...args),
-  stat: vi.fn()
+  readdir: (...args: unknown[]) => mockReaddir(...args)
 }))
 
 import { discoveryService } from './discovery-service'
@@ -34,23 +37,19 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('discoveryService', () => {
-  it('discovers projects from .claude/projects directory', async () => {
-    // Root folder has .claude directory
-    mockReaddir.mockImplementation(async (dir: string, opts?: unknown) => {
-      if (dir === '/projects') {
-        return [dirent('.claude', true), dirent('README.md', false)]
-      }
-      if (dir === join('/projects', '.claude', 'projects')) {
-        return [
-          dirent('C--apps-ClawdTime', true),
-          dirent('C--apps-OtherProject', true)
-        ]
-      }
-      return []
-    })
+describe('discoveryService.discoverDefaultProjects', () => {
+  it('discovers projects from ~/.claude/projects directory', async () => {
+    mockReaddir.mockResolvedValue([
+      dirent('C--apps-ClawdTime', true),
+      dirent('C--apps-OtherProject', true),
+      dirent('.DS_Store', false)
+    ])
 
-    const result = await discoveryService.discoverProjects('/projects')
+    const result = await discoveryService.discoverDefaultProjects()
+    expect(mockReaddir).toHaveBeenCalledWith(
+      expect.stringContaining('.claude'),
+      { withFileTypes: true }
+    )
     expect(result).toHaveLength(2)
     expect(result[0].projectName).toBe('ClawdTime')
     expect(result[0].projectPath).toBe('C:\\apps\\ClawdTime')
@@ -59,76 +58,64 @@ describe('discoveryService', () => {
     expect(result[1].projectName).toBe('OtherProject')
   })
 
-  it('returns empty array when no .claude directories found', async () => {
-    mockReaddir.mockImplementation(async () => {
-      return [dirent('src', true), dirent('package.json', false)]
-    })
+  it('returns empty array when ~/.claude/projects does not exist', async () => {
+    mockReaddir.mockRejectedValue(new Error('ENOENT'))
 
-    const result = await discoveryService.discoverProjects('/projects')
+    const result = await discoveryService.discoverDefaultProjects()
     expect(result).toHaveLength(0)
   })
 
-  it('handles permission errors gracefully', async () => {
-    mockReaddir.mockImplementation(async (dir: string) => {
-      if (dir === '/projects') {
-        return [dirent('restricted', true)]
-      }
-      throw new Error('EACCES: permission denied')
-    })
+  it('decodes Unix paths correctly', async () => {
+    mockReaddir.mockResolvedValue([dirent('-home-user-myproject', true)])
 
-    const result = await discoveryService.discoverProjects('/projects')
-    expect(result).toHaveLength(0)
-  })
-
-  it('skips node_modules and .git directories', async () => {
-    const calls: string[] = []
-    mockReaddir.mockImplementation(async (dir: string) => {
-      calls.push(dir)
-      if (dir === '/projects') {
-        return [
-          dirent('node_modules', true),
-          dirent('.git', true),
-          dirent('src', true)
-        ]
-      }
-      return []
-    })
-
-    await discoveryService.discoverProjects('/projects')
-    expect(calls).not.toContain(join('/projects', 'node_modules'))
-    expect(calls).not.toContain(join('/projects', '.git'))
-  })
-
-  it('recursively scans subdirectories', async () => {
-    mockReaddir.mockImplementation(async (dir: string) => {
-      if (dir === '/root') {
-        return [dirent('workspace', true)]
-      }
-      if (dir === join('/root', 'workspace')) {
-        return [dirent('.claude', true)]
-      }
-      if (dir === join('/root', 'workspace', '.claude', 'projects')) {
-        return [dirent('-home-user-myproject', true)]
-      }
-      return []
-    })
-
-    const result = await discoveryService.discoverProjects('/root')
+    const result = await discoveryService.discoverDefaultProjects()
     expect(result).toHaveLength(1)
     expect(result[0].projectPath).toBe('/home/user/myproject')
     expect(result[0].projectName).toBe('myproject')
   })
 
-  it('handles .claude dir without projects subfolder', async () => {
-    mockReaddir.mockImplementation(async (dir: string) => {
-      if (dir === '/projects') {
-        return [dirent('.claude', true)]
-      }
-      // .claude/projects doesn't exist
-      throw new Error('ENOENT')
-    })
+  it('skips non-directory entries', async () => {
+    mockReaddir.mockResolvedValue([
+      dirent('C--apps-MyApp', true),
+      dirent('settings.json', false),
+      dirent('.DS_Store', false)
+    ])
 
-    const result = await discoveryService.discoverProjects('/projects')
+    const result = await discoveryService.discoverDefaultProjects()
+    expect(result).toHaveLength(1)
+    expect(result[0].projectName).toBe('MyApp')
+  })
+})
+
+describe('discoveryService.discoverProjectsUnderFolder', () => {
+  it('filters projects to those under the given folder', async () => {
+    mockReaddir.mockResolvedValue([
+      dirent('C--apps-ClawdTime', true),
+      dirent('C--apps-ButtonMaker', true),
+      dirent('C--other-SomeProject', true)
+    ])
+
+    const result = await discoveryService.discoverProjectsUnderFolder('C:\\apps')
+    expect(result).toHaveLength(2)
+    expect(result[0].projectName).toBe('ClawdTime')
+    expect(result[1].projectName).toBe('ButtonMaker')
+  })
+
+  it('returns empty when no projects match the folder', async () => {
+    mockReaddir.mockResolvedValue([
+      dirent('C--apps-ClawdTime', true)
+    ])
+
+    const result = await discoveryService.discoverProjectsUnderFolder('D:\\work')
     expect(result).toHaveLength(0)
+  })
+
+  it('is case-insensitive on Windows paths', async () => {
+    mockReaddir.mockResolvedValue([
+      dirent('C--Apps-ClawdTime', true)
+    ])
+
+    const result = await discoveryService.discoverProjectsUnderFolder('c:\\apps')
+    expect(result).toHaveLength(1)
   })
 })

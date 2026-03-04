@@ -8,8 +8,8 @@ async function fetchSessions(filters?: SessionFilters): Promise<Session[]> {
   return result.data
 }
 
-async function scanSessions(): Promise<ScanResult> {
-  const result = await window.api.sessions.scan()
+async function scanSessions(projectFilter?: string[]): Promise<ScanResult> {
+  const result = await window.api.sessions.scan(undefined, projectFilter)
   if (!result.success) throw new Error(result.error.message)
   return result.data
 }
@@ -24,7 +24,7 @@ export function useSessions(filters?: SessionFilters) {
 export function useScanSessions() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: scanSessions,
+    mutationFn: (projectFilter?: string[]) => scanSessions(projectFilter),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
     }

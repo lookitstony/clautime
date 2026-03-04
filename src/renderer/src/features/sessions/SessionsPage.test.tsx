@@ -53,6 +53,9 @@ beforeEach(() => {
         data: { newSessions: 0, updatedFiles: 0, totalFiles: 0, durationMs: 100 }
       }),
       getById: vi.fn()
+    },
+    settings: {
+      set: vi.fn().mockResolvedValue({ success: true, data: undefined })
     }
   })
 })
@@ -63,17 +66,17 @@ describe('SessionsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('No Sessions Found')).toBeInTheDocument()
     })
-    expect(screen.getByText('Scan Now')).toBeInTheDocument()
+    expect(screen.getByText('Scan for Projects')).toBeInTheDocument()
   })
 
-  it('shows scan button that triggers scan', async () => {
+  it('scan button clears setup_complete to trigger wizard', async () => {
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByText('Scan Now')).toBeInTheDocument()
+      expect(screen.getByText('Scan for Projects')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Scan Now'))
+    fireEvent.click(screen.getByText('Scan for Projects'))
     await waitFor(() => {
-      expect(window.api.sessions.scan).toHaveBeenCalled()
+      expect(window.api.settings.set).toHaveBeenCalledWith('setup_complete', '')
     })
   })
 

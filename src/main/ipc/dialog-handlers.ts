@@ -11,7 +11,7 @@ export function registerDialogHandlers(): void {
       try {
         const result = await dialog.showOpenDialog({
           properties: ['openDirectory'],
-          title: 'Select your projects folder'
+          title: 'Select a folder to filter projects'
         })
         if (result.canceled || result.filePaths.length === 0) {
           return ipcSuccess(null)
@@ -26,9 +26,11 @@ export function registerDialogHandlers(): void {
 
   ipcMain.handle(
     'dialog:discoverProjects',
-    async (_event, folderPath: string): Promise<IpcResult<DiscoveredProject[]>> => {
+    async (_event, folderPath?: string): Promise<IpcResult<DiscoveredProject[]>> => {
       try {
-        const projects = await discoveryService.discoverProjects(folderPath)
+        const projects = folderPath
+          ? await discoveryService.discoverProjectsUnderFolder(folderPath)
+          : await discoveryService.discoverDefaultProjects()
         return ipcSuccess(projects)
       } catch (error) {
         log.error('IPC dialog:discoverProjects failed:', error)

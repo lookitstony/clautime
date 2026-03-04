@@ -166,7 +166,7 @@ describe('detectSessions', () => {
       projectPathEncoded: 'C--apps-MyProject'
     })
     const result = detectSessions(parsed, 10)
-    expect(result[0].projectPath).toBe('C:/apps/MyProject')
+    expect(result[0].projectPath).toBe('C:\\apps\\MyProject')
   })
 
   it('should filter out messages with empty timestamps', () => {
@@ -221,7 +221,7 @@ describe('detectSessionsFromMultiple', () => {
 })
 
 describe('resolveProjectPath', () => {
-  it('should prefer projectDirectory over encoded path', () => {
+  it('should prefer projectDirectory over encoded path and normalize', () => {
     const parsed = makeParsedSession([], {
       projectDirectory: '/actual/path',
       projectPathEncoded: 'encoded-path'
@@ -229,21 +229,35 @@ describe('resolveProjectPath', () => {
     expect(resolveProjectPath(parsed)).toBe('/actual/path')
   })
 
+  it('should normalize Windows cwd to backslashes', () => {
+    const parsed = makeParsedSession([], {
+      projectDirectory: 'C:/apps/Test',
+      projectPathEncoded: 'C--apps-Test'
+    })
+    expect(resolveProjectPath(parsed)).toBe('C:\\apps\\Test')
+  })
+
   it('should fall back to decoded encoded path when projectDirectory is null', () => {
     const parsed = makeParsedSession([], {
       projectDirectory: null,
       projectPathEncoded: 'C--apps-Test'
     })
-    expect(resolveProjectPath(parsed)).toBe('C:/apps/Test')
+    expect(resolveProjectPath(parsed)).toBe('C:\\apps\\Test')
   })
 })
 
 describe('decodeProjectPath', () => {
-  it('should decode double-dash as drive separator', () => {
-    expect(decodeProjectPath('C--apps-ClawdTime')).toBe('C:/apps/ClawdTime')
+  it('should decode Windows drive letter path with backslashes', () => {
+    expect(decodeProjectPath('C--apps-ClawdTime')).toBe('C:\\apps\\ClawdTime')
   })
 
-  it('should decode single dashes as path separators', () => {
+  it('should decode Unix path with leading dash as root', () => {
+    expect(decodeProjectPath('-home-user-projects-myapp')).toBe(
+      '/home/user/projects/myapp'
+    )
+  })
+
+  it('should decode plain dashes as forward slashes', () => {
     expect(decodeProjectPath('home-user-projects-myapp')).toBe(
       'home/user/projects/myapp'
     )

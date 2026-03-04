@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { FolderSearch, ArrowRight, Loader2, Check, AlertTriangle } from 'lucide-react'
+import { FolderSearch, FolderOpen, ArrowRight, Loader2, Check, AlertTriangle } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -24,7 +24,6 @@ interface WelcomeWizardProps {
 
 export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Element {
   const [step, setStep] = useState<WizardStep>('welcome')
-  const [folderPath, setFolderPath] = useState<string | null>(null)
   const [projects, setProjects] = useState<DiscoveredProject[]>([])
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [scanResult, setScanResult] = useState<{ sessions: number; projects: number } | null>(null)
@@ -34,14 +33,22 @@ export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Ele
   const completeSetup = useCompleteSetup()
   const scanMutation = useScanSessions()
 
-  const handleScanForProjects = useCallback(async () => {
-    const result = await folderPicker.mutateAsync()
-    if (!result) return // User cancelled
-
-    setFolderPath(result)
+  // Auto-scan: reads ~/.claude/projects/ directly
+  const handleScanAll = useCallback(async () => {
     setStep('discovery')
+    const discovered = await discover.mutateAsync()
+    setProjects(discovered)
+    setSelectedPaths(new Set(discovered.map((p) => p.projectPath)))
+    setStep('confirm')
+  }, [discover])
 
-    const discovered = await discover.mutateAsync(result)
+  // Folder-filtered scan: pick a folder, then show only projects under it
+  const handleScanFolder = useCallback(async () => {
+    const folder = await folderPicker.mutateAsync()
+    if (!folder) return // User cancelled
+
+    setStep('discovery')
+    const discovered = await discover.mutateAsync(folder)
     setProjects(discovered)
     setSelectedPaths(new Set(discovered.map((p) => p.projectPath)))
     setStep('confirm')
@@ -49,19 +56,22 @@ export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Ele
 
   const handleConfirmAndScan = useCallback(async () => {
     setStep('scanning')
-    // Scan uses the default ~/.claude dir (session service handles this)
-    const result = await scanMutation.mutateAsync()
+    // Build filter of encoded project names for only selected projects
+    const encodedNames = projects
+      .filter((p) => selectedPaths.has(p.projectPath))
+      .map((p) => p.encodedName)
+    const result = await scanMutation.mutateAsync(encodedNames)
     setScanResult({
       sessions: result.newSessions,
       projects: selectedPaths.size
     })
     setStep('complete')
-  }, [scanMutation, selectedPaths.size])
+  }, [scanMutation, projects, selectedPaths])
 
   const handleComplete = useCallback(async () => {
-    await completeSetup.mutateAsync(folderPath ? folderPath + '/.claude' : undefined)
+    await completeSetup.mutateAsync()
     onComplete()
-  }, [completeSetup, folderPath, onComplete])
+  }, [completeSetup, onComplete])
 
   const handleSkip = useCallback(async () => {
     await completeSetup.mutateAsync()
@@ -97,9 +107,10 @@ export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Ele
       >
         {step === 'welcome' && (
           <WelcomeStep
-            onScan={handleScanForProjects}
+            onScanAll={handleScanAll}
+            onScanFolder={handleScanFolder}
             onSkip={handleSkip}
-            isLoading={folderPicker.isPending}
+            isLoading={discover.isPending || folderPicker.isPending}
           />
         )}
         {step === 'discovery' && <DiscoveryStep />}
@@ -128,11 +139,13 @@ export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Ele
 }
 
 function WelcomeStep({
-  onScan,
+  onScanAll,
+  onScanFolder,
   onSkip,
   isLoading
 }: {
-  onScan: () => void
+  onScanAll: () => void
+  onScanFolder: () => void
   onSkip: () => void
   isLoading: boolean
 }): React.JSX.Element {
@@ -143,27 +156,36 @@ function WelcomeStep({
         Let's find your Claude Code projects and reconstruct your work history.
       </DialogDescription>
       <Button
-        onClick={onScan}
+        onClick={onScanAll}
         disabled={isLoading}
         className="mt-2 w-full bg-[var(--accent)] text-white hover:brightness-[1.15]"
       >
         {isLoading ? (
           <>
             <Loader2 size={16} className="mr-2 animate-spin" />
-            Opening folder picker...
+            Scanning...
           </>
         ) : (
           <>
             <FolderSearch size={16} className="mr-2" />
-            Scan My Projects Folder
+            Scan for Projects
           </>
         )}
+      </Button>
+      <Button
+        onClick={onScanFolder}
+        disabled={isLoading}
+        variant="outline"
+        className="w-full border-[var(--surface-border)]"
+      >
+        <FolderOpen size={16} className="mr-2" />
+        Pick a Specific Folder
       </Button>
       <button
         onClick={onSkip}
         className="text-[13px] text-[var(--text-muted)] underline-offset-4 hover:underline"
       >
-        I'll set up manually
+        Skip for now
       </button>
     </div>
   )
@@ -176,7 +198,7 @@ function DiscoveryStep(): React.JSX.Element {
       <Loader2 size={32} className="animate-spin text-[var(--accent)]" />
       <p className="text-[14px] font-semibold">Scanning for projects...</p>
       <DialogDescription className="text-[13px] text-[var(--text-muted)]">
-        Looking for .claude directories in your folder
+        Reading your Claude Code project history
       </DialogDescription>
     </div>
   )
@@ -204,15 +226,14 @@ function ConfirmStep({
         <AlertTriangle size={32} className="text-[var(--text-muted)]" />
         <p className="text-[14px] font-semibold">No Projects Found</p>
         <DialogDescription className="text-[13px] text-[var(--text-muted)]">
-          No .claude directories were found in the selected folder. Try a parent directory or set up
-          manually.
+          No Claude Code projects were found. Make sure you've used Claude Code at least once.
         </DialogDescription>
         <Button
           onClick={onBack}
           variant="outline"
           className="w-full border-[var(--surface-border)]"
         >
-          Try Another Folder
+          Back
         </Button>
       </div>
     )
