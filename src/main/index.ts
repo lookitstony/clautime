@@ -1,5 +1,5 @@
 // electron-log MUST be initialized before any BrowserWindow creation
-import log from 'electron-log/main'
+import log from 'electron-log/main.js'
 log.initialize()
 
 // Configure log levels and file rotation
