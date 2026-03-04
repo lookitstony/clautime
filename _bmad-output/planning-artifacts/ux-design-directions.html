@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ViberTime — Design Directions</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d0d1a; color: #e0e0e0; }
+  :root { --accent: #14b8a6; --accent-rgb: 20,184,166; --bg1: #16162a; --bg2: #12121e; --bg3: #1e1e32; --border: #2a2a3e; --text1: #e0e0e0; --text2: #888; --text3: #555; }
+  .mono { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; }
+
+  /* Navigation */
+  .nav { position: sticky; top: 0; z-index: 100; background: #0a0a16; border-bottom: 1px solid var(--border); padding: 16px 32px; display: flex; align-items: center; gap: 24px; }
+  .nav h1 { font-size: 18px; color: #fff; }
+  .nav-pills { display: flex; gap: 4px; }
+  .nav-pill { padding: 8px 16px; border-radius: 6px; font-size: 13px; color: #888; cursor: pointer; border: none; background: none; font-weight: 500; transition: all 0.15s; }
+  .nav-pill:hover { color: #ccc; background: var(--bg3); }
+  .nav-pill.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.1); }
+  .nav-desc { margin-left: auto; font-size: 12px; color: var(--text3); max-width: 400px; text-align: right; }
+
+  /* Sections */
+  .direction { display: none; padding: 32px; }
+  .direction.active { display: block; }
+  .dir-header { margin-bottom: 24px; }
+  .dir-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .dir-sub { font-size: 14px; color: var(--text2); }
+  .dir-tags { display: flex; gap: 8px; margin-top: 10px; }
+  .dir-tag { padding: 3px 10px; border-radius: 12px; font-size: 11px; background: var(--bg3); color: var(--text2); }
+
+  /* Shared mockup styles */
+  .mockup { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
+  .mockup-titlebar { background: #0a0a16; padding: 8px 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-r { background: #ef4444; }
+  .dot-y { background: #f59e0b; }
+  .dot-g { background: #22c55e; }
+  .titlebar-text { margin-left: 12px; font-size: 12px; color: var(--text3); }
+
+  /* ============ DIRECTION A: Classic Sidebar ============ */
+  .dir-a-shell { display: grid; grid-template-columns: 56px 1fr; height: 560px; }
+  .dir-a-sidebar { background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 4px; }
+  .sb-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #555; font-size: 16px; cursor: pointer; transition: all 0.15s; }
+  .sb-icon:hover { background: var(--bg3); color: #aaa; }
+  .sb-icon.active { color: var(--accent); background: rgba(var(--accent-rgb), 0.1); }
+  .dir-a-main { background: var(--bg1); display: flex; flex-direction: column; }
+  .dir-a-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+  .dir-a-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .dir-a-actions { display: flex; gap: 8px; }
+  .btn-sm { padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-ghost { background: var(--bg3); color: #ccc; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg2); }
+  .tab-item { padding: 9px 18px; font-size: 12px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
+  .tab-item.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .session-table { flex: 1; overflow-y: auto; }
+  .s-row { display: grid; grid-template-columns: 6px 170px 95px 70px 1fr 55px; align-items: center; padding: 9px 16px; gap: 10px; border-bottom: 1px solid #1a1a2e; font-size: 12px; transition: background 0.1s; }
+  .s-row:hover { background: var(--bg3); }
+  .s-bar { width: 6px; height: 30px; border-radius: 3px; }
+  .s-proj { font-weight: 600; color: var(--text1); }
+  .s-proj small { display: block; font-weight: 400; color: #555; font-size: 10px; }
+  .s-time { color: var(--text2); }
+  .s-dur { color: var(--accent); font-weight: 600; }
+  .s-sum { color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { padding: 2px 7px; border-radius: 10px; font-size: 9px; font-weight: 600; text-transform: uppercase; }
+  .b-auto { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); }
+  .b-manual { background: rgba(139,92,246,0.15); color: #a78bfa; }
+  .b-live { background: rgba(34,197,94,0.2); color: #4ade80; }
+  .status-bar { display: flex; justify-content: space-between; padding: 4px 16px; background: #0a0a16; border-top: 1px solid var(--border); font-size: 10px; color: var(--text3); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; display: inline-block; margin-right: 4px; vertical-align: middle; }
+
+  /* ============ DIRECTION B: Top Nav + Integrated Dashboard ============ */
+  .dir-b-shell { display: flex; flex-direction: column; height: 560px; background: var(--bg1); }
+  .dir-b-topnav { display: flex; align-items: center; padding: 0 20px; background: var(--bg2); border-bottom: 1px solid var(--border); height: 44px; gap: 24px; }
+  .dir-b-logo { font-size: 14px; font-weight: 700; color: var(--accent); }
+  .dir-b-navitems { display: flex; gap: 4px; }
+  .dir-b-navitem { padding: 10px 14px; font-size: 12px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
+  .dir-b-navitem.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .dir-b-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .dir-b-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .dir-b-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .stat-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; }
+  .stat-val { font-size: 22px; font-weight: 700; color: #fff; margin-top: 4px; }
+  .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* ============ DIRECTION C: Timeline ============ */
+  .dir-c-shell { display: grid; grid-template-columns: 56px 1fr; height: 560px; }
+  .dir-c-main { background: var(--bg1); display: flex; flex-direction: column; }
+  .dir-c-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 4px; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; transition: all 0.15s; }
+  .tl-item:hover { border-color: rgba(var(--accent-rgb), 0.3); }
+  .tl-item::before { content: ''; position: absolute; left: -20px; top: 16px; width: 10px; height: 10px; border-radius: 50%; background: var(--border); border: 2px solid var(--bg1); }
+  .tl-item.tl-live::before { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.4); }
+  .tl-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .tl-proj { font-size: 13px; font-weight: 600; }
+  .tl-dur { font-size: 12px; font-weight: 600; color: var(--accent); }
+  .tl-time { font-size: 11px; color: var(--text2); }
+  .tl-sum { font-size: 11px; color: #555; margin-top: 4px; }
+  .tl-hour { font-size: 11px; color: var(--text3); font-weight: 600; margin: 12px 0 6px -24px; padding-left: 28px; }
+
+  /* ============ DIRECTION D: Split Panel ============ */
+  .dir-d-shell { display: grid; grid-template-columns: 56px 320px 1fr; height: 560px; }
+  .dir-d-list { background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .dir-d-listheader { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; color: #fff; }
+  .dir-d-items { flex: 1; overflow-y: auto; }
+  .dir-d-item { padding: 10px 14px; border-bottom: 1px solid #1a1a2e; cursor: pointer; transition: background 0.1s; }
+  .dir-d-item:hover { background: var(--bg3); }
+  .dir-d-item.selected { background: rgba(var(--accent-rgb), 0.08); border-left: 3px solid var(--accent); }
+  .dir-d-item-proj { font-size: 13px; font-weight: 600; color: var(--text1); display: flex; align-items: center; gap: 8px; }
+  .dir-d-item-proj .dot-color { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dir-d-item-meta { display: flex; justify-content: space-between; margin-top: 3px; font-size: 11px; color: var(--text3); }
+  .dir-d-detail { background: var(--bg1); display: flex; flex-direction: column; }
+  .dir-d-detail-header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .dir-d-detail-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .dir-d-detail-client { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .dir-d-detail-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .detail-section { margin-bottom: 20px; }
+  .detail-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .detail-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .detail-card-val { font-size: 20px; font-weight: 700; color: #fff; }
+  .detail-card-label { font-size: 10px; color: var(--text3); text-transform: uppercase; margin-top: 2px; }
+  .detail-summary { font-size: 13px; color: var(--text2); line-height: 1.6; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .detail-commits { list-style: none; }
+  .detail-commits li { padding: 6px 0; border-bottom: 1px solid #1a1a2e; font-size: 12px; color: var(--text2); }
+  .detail-commits li code { color: var(--accent); font-size: 11px; margin-right: 8px; }
+
+  /* ============ DIRECTION E: Live Dashboard Focus ============ */
+  .dir-e-shell { display: grid; grid-template-columns: 56px 1fr; height: 560px; }
+  .dir-e-main { background: var(--bg1); display: flex; flex-direction: column; }
+  .dir-e-content { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .live-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; position: relative; }
+  .live-card.is-active { border-color: rgba(34,197,94,0.3); }
+  .live-card.is-active::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #4ade80; }
+  .lc-proj { font-weight: 700; font-size: 14px; color: #fff; }
+  .lc-client { font-size: 11px; color: #555; margin-top: 2px; }
+  .lc-timer { font-size: 28px; font-weight: 700; margin: 12px 0 4px; }
+  .lc-status { font-size: 11px; display: flex; align-items: center; gap: 5px; }
+  .lc-active { color: #4ade80; }
+  .lc-idle { color: #555; }
+  .day-summary { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .day-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #1a1a2e; }
+  .day-row:last-child { border-bottom: none; }
+  .day-proj { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; }
+  .day-bar { height: 6px; border-radius: 3px; flex: 1; margin: 0 16px; background: var(--bg3); position: relative; overflow: hidden; }
+  .day-bar-fill { height: 100%; border-radius: 3px; position: absolute; left: 0; top: 0; }
+  .day-hours { font-size: 13px; font-weight: 600; color: var(--accent); min-width: 60px; text-align: right; }
+
+  /* ============ DIRECTION F: Compact Dense ============ */
+  .dir-f-shell { display: grid; grid-template-columns: 44px 1fr; height: 560px; }
+  .dir-f-sidebar { background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 2px; }
+  .dir-f-icon { width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #555; font-size: 13px; cursor: pointer; }
+  .dir-f-icon.active { color: var(--accent); }
+  .dir-f-main { background: var(--bg1); display: flex; flex-direction: column; }
+  .dir-f-header { display: flex; align-items: center; padding: 6px 12px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 12px; }
+  .dir-f-header .logo { font-size: 12px; font-weight: 700; color: var(--accent); }
+  .dir-f-table { flex: 1; overflow-y: auto; }
+  .f-row { display: grid; grid-template-columns: 4px 140px 80px 55px 1fr 45px; align-items: center; padding: 5px 10px; gap: 8px; border-bottom: 1px solid #1a1a2e; font-size: 11px; }
+  .f-row:hover { background: var(--bg3); }
+  .f-bar { width: 4px; height: 22px; border-radius: 2px; }
+  .f-proj { font-weight: 600; color: var(--text1); font-size: 11px; }
+  .f-proj small { display: block; color: #444; font-size: 9px; font-weight: 400; }
+
+  /* Comparison section */
+  .compare { padding: 32px; }
+  .compare-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 16px; }
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .compare-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .compare-card h3 { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
+  .compare-card p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+  .pro { color: #4ade80; }
+  .con { color: #f59e0b; }
+
+  .color-1 { background: #3b82f6; }
+  .color-2 { background: #f59e0b; }
+  .color-3 { background: #10b981; }
+  .color-4 { background: #ef4444; }
+  .color-5 { background: #8b5cf6; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <h1 style="color:var(--accent)">ViberTime</h1>
+  <div class="nav-pills">
+    <button class="nav-pill active" onclick="showDir('a')">A: Classic</button>
+    <button class="nav-pill" onclick="showDir('b')">B: Top Nav</button>
+    <button class="nav-pill" onclick="showDir('c')">C: Timeline</button>
+    <button class="nav-pill" onclick="showDir('d')">D: Split Panel</button>
+    <button class="nav-pill" onclick="showDir('e')">E: Live Focus</button>
+    <button class="nav-pill" onclick="showDir('f')">F: Ultra Dense</button>
+  </div>
+  <div class="nav-desc" id="dir-desc">VS Code-style sidebar with session table. The baseline approach.</div>
+</nav>
+
+<!-- ======== DIRECTION A: Classic Sidebar ======== -->
+<div class="direction active" id="dir-a">
+  <div class="dir-header">
+    <div class="dir-title">Direction A: Classic Sidebar</div>
+    <div class="dir-sub">VS Code-inspired activity bar + content panel. Session list as primary view. Familiar, efficient, proven.</div>
+    <div class="dir-tags"><span class="dir-tag">Familiar</span><span class="dir-tag">Icon Nav</span><span class="dir-tag">Table Layout</span><span class="dir-tag">Status Bar</span></div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-titlebar"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div><span class="titlebar-text">ViberTime</span></div>
+    <div class="dir-a-shell">
+      <div class="dir-a-sidebar">
+        <div class="sb-icon active">&#9776;</div>
+        <div class="sb-icon">&#9673;</div>
+        <div class="sb-icon">&#9634;</div>
+        <div class="sb-icon">&#9783;</div>
+        <div style="flex:1"></div>
+        <div class="sb-icon">&#9881;</div>
+      </div>
+      <div class="dir-a-main">
+        <div class="dir-a-header">
+          <div class="dir-a-title">Sessions</div>
+          <div class="dir-a-actions"><button class="btn-sm btn-ghost">Scan Now</button><button class="btn-sm btn-accent">+ Manual Block</button></div>
+        </div>
+        <div class="tabs">
+          <div class="tab-item active">Today</div>
+          <div class="tab-item">This Week</div>
+          <div class="tab-item">All Sessions</div>
+        </div>
+        <div class="session-table">
+          <div class="s-row"><div class="s-bar color-1"></div><div class="s-proj mono">vibertime-app<small>Personal</small></div><div class="s-time mono">9:15 — 11:42</div><div class="s-dur mono">2h 27m</div><div class="s-sum">Implemented session detection engine</div><div><span class="badge b-live">Live</span></div></div>
+          <div class="s-row"><div class="s-bar color-2"></div><div class="s-proj mono">payment-api<small>Acme Corp</small></div><div class="s-time mono">8:00 — 9:10</div><div class="s-dur mono">1h 10m</div><div class="s-sum">Fixed Stripe webhook retry logic</div><div><span class="badge b-auto">Auto</span></div></div>
+          <div class="s-row"><div class="s-bar color-3"></div><div class="s-proj mono">dashboard-v2<small>Acme Corp</small></div><div class="s-time mono">11:45 — 13:20</div><div class="s-dur mono">1h 35m</div><div class="s-sum">Refactored chart components to Recharts v3</div><div><span class="badge b-auto">Auto</span></div></div>
+          <div class="s-row"><div class="s-bar color-4"></div><div class="s-proj mono">mobile-app<small>StartupXYZ</small></div><div class="s-time mono">13:30 — 15:00</div><div class="s-dur mono">1h 30m</div><div class="s-sum">Push notification handling, deep linking fix</div><div><span class="badge b-auto">Auto</span></div></div>
+          <div class="s-row"><div class="s-bar color-5"></div><div class="s-proj mono">Client meeting<small>Acme Corp</small></div><div class="s-time mono">15:15 — 16:00</div><div class="s-dur mono">0h 45m</div><div class="s-sum">Sprint review and Q2 planning</div><div><span class="badge b-manual">Manual</span></div></div>
+          <div class="s-row"><div class="s-bar color-2"></div><div class="s-proj mono">payment-api<small>Acme Corp</small></div><div class="s-time mono">16:15 — 17:45</div><div class="s-dur mono">1h 30m</div><div class="s-sum">Subscription billing flow</div><div><span class="badge b-auto">Auto</span></div></div>
+          <div class="s-row"><div class="s-bar color-4"></div><div class="s-proj mono">mobile-app<small>StartupXYZ</small></div><div class="s-time mono">18:00 — 19:15</div><div class="s-dur mono">1h 15m</div><div class="s-sum">Offline sync and conflict resolution</div><div><span class="badge b-auto">Auto</span></div></div>
+        </div>
+        <div class="status-bar"><span><span class="status-dot"></span>Watching 6 projects &nbsp;|&nbsp; Last scan: just now</span><span>Today: 10h 12m &nbsp;|&nbsp; 7 sessions</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DIRECTION B: Top Nav + Stats ======== -->
+<div class="direction" id="dir-b">
+  <div class="dir-header">
+    <div class="dir-title">Direction B: Top Navigation + Integrated Stats</div>
+    <div class="dir-sub">Horizontal nav saves vertical space. Stats cards always visible above session list. More dashboard-like.</div>
+    <div class="dir-tags"><span class="dir-tag">Top Nav</span><span class="dir-tag">Stats Visible</span><span class="dir-tag">Wider Content</span><span class="dir-tag">Dashboard Feel</span></div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-titlebar"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div><span class="titlebar-text">ViberTime</span></div>
+    <div class="dir-b-shell">
+      <div class="dir-b-topnav">
+        <div class="dir-b-logo">ViberTime</div>
+        <div class="dir-b-navitems">
+          <div class="dir-b-navitem active">Sessions</div>
+          <div class="dir-b-navitem">Live</div>
+          <div class="dir-b-navitem">Reports</div>
+          <div class="dir-b-navitem">Clients</div>
+          <div class="dir-b-navitem">Settings</div>
+        </div>
+        <div style="flex:1"></div>
+        <button class="btn-sm btn-ghost">Scan Now</button>
+        <button class="btn-sm btn-accent">+ Manual Block</button>
+      </div>
+      <div class="dir-b-content">
+        <div class="dir-b-stats">
+          <div class="dir-b-stat"><div class="stat-label">Today</div><div class="stat-val mono">10h 12m</div><div class="stat-sub">7 sessions</div></div>
+          <div class="dir-b-stat"><div class="stat-label">Active</div><div class="stat-val mono" style="color:#4ade80">1</div><div class="stat-sub">vibertime-app</div></div>
+          <div class="dir-b-stat"><div class="stat-label">This Week</div><div class="stat-val mono">34h 50m</div><div class="stat-sub">Mon — Wed</div></div>
+          <div class="dir-b-stat"><div class="stat-label">Tokens Today</div><div class="stat-val mono">48.2k</div><div class="stat-sub">$0.72 est.</div></div>
+        </div>
+        <div class="tabs" style="background:transparent; margin-bottom:8px;">
+          <div class="tab-item active">Today</div>
+          <div class="tab-item">This Week</div>
+          <div class="tab-item">All</div>
+        </div>
+        <div class="s-row" style="border-radius:8px 8px 0 0;"><div class="s-bar color-1"></div><div class="s-proj mono">vibertime-app<small>Personal</small></div><div class="s-time mono">9:15 — 11:42</div><div class="s-dur mono">2h 27m</div><div class="s-sum">Session detection engine implementation</div><div><span class="badge b-live">Live</span></div></div>
+        <div class="s-row"><div class="s-bar color-2"></div><div class="s-proj mono">payment-api<small>Acme Corp</small></div><div class="s-time mono">8:00 — 9:10</div><div class="s-dur mono">1h 10m</div><div class="s-sum">Stripe webhook retry logic</div><div><span class="badge b-auto">Auto</span></div></div>
+        <div class="s-row"><div class="s-bar color-3"></div><div class="s-proj mono">dashboard-v2<small>Acme Corp</small></div><div class="s-time mono">11:45 — 13:20</div><div class="s-dur mono">1h 35m</div><div class="s-sum">Chart component refactor</div><div><span class="badge b-auto">Auto</span></div></div>
+        <div class="s-row"><div class="s-bar color-4"></div><div class="s-proj mono">mobile-app<small>StartupXYZ</small></div><div class="s-time mono">13:30 — 15:00</div><div class="s-dur mono">1h 30m</div><div class="s-sum">Push notifications and deep linking</div><div><span class="badge b-auto">Auto</span></div></div>
+        <div class="s-row"><div class="s-bar color-5"></div><div class="s-proj mono">Client meeting<small>Acme Corp</small></div><div class="s-time mono">15:15 — 16:00</div><div class="s-dur mono">0h 45m</div><div class="s-sum">Sprint review</div><div><span class="badge b-manual">Manual</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DIRECTION C: Timeline ======== -->
+<div class="direction" id="dir-c">
+  <div class="dir-header">
+    <div class="dir-title">Direction C: Chronological Timeline</div>
+    <div class="dir-sub">Sessions displayed as a vertical timeline grouped by hour. Emphasizes the flow of the day. Shows gaps where manual blocks could go.</div>
+    <div class="dir-tags"><span class="dir-tag">Timeline</span><span class="dir-tag">Chronological</span><span class="dir-tag">Gap Aware</span><span class="dir-tag">Story-like</span></div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-titlebar"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div><span class="titlebar-text">ViberTime</span></div>
+    <div class="dir-c-shell">
+      <div class="dir-a-sidebar">
+        <div class="sb-icon active">&#9776;</div>
+        <div class="sb-icon">&#9673;</div>
+        <div class="sb-icon">&#9634;</div>
+        <div class="sb-icon">&#9783;</div>
+        <div style="flex:1"></div>
+        <div class="sb-icon">&#9881;</div>
+      </div>
+      <div class="dir-c-main">
+        <div class="dir-a-header">
+          <div class="dir-a-title">Today — Wednesday, Mar 4</div>
+          <div class="dir-a-actions"><span style="font-size:12px;color:var(--accent);font-weight:600" class="mono">10h 12m total</span><button class="btn-sm btn-accent" style="margin-left:12px">+ Manual Block</button></div>
+        </div>
+        <div class="dir-c-content">
+          <div class="timeline">
+            <div class="tl-hour">8:00 AM</div>
+            <div class="tl-item">
+              <div class="tl-top"><span class="tl-proj" style="color:#f59e0b">payment-api <span style="color:#555;font-weight:400;font-size:11px">Acme Corp</span></span><span class="tl-dur mono">1h 10m</span></div>
+              <div class="tl-time mono">8:00 — 9:10</div>
+              <div class="tl-sum">Fixed Stripe webhook retry logic, added idempotency keys</div>
+            </div>
+            <div class="tl-hour">9:00 AM</div>
+            <div class="tl-item tl-live">
+              <div class="tl-top"><span class="tl-proj" style="color:#3b82f6">vibertime-app <span style="color:#555;font-weight:400;font-size:11px">Personal</span></span><span class="tl-dur mono" style="color:#4ade80">2h 27m</span></div>
+              <div class="tl-time mono">9:15 — now <span class="badge b-live" style="margin-left:8px">Live</span></div>
+              <div class="tl-sum">Session detection engine, .claude folder parser</div>
+            </div>
+            <div class="tl-hour">11:00 AM</div>
+            <div class="tl-item">
+              <div class="tl-top"><span class="tl-proj" style="color:#10b981">dashboard-v2 <span style="color:#555;font-weight:400;font-size:11px">Acme Corp</span></span><span class="tl-dur mono">1h 35m</span></div>
+              <div class="tl-time mono">11:45 — 13:20</div>
+              <div class="tl-sum">Refactored chart components, migrated to Recharts v3</div>
+            </div>
+            <div class="tl-hour">1:00 PM</div>
+            <div class="tl-item">
+              <div class="tl-top"><span class="tl-proj" style="color:#ef4444">mobile-app <span style="color:#555;font-weight:400;font-size:11px">StartupXYZ</span></span><span class="tl-dur mono">1h 30m</span></div>
+              <div class="tl-time mono">13:30 — 15:00</div>
+              <div class="tl-sum">Push notifications, deep linking Android fix</div>
+            </div>
+            <div class="tl-hour">3:00 PM</div>
+            <div class="tl-item">
+              <div class="tl-top"><span class="tl-proj" style="color:#8b5cf6">Client meeting <span style="color:#555;font-weight:400;font-size:11px">Acme Corp</span></span><span class="tl-dur mono">0h 45m</span></div>
+              <div class="tl-time mono">15:15 — 16:00 <span class="badge b-manual" style="margin-left:8px">Manual</span></div>
+              <div class="tl-sum">Sprint review and Q2 planning</div>
+            </div>
+          </div>
+        </div>
+        <div class="status-bar"><span><span class="status-dot"></span>Watching 6 projects</span><span>7 sessions today</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DIRECTION D: Split Panel (Master-Detail) ======== -->
+<div class="direction" id="dir-d">
+  <div class="dir-header">
+    <div class="dir-title">Direction D: Split Panel (Master-Detail)</div>
+    <div class="dir-sub">Session list on left, detail view on right. Click a session to see full summary, git commits, and editing controls. Great for session review and correction.</div>
+    <div class="dir-tags"><span class="dir-tag">Master-Detail</span><span class="dir-tag">Deep Inspection</span><span class="dir-tag">Edit Focused</span><span class="dir-tag">Two Panel</span></div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-titlebar"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div><span class="titlebar-text">ViberTime</span></div>
+    <div class="dir-d-shell">
+      <div class="dir-a-sidebar">
+        <div class="sb-icon active">&#9776;</div>
+        <div class="sb-icon">&#9673;</div>
+        <div class="sb-icon">&#9634;</div>
+        <div class="sb-icon">&#9783;</div>
+        <div style="flex:1"></div>
+        <div class="sb-icon">&#9881;</div>
+      </div>
+      <div class="dir-d-list">
+        <div class="dir-d-listheader">Today — 7 sessions</div>
+        <div class="dir-d-items">
+          <div class="dir-d-item"><div class="dir-d-item-proj"><span class="dot-color color-1"></span>vibertime-app</div><div class="dir-d-item-meta"><span class="mono" style="font-size:10px">9:15 — 11:42</span><span class="mono" style="color:var(--accent);font-size:10px">2h 27m</span></div></div>
+          <div class="dir-d-item selected"><div class="dir-d-item-proj"><span class="dot-color color-2"></span>payment-api</div><div class="dir-d-item-meta"><span class="mono" style="font-size:10px">8:00 — 9:10</span><span class="mono" style="color:var(--accent);font-size:10px">1h 10m</span></div></div>
+          <div class="dir-d-item"><div class="dir-d-item-proj"><span class="dot-color color-3"></span>dashboard-v2</div><div class="dir-d-item-meta"><span class="mono" style="font-size:10px">11:45 — 13:20</span><span class="mono" style="color:var(--accent);font-size:10px">1h 35m</span></div></div>
+          <div class="dir-d-item"><div class="dir-d-item-proj"><span class="dot-color color-4"></span>mobile-app</div><div class="dir-d-item-meta"><span class="mono" style="font-size:10px">13:30 — 15:00</span><span class="mono" style="color:var(--accent);font-size:10px">1h 30m</span></div></div>
+          <div class="dir-d-item"><div class="dir-d-item-proj"><span class="dot-color color-5"></span>Client meeting</div><div class="dir-d-item-meta"><span class="mono" style="font-size:10px">15:15 — 16:00</span><span class="mono" style="color:var(--accent);font-size:10px">0h 45m</span></div></div>
+          <div class="dir-d-item"><div class="dir-d-item-proj"><span class="dot-color color-2"></span>payment-api</div><div class="dir-d-item-meta"><span class="mono" style="font-size:10px">16:15 — 17:45</span><span class="mono" style="color:var(--accent);font-size:10px">1h 30m</span></div></div>
+        </div>
+      </div>
+      <div class="dir-d-detail">
+        <div class="dir-d-detail-header">
+          <div class="dir-d-detail-title" style="color:#f59e0b">payment-api</div>
+          <div class="dir-d-detail-client">Acme Corp &nbsp;&bull;&nbsp; <span class="badge b-auto">Auto-detected</span></div>
+        </div>
+        <div class="dir-d-detail-body">
+          <div class="detail-section">
+            <div class="detail-grid">
+              <div class="detail-card"><div class="detail-card-val mono">1h 10m</div><div class="detail-card-label">Duration</div></div>
+              <div class="detail-card"><div class="detail-card-val mono">8:00 — 9:10</div><div class="detail-card-label">Time Range</div></div>
+              <div class="detail-card"><div class="detail-card-val mono">12.4k</div><div class="detail-card-label">Tokens Used</div></div>
+              <div class="detail-card"><div class="detail-card-val mono">3</div><div class="detail-card-label">Git Commits</div></div>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">AI Summary</div>
+            <div class="detail-summary">Fixed Stripe webhook retry logic by implementing exponential backoff with jitter. Added idempotency keys to prevent duplicate charge processing. Updated webhook signature verification to handle clock skew.</div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-label">Git Commits</div>
+            <ul class="detail-commits">
+              <li><code>a3f2c1d</code> fix: webhook retry with exponential backoff</li>
+              <li><code>b7e4a2f</code> feat: add idempotency keys to charge processing</li>
+              <li><code>c9d1b3e</code> fix: webhook signature clock skew tolerance</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DIRECTION E: Live Dashboard Focus ======== -->
+<div class="direction" id="dir-e">
+  <div class="dir-header">
+    <div class="dir-title">Direction E: Live Dashboard Focus</div>
+    <div class="dir-sub">Live view as the hero. Active sessions with running timers front and center. Day summary bar chart below. The "keep on second monitor" view.</div>
+    <div class="dir-tags"><span class="dir-tag">Live First</span><span class="dir-tag">Running Timers</span><span class="dir-tag">Glanceable</span><span class="dir-tag">Second Monitor</span></div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-titlebar"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div><span class="titlebar-text">ViberTime</span></div>
+    <div class="dir-e-shell">
+      <div class="dir-a-sidebar">
+        <div class="sb-icon">&#9776;</div>
+        <div class="sb-icon active">&#9673;</div>
+        <div class="sb-icon">&#9634;</div>
+        <div class="sb-icon">&#9783;</div>
+        <div style="flex:1"></div>
+        <div class="sb-icon">&#9881;</div>
+      </div>
+      <div class="dir-e-main">
+        <div class="dir-a-header">
+          <div class="dir-a-title">Live Dashboard</div>
+          <div style="font-size:12px;color:var(--text2)">Wednesday, Mar 4 &nbsp;&bull;&nbsp; <span style="color:var(--accent);font-weight:600" class="mono">10h 12m</span></div>
+        </div>
+        <div class="dir-e-content">
+          <div class="live-grid">
+            <div class="live-card is-active">
+              <div class="lc-proj" style="color:#3b82f6">vibertime-app</div>
+              <div class="lc-client">Personal</div>
+              <div class="lc-timer mono" style="color:var(--accent)">2:27:14</div>
+              <div class="lc-status lc-active"><span class="status-dot"></span>Active session</div>
+            </div>
+            <div class="live-card">
+              <div class="lc-proj" style="color:#f59e0b">payment-api</div>
+              <div class="lc-client">Acme Corp</div>
+              <div class="lc-timer mono" style="color:var(--text3)">2:40:00</div>
+              <div class="lc-status lc-idle">Last active 42m ago</div>
+            </div>
+            <div class="live-card">
+              <div class="lc-proj" style="color:#10b981">dashboard-v2</div>
+              <div class="lc-client">Acme Corp</div>
+              <div class="lc-timer mono" style="color:var(--text3)">1:35:00</div>
+              <div class="lc-status lc-idle">Last active 3h ago</div>
+            </div>
+            <div class="live-card">
+              <div class="lc-proj" style="color:#ef4444">mobile-app</div>
+              <div class="lc-client">StartupXYZ</div>
+              <div class="lc-timer mono" style="color:var(--text3)">2:45:00</div>
+              <div class="lc-status lc-idle">Last active 1h ago</div>
+            </div>
+          </div>
+          <div class="day-summary">
+            <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;font-weight:600">Today by Project</div>
+            <div class="day-row"><div class="day-proj"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;flex-shrink:0"></span>payment-api</div><div class="day-bar"><div class="day-bar-fill" style="width:52%;background:#f59e0b"></div></div><div class="day-hours mono">2h 40m</div></div>
+            <div class="day-row"><div class="day-proj"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>mobile-app</div><div class="day-bar"><div class="day-bar-fill" style="width:45%;background:#ef4444"></div></div><div class="day-hours mono">2h 45m</div></div>
+            <div class="day-row"><div class="day-proj"><span style="width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0"></span>vibertime-app</div><div class="day-bar"><div class="day-bar-fill" style="width:48%;background:#3b82f6"></div></div><div class="day-hours mono">2h 27m</div></div>
+            <div class="day-row"><div class="day-proj"><span style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>dashboard-v2</div><div class="day-bar"><div class="day-bar-fill" style="width:31%;background:#10b981"></div></div><div class="day-hours mono">1h 35m</div></div>
+            <div class="day-row"><div class="day-proj"><span style="width:8px;height:8px;border-radius:50%;background:#8b5cf6;flex-shrink:0"></span>Meetings</div><div class="day-bar"><div class="day-bar-fill" style="width:15%;background:#8b5cf6"></div></div><div class="day-hours mono">0h 45m</div></div>
+          </div>
+        </div>
+        <div class="status-bar"><span><span class="status-dot"></span>Watching 6 projects</span><span>1 active &nbsp;|&nbsp; 4 idle</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DIRECTION F: Ultra Dense ======== -->
+<div class="direction" id="dir-f">
+  <div class="dir-header">
+    <div class="dir-title">Direction F: Ultra Dense / Terminal-Inspired</div>
+    <div class="dir-sub">Maximum information density. Thinner sidebar, tighter rows, smaller text. For devs who want a terminal-like data view. Every pixel earns its place.</div>
+    <div class="dir-tags"><span class="dir-tag">Ultra Dense</span><span class="dir-tag">Terminal Feel</span><span class="dir-tag">Max Data</span><span class="dir-tag">Minimal Chrome</span></div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-titlebar"><div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div><span class="titlebar-text">ViberTime</span></div>
+    <div class="dir-f-shell">
+      <div class="dir-f-sidebar">
+        <div class="dir-f-icon active">&#9776;</div>
+        <div class="dir-f-icon">&#9673;</div>
+        <div class="dir-f-icon">&#9634;</div>
+        <div class="dir-f-icon">&#9783;</div>
+        <div style="flex:1"></div>
+        <div class="dir-f-icon">&#9881;</div>
+      </div>
+      <div class="dir-f-main">
+        <div class="dir-f-header">
+          <span class="logo">VT</span>
+          <span style="font-size:11px;color:var(--text2)">Sessions</span>
+          <div class="tabs" style="border:none;background:none;margin:0">
+            <div class="tab-item active" style="padding:4px 10px;font-size:11px">Today</div>
+            <div class="tab-item" style="padding:4px 10px;font-size:11px">Week</div>
+            <div class="tab-item" style="padding:4px 10px;font-size:11px">All</div>
+          </div>
+          <div style="flex:1"></div>
+          <span class="mono" style="font-size:11px;color:var(--accent)">10h 12m</span>
+        </div>
+        <div class="dir-f-table">
+          <div class="f-row" style="color:#444;font-size:10px;font-weight:600;text-transform:uppercase"><div></div><div>Project</div><div>Time</div><div>Dur</div><div>Summary</div><div>Type</div></div>
+          <div class="f-row"><div class="f-bar color-1"></div><div class="f-proj mono">vibertime-app<small>Personal</small></div><div class="mono" style="color:var(--text2)">9:15-11:42</div><div class="mono" style="color:var(--accent)">2:27</div><div style="color:#555;font-size:10px">Session detection engine</div><div><span class="badge b-live" style="font-size:8px">LIVE</span></div></div>
+          <div class="f-row"><div class="f-bar color-2"></div><div class="f-proj mono">payment-api<small>Acme Corp</small></div><div class="mono" style="color:var(--text2)">8:00-9:10</div><div class="mono" style="color:var(--accent)">1:10</div><div style="color:#555;font-size:10px">Stripe webhook retry</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-3"></div><div class="f-proj mono">dashboard-v2<small>Acme Corp</small></div><div class="mono" style="color:var(--text2)">11:45-13:20</div><div class="mono" style="color:var(--accent)">1:35</div><div style="color:#555;font-size:10px">Chart refactor Recharts v3</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-4"></div><div class="f-proj mono">mobile-app<small>StartupXYZ</small></div><div class="mono" style="color:var(--text2)">13:30-15:00</div><div class="mono" style="color:var(--accent)">1:30</div><div style="color:#555;font-size:10px">Push notifs, deep linking</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-5"></div><div class="f-proj mono">Client meeting<small>Acme Corp</small></div><div class="mono" style="color:var(--text2)">15:15-16:00</div><div class="mono" style="color:var(--accent)">0:45</div><div style="color:#555;font-size:10px">Sprint review Q2</div><div><span class="badge b-manual" style="font-size:8px">MAN</span></div></div>
+          <div class="f-row"><div class="f-bar color-2"></div><div class="f-proj mono">payment-api<small>Acme Corp</small></div><div class="mono" style="color:var(--text2)">16:15-17:45</div><div class="mono" style="color:var(--accent)">1:30</div><div style="color:#555;font-size:10px">Subscription billing</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-4"></div><div class="f-proj mono">mobile-app<small>StartupXYZ</small></div><div class="mono" style="color:var(--text2)">18:00-19:15</div><div class="mono" style="color:var(--accent)">1:15</div><div style="color:#555;font-size:10px">Offline sync, conflicts</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-1"></div><div class="f-proj mono">vibertime-app<small>Personal</small></div><div class="mono" style="color:var(--text2)">19:30-20:00</div><div class="mono" style="color:var(--accent)">0:30</div><div style="color:#555;font-size:10px">Report export feature</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-3"></div><div class="f-proj mono">dashboard-v2<small>Acme Corp</small></div><div class="mono" style="color:var(--text2)">20:15-21:30</div><div class="mono" style="color:var(--accent)">1:15</div><div style="color:#555;font-size:10px">Data table pagination</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+          <div class="f-row"><div class="f-bar color-4"></div><div class="f-proj mono">mobile-app<small>StartupXYZ</small></div><div class="mono" style="color:var(--text2)">21:45-22:30</div><div class="mono" style="color:var(--accent)">0:45</div><div style="color:#555;font-size:10px">Auth token refresh</div><div><span class="badge b-auto" style="font-size:8px">AUTO</span></div></div>
+        </div>
+        <div class="status-bar" style="font-size:9px"><span><span class="status-dot" style="width:6px;height:6px"></span>6 projects &bull; scan: now</span><span>10:12 &bull; 7 sess</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const descriptions = {
+  a: 'VS Code-style sidebar with session table. The baseline approach.',
+  b: 'Top nav with stats cards always visible. Dashboard-like feel.',
+  c: 'Vertical timeline showing the flow of the day. Story-like.',
+  d: 'Master-detail split. Click a session to see full details and edit.',
+  e: 'Live dashboard with running timers. The second-monitor view.',
+  f: 'Maximum density, terminal-inspired. Every pixel is data.'
+};
+function showDir(id) {
+  document.querySelectorAll('.direction').forEach(d => d.classList.remove('active'));
+  document.getElementById('dir-' + id).classList.add('active');
+  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('dir-desc').textContent = descriptions[id];
+}
+</script>
+
+</body>
+</html>
