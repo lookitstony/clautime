@@ -9,7 +9,7 @@ import { scanState } from '../db/schema/scan-state'
 import { settingsService } from './settings-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
-import type { SessionFilters, ScanResult, PromptTiming } from '../../shared/types/session'
+import type { SessionFilters, ScanResult, PromptTiming, UpdateSession } from '../../shared/types/session'
 import type { ParsedSessionData } from '../parsers/types'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
@@ -182,6 +182,76 @@ export const sessionService = {
   getSessionById(id: number) {
     const db = getDb()
     return db.select().from(sessions).where(eq(sessions.id, id)).get() ?? null
+  },
+
+  /**
+   * Update a session's fields (time, project, description).
+   */
+  updateSession(id: number, data: UpdateSession) {
+    const db = getDb()
+    const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
+    if (!existing) {
+      throw new Error(`Session ${id} not found`)
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() }
+    if (data.startedAt !== undefined) updates.startedAt = data.startedAt
+    if (data.endedAt !== undefined) updates.endedAt = data.endedAt
+    if (data.durationMinutes !== undefined) updates.durationMinutes = data.durationMinutes
+    if (data.description !== undefined) updates.description = data.description
+    if (data.projectId !== undefined) updates.projectId = data.projectId
+    if (data.clientId !== undefined) updates.clientId = data.clientId
+
+    db.update(sessions).set(updates).where(eq(sessions.id, id)).run()
+
+    return db.select().from(sessions).where(eq(sessions.id, id)).get()!
+  },
+
+  /**
+   * Delete a session by ID.
+   */
+  deleteSession(id: number) {
+    const db = getDb()
+    const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
+    if (!existing) {
+      throw new Error(`Session ${id} not found`)
+    }
+    db.delete(sessions).where(eq(sessions.id, id)).run()
+  },
+
+  /**
+   * Create a manual session.
+   */
+  createSession(data: {
+    projectPath: string
+    startedAt: string
+    endedAt: string
+    durationMinutes: number
+    description?: string
+    projectId?: number | null
+    clientId?: number | null
+  }) {
+    const db = getDb()
+    const now = new Date().toISOString()
+    db.insert(sessions)
+      .values({
+        projectPath: data.projectPath,
+        startedAt: data.startedAt,
+        endedAt: data.endedAt,
+        durationMinutes: data.durationMinutes,
+        source: 'manual',
+        description: data.description ?? null,
+        status: 'completed',
+        promptCount: 0,
+        projectId: data.projectId ?? null,
+        clientId: data.clientId ?? null,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run()
+
+    // Return the newly created session
+    return db.select().from(sessions).orderBy(sessions.id).all().pop()!
   },
 
   /**

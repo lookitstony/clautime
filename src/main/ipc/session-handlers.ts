@@ -6,7 +6,7 @@ import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult, PromptTiming } from '../../shared/types/session'
+import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession } from '../../shared/types/session'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle(
@@ -75,6 +75,56 @@ export function registerSessionHandlers(): void {
       } catch (error) {
         log.error('IPC session:getPromptTimings failed:', error)
         return ipcError('SESSION_PROMPT_TIMINGS_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'session:update',
+    async (_event, id: number, data: UpdateSession): Promise<IpcResult<Session>> => {
+      try {
+        const result = sessionService.updateSession(id, data)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC session:update failed:', error)
+        return ipcError('SESSION_UPDATE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'session:delete',
+    async (_event, id: number): Promise<IpcResult<void>> => {
+      try {
+        sessionService.deleteSession(id)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC session:delete failed:', error)
+        return ipcError('SESSION_DELETE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'session:create',
+    async (
+      _event,
+      data: {
+        projectPath: string
+        startedAt: string
+        endedAt: string
+        durationMinutes: number
+        description?: string
+        projectId?: number | null
+        clientId?: number | null
+      }
+    ): Promise<IpcResult<Session>> => {
+      try {
+        const result = sessionService.createSession(data)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC session:create failed:', error)
+        return ipcError('SESSION_CREATE_ERROR', String(error))
       }
     }
   )

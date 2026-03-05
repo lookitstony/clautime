@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { Session, SessionFilters, ScanResult, PromptTiming } from '../../../../shared/types/session'
+import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession } from '../../../../shared/types/session'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import { formatDuration, getProjectName } from '@/lib/format'
 
@@ -34,6 +34,56 @@ export function useSessions(filters?: SessionFilters) {
   return useQuery({
     queryKey: ['sessions', 'list', filters],
     queryFn: () => fetchSessions(filters)
+  })
+}
+
+export function useUpdateSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: UpdateSession }) => {
+      const result = await window.api.sessions.update(id, data)
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    }
+  })
+}
+
+export function useDeleteSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const result = await window.api.sessions.delete(id)
+      if (!result.success) throw new Error(result.error.message)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    }
+  })
+}
+
+export function useCreateSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: {
+      projectPath: string
+      startedAt: string
+      endedAt: string
+      durationMinutes: number
+      description?: string
+      projectId?: number | null
+      clientId?: number | null
+    }) => {
+      const result = await window.api.sessions.create(data)
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      toast.success('Manual session created')
+    }
   })
 }
 

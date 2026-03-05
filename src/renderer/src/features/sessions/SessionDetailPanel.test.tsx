@@ -4,6 +4,38 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import type { Session } from '../../../../shared/types/session'
 
+// Mock browser APIs for Radix components
+vi.stubGlobal('ResizeObserver', class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+})
+// Radix Select accesses window.HTMLSelectElement.prototype — mock for happy-dom
+const HtmlSelectProto = {} as any
+Object.defineProperty(HtmlSelectProto, 'value', {
+  get() { return '' },
+  set(_v: string) {},
+  configurable: true,
+  enumerable: true
+})
+vi.stubGlobal('HTMLSelectElement', { prototype: HtmlSelectProto })
+
+// Mock window.api
+const mockUpdate = vi.fn().mockResolvedValue({ success: true, data: {} })
+const mockGetAll = vi.fn().mockResolvedValue({ success: true, data: [] })
+
+vi.stubGlobal('window', {
+  ...window,
+  api: {
+    sessions: {
+      getPromptTimings: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      update: mockUpdate
+    },
+    clients: { getAll: vi.fn().mockResolvedValue({ success: true, data: [] }) },
+    projects: { getAll: mockGetAll }
+  }
+})
+
 const baseSession: Session = {
   id: 1,
   projectPath: 'C:\\apps\\ClawdTime',
@@ -75,19 +107,15 @@ describe('SessionDetailPanel', () => {
     expect(screen.queryByText('No summary available')).not.toBeInTheDocument()
   })
 
-  it('shows Edit Time and Reassign Project buttons for auto sessions', () => {
+  it('shows enabled Edit Time and Reassign Project buttons for auto sessions', () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
     const editBtn = screen.getByRole('button', { name: /edit time/i })
     const reassignBtn = screen.getByRole('button', { name: /reassign project/i })
     expect(editBtn).toBeInTheDocument()
-    expect(editBtn).toBeDisabled()
+    expect(editBtn).not.toBeDisabled()
     expect(reassignBtn).toBeInTheDocument()
-    expect(reassignBtn).toBeDisabled()
-
-    // Should NOT show manual-only buttons
-    expect(screen.queryByRole('button', { name: /edit description/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^delete$/i })).not.toBeInTheDocument()
+    expect(reassignBtn).not.toBeDisabled()
   })
 
   it('shows Edit Description and Delete buttons for manual sessions', () => {
@@ -97,9 +125,7 @@ describe('SessionDetailPanel', () => {
     const editDescBtn = screen.getByRole('button', { name: /edit description/i })
     const deleteBtn = screen.getByRole('button', { name: /^delete$/i })
     expect(editDescBtn).toBeInTheDocument()
-    expect(editDescBtn).toBeDisabled()
     expect(deleteBtn).toBeInTheDocument()
-    expect(deleteBtn).toBeDisabled()
 
     // Should NOT show auto-only buttons
     expect(screen.queryByRole('button', { name: /edit time/i })).not.toBeInTheDocument()
@@ -143,5 +169,62 @@ describe('SessionDetailPanel', () => {
       { wrapper: createWrapper() }
     )
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument()
+  })
+
+  describe('Edit Time', () => {
+    it('shows time inputs when Edit Time is clicked', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /edit time/i }))
+
+      const inputs = screen.getAllByPlaceholderText('HH:MM:SS')
+      expect(inputs).toHaveLength(2)
+      expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
+    })
+
+    it('cancels edit mode when Cancel is clicked', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /edit time/i }))
+      expect(screen.getAllByPlaceholderText('HH:MM:SS')).toHaveLength(2)
+
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+      expect(screen.queryByPlaceholderText('HH:MM:SS')).not.toBeInTheDocument()
+    })
+
+    it('cancels edit mode when Escape is pressed in edit mode', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /edit time/i }))
+      const panel = screen.getByRole('region')
+      fireEvent.keyDown(panel, { key: 'Escape' })
+
+      // Should cancel edit mode, NOT close the panel
+      expect(screen.queryByPlaceholderText('HH:MM:SS')).not.toBeInTheDocument()
+      expect(defaultProps.onClose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Reassign Project', () => {
+    it('shows project dropdown when Reassign Project is clicked', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /reassign project/i }))
+
+      // The reassign dropdown should appear with a cancel button
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
+    })
+
+    it('cancels reassign mode on cancel click', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /reassign project/i }))
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+      // Should show original client/project names again
+      expect(screen.getByText('Acme Corp')).toBeInTheDocument()
+      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    })
   })
 })

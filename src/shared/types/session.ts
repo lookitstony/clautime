@@ -54,6 +54,16 @@ export interface DiscoveredProject {
   hasClaudeDir: boolean
 }
 
+/** Fields that can be updated on an existing session */
+export interface UpdateSession {
+  startedAt?: string
+  endedAt?: string
+  durationMinutes?: number
+  description?: string | null
+  projectId?: number | null
+  clientId?: number | null
+}
+
 /** A detected session before DB insertion (output of detection algorithm) */
 export interface DetectedSession {
   startedAt: string

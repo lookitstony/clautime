@@ -39,7 +39,26 @@ const api = {
     getPromptTimings: (
       sessionId: number
     ): Promise<IpcResult<import('../shared/types/session').PromptTiming[]>> =>
-      ipcRenderer.invoke('session:getPromptTimings', sessionId)
+      ipcRenderer.invoke('session:getPromptTimings', sessionId),
+    update: (
+      id: number,
+      data: import('../shared/types/session').UpdateSession
+    ): Promise<IpcResult<import('../shared/types/session').Session>> =>
+      ipcRenderer.invoke('session:update', id, data),
+    delete: (id: number): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('session:delete', id),
+    create: (
+      data: {
+        projectPath: string
+        startedAt: string
+        endedAt: string
+        durationMinutes: number
+        description?: string
+        projectId?: number | null
+        clientId?: number | null
+      }
+    ): Promise<IpcResult<import('../shared/types/session').Session>> =>
+      ipcRenderer.invoke('session:create', data)
   },
   clients: {
     getAll: (): Promise<IpcResult<import('../shared/types/client-project').Client[]>> =>

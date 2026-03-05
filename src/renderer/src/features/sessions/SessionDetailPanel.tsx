@@ -1,9 +1,21 @@
-import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
+import { ChevronRight, Pencil, FolderSync } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { formatDuration, formatTimeRange } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { usePromptTimings } from './use-sessions'
+import { usePromptTimings, useUpdateSession } from './use-sessions'
+import { useClients } from '../clients/use-clients'
+import { useProjects } from '../clients/use-projects'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
 
 interface SessionDetailPanelProps {
@@ -25,6 +37,25 @@ function StatCard({ label, value }: { label: string; value: string }): React.JSX
 
 function formatTime(isoString: string): string {
   return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
+/** Convert HH:MM or HH:MM:SS to an ISO string on the same date as the reference. */
+function timeStringToIso(timeStr: string, referenceIso: string): string | null {
+  const parts = timeStr.split(':').map(Number)
+  if (parts.length < 2 || parts.some(isNaN)) return null
+  const [h, m, s = 0] = parts
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) return null
+  const ref = new Date(referenceIso)
+  const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), h, m, s)
+  return d.toISOString()
+}
+
+/** Format ISO string to HH:MM:SS for input */
+function isoToTimeInput(isoString: string): string {
+  const d = new Date(isoString)
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((v) => String(v).padStart(2, '0'))
+    .join(':')
 }
 
 function formatLatency(seconds: number | null): string {
@@ -80,6 +111,19 @@ export function SessionDetailPanel({
     showTimings ? session.id : null
   )
 
+  // Edit time state
+  const [isEditingTime, setIsEditingTime] = useState(false)
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+
+  // Reassign project state
+  const [isReassigning, setIsReassigning] = useState(false)
+
+  const updateSession = useUpdateSession()
+  const { data: clients } = useClients()
+  const { data: allProjects } = useProjects()
+
   useEffect(() => {
     panelRef.current?.focus()
     panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -88,14 +132,167 @@ export function SessionDetailPanel({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (isEditingTime) {
+          setIsEditingTime(false)
+          setEditError(null)
+          e.stopPropagation()
+          return
+        }
+        if (isReassigning) {
+          setIsReassigning(false)
+          e.stopPropagation()
+          return
+        }
         e.stopPropagation()
         onClose()
       }
     },
-    [onClose]
+    [onClose, isEditingTime, isReassigning]
+  )
+
+  // Edit time handlers
+  const startEditTime = useCallback(() => {
+    setEditStart(isoToTimeInput(session.startedAt))
+    setEditEnd(isoToTimeInput(session.endedAt))
+    setEditError(null)
+    setIsEditingTime(true)
+  }, [session.startedAt, session.endedAt])
+
+  const computeEditDuration = (): number | null => {
+    const startIso = timeStringToIso(editStart, session.startedAt)
+    const endIso = timeStringToIso(editEnd, session.endedAt)
+    if (!startIso || !endIso) return null
+    const diffMs = new Date(endIso).getTime() - new Date(startIso).getTime()
+    if (diffMs <= 0) return null
+    return Math.round(diffMs / 60_000)
+  }
+
+  const saveTimeEdit = useCallback(() => {
+    const startIso = timeStringToIso(editStart, session.startedAt)
+    const endIso = timeStringToIso(editEnd, session.endedAt)
+    if (!startIso || !endIso) {
+      setEditError('Invalid time format (HH:MM:SS)')
+      return
+    }
+    if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+      setEditError('End time must be after start time')
+      return
+    }
+
+    const durationMinutes = Math.round(
+      (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000
+    )
+
+    // Save previous values for undo
+    const prev = {
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      durationMinutes: session.durationMinutes
+    }
+
+    updateSession.mutate(
+      { id: session.id, data: { startedAt: startIso, endedAt: endIso, durationMinutes } },
+      {
+        onSuccess: () => {
+          setIsEditingTime(false)
+          setEditError(null)
+          toast.success('Session updated', {
+            action: {
+              label: 'Undo',
+              onClick: () => {
+                updateSession.mutate({ id: session.id, data: prev })
+              }
+            },
+            duration: 5000
+          })
+        },
+        onError: (err) => {
+          setEditError(err.message)
+        }
+      }
+    )
+  }, [editStart, editEnd, session, updateSession])
+
+  const handleTimeKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        saveTimeEdit()
+      } else if (e.key === 'Escape') {
+        e.stopPropagation()
+        setIsEditingTime(false)
+        setEditError(null)
+      }
+    },
+    [saveTimeEdit]
+  )
+
+  // Reassign project handler
+  const handleReassign = useCallback(
+    (value: string) => {
+      if (value === '__none__') {
+        const prev = { projectId: session.projectId, clientId: session.clientId }
+        updateSession.mutate(
+          { id: session.id, data: { projectId: null, clientId: null } },
+          {
+            onSuccess: () => {
+              setIsReassigning(false)
+              toast.success('Session unassigned', {
+                action: {
+                  label: 'Undo',
+                  onClick: () => {
+                    updateSession.mutate({ id: session.id, data: prev })
+                  }
+                },
+                duration: 5000
+              })
+            }
+          }
+        )
+        return
+      }
+
+      const projectId = parseInt(value, 10)
+      const project = allProjects?.find((p) => p.id === projectId)
+      if (!project) return
+
+      const prev = { projectId: session.projectId, clientId: session.clientId }
+
+      updateSession.mutate(
+        { id: session.id, data: { projectId: project.id, clientId: project.clientId } },
+        {
+          onSuccess: () => {
+            setIsReassigning(false)
+            toast.success('Session reassigned', {
+              action: {
+                label: 'Undo',
+                onClick: () => {
+                  updateSession.mutate({ id: session.id, data: prev })
+                }
+              },
+              duration: 5000
+            })
+          }
+        }
+      )
+    },
+    [session, allProjects, updateSession]
   )
 
   const isAuto = session.source === 'auto'
+  const editDuration = isEditingTime ? computeEditDuration() : null
+
+  // Group projects by client for the reassign dropdown
+  const projectsByClient = allProjects?.reduce(
+    (acc, p) => {
+      const client = clients?.find((c) => c.id === p.clientId)
+      const key = client?.name ?? 'Unknown'
+      if (!acc[key]) acc[key] = []
+      acc[key].push(p)
+      return acc
+    },
+    {} as Record<string, typeof allProjects>
+  )
 
   return (
     <div
@@ -109,8 +306,59 @@ export function SessionDetailPanel({
     >
       {/* Stat cards grid */}
       <div className="mb-4 grid grid-cols-4 gap-3">
-        <StatCard label="Duration" value={formatDuration(session.durationMinutes)} />
-        <StatCard label="Time Range" value={formatTimeRange(session.startedAt, session.endedAt)} />
+        {isEditingTime ? (
+          <div className="col-span-2 rounded-md bg-[var(--background-secondary)] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={editStart}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  setEditStart(e.target.value)
+                  setEditError(null)
+                }}
+                onKeyDown={handleTimeKeyDown}
+                placeholder="HH:MM:SS"
+                className="w-24 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                autoFocus
+              />
+              <span className="text-[var(--text-muted)]">{'\u2013'}</span>
+              <input
+                type="text"
+                value={editEnd}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  setEditEnd(e.target.value)
+                  setEditError(null)
+                }}
+                onKeyDown={handleTimeKeyDown}
+                placeholder="HH:MM:SS"
+                className="w-24 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              {editError && (
+                <span className="text-[11px] text-[var(--destructive)]">{editError}</span>
+              )}
+              {!editError && editDuration != null && (
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Duration: {formatDuration(editDuration)}
+                </span>
+              )}
+            </div>
+            <div className="mt-2 flex gap-1">
+              <Button size="sm" variant="ghost" onClick={saveTimeEdit} className="h-6 px-2 text-[11px] text-[var(--accent)]">
+                Save
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setIsEditingTime(false); setEditError(null) }} className="h-6 px-2 text-[11px]">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <StatCard label="Duration" value={formatDuration(session.durationMinutes)} />
+            <StatCard label="Time Range" value={formatTimeRange(session.startedAt, session.endedAt)} />
+          </>
+        )}
         <StatCard label="Prompts" value={String(session.promptCount)} />
         <StatCard
           label="Source"
@@ -119,22 +367,54 @@ export function SessionDetailPanel({
       </div>
 
       {/* Project / Client attribution */}
-      {(projectName || clientName) && (
-        <div className="mb-3 flex items-center gap-2 text-[13px]">
-          <span
-            className="h-2 w-2 shrink-0 rounded-full"
-            style={{ backgroundColor: projectColor }}
-          />
-          {clientName && (
-            <span className="text-[var(--text-muted)]">
-              {clientName}
-              <span className="mx-1.5">/</span>
-            </span>
-          )}
-          {projectName && (
-            <span className="font-semibold text-[var(--text-primary)]">{projectName}</span>
-          )}
+      {isReassigning ? (
+        <div className="mb-3 flex items-center gap-2">
+          <Select
+            value={session.projectId?.toString() ?? '__none__'}
+            onValueChange={handleReassign}
+          >
+            <SelectTrigger size="sm" className="h-8 min-w-[200px] text-[13px]">
+              <SelectValue placeholder="Select project..." />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value="__none__">
+                <span className="text-[var(--text-muted)]">Unassigned</span>
+              </SelectItem>
+              {projectsByClient &&
+                Object.entries(projectsByClient).map(([clientNameKey, projects]) => (
+                  <SelectGroup key={clientNameKey}>
+                    <SelectLabel>{clientNameKey}</SelectLabel>
+                    {projects!.map((p) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="ghost" onClick={() => setIsReassigning(false)} className="h-8 px-2 text-[11px]">
+            Cancel
+          </Button>
         </div>
+      ) : (
+        (projectName || clientName) && (
+          <div className="mb-3 flex items-center gap-2 text-[13px]">
+            <span
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ backgroundColor: projectColor }}
+            />
+            {clientName && (
+              <span className="text-[var(--text-muted)]">
+                {clientName}
+                <span className="mx-1.5">/</span>
+              </span>
+            )}
+            {projectName && (
+              <span className="font-semibold text-[var(--text-primary)]">{projectName}</span>
+            )}
+          </div>
+        )
       )}
 
       {/* Description / Summary */}
@@ -188,10 +468,22 @@ export function SessionDetailPanel({
       <div className="flex items-center gap-2">
         {isAuto ? (
           <>
-            <Button variant="ghost" size="sm" disabled title="Coming in a future update">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={startEditTime}
+              disabled={isEditingTime}
+            >
+              <Pencil className="mr-1 h-3 w-3" />
               Edit Time
             </Button>
-            <Button variant="ghost" size="sm" disabled title="Coming in a future update">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsReassigning(true)}
+              disabled={isReassigning}
+            >
+              <FolderSync className="mr-1 h-3 w-3" />
               Reassign Project
             </Button>
           </>
