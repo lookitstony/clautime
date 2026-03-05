@@ -74,10 +74,10 @@ export const credentialService = {
   },
 
   /**
-   * Get the configured AI method: 'api-key', 'none', or 'claude-login'.
+   * Get the configured AI method: 'api-key', 'git-only', or 'claude-login'.
    */
   getAiMethod(): string {
-    return settingsService.getSetting('ai_method') ?? 'none'
+    return settingsService.getSetting('ai_method') ?? 'git-only'
   },
 
   /**

@@ -60,6 +60,12 @@ interface AiApi {
   getSummary(sessionId: number): Promise<IpcResult<{ summary: string; tier: string }>>
   generateSummary(sessionId: number): Promise<IpcResult<string | null>>
   generateBatch(sessionIds: number[]): Promise<IpcResult<number>>
+  generateReportSummary(filters: {
+    startDate: string
+    endDate: string
+    projectId?: number
+    clientId?: number
+  }, useAi?: boolean): Promise<IpcResult<string | null>>
 }
 
 interface GitApi {
@@ -70,6 +76,8 @@ interface GitApi {
   getIdentity(): Promise<IpcResult<GitIdentity | null>>
   setIdentity(name: string, email: string): Promise<IpcResult<void>>
   correlate(): Promise<IpcResult<number>>
+  getSessionIdsWithCommits(): Promise<IpcResult<number[]>>
+  getRemoteUrl(projectId: number): Promise<IpcResult<string | null>>
 }
 
 interface UpdaterApi {
@@ -82,6 +90,7 @@ interface UpdaterApi {
 
 interface ReportsApi {
   generate(filters: ReportFilters, format: ReportFormat): Promise<IpcResult<ReportResult>>
+  exportPdf(html: string, filename?: string): Promise<IpcResult<boolean>>
 }
 
 interface ProjectsApi {

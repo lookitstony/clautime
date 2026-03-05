@@ -4,6 +4,7 @@ export interface ReportFilters {
   endDate: string
   clientId?: number
   projectId?: number
+  afterHoursOnly?: boolean
 }
 
 /** Report format type */
@@ -58,11 +59,25 @@ export interface PeriodSummary {
   projects: PeriodProjectItem[]
 }
 
+/** Bottom-line summary included with every report */
+export interface ReportSummary {
+  totalSessions: number
+  totalDurationMinutes: number
+  totalPrompts: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  /** Total billed cost (only for sessions under clients with a billable rate) */
+  totalBilledCost: number
+  /** Breakdown of billed cost per client */
+  billedByClient: { clientName: string; hours: number; rate: number; cost: number }[]
+}
+
 /** Report result */
 export interface ReportResult {
   format: ReportFormat
   filters: ReportFilters
   generatedAt: string
+  summary: ReportSummary
   sessionBreakdown?: SessionLineItem[]
   dailySummary?: DailySummaryItem[]
   periodSummary?: PeriodSummary

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, LayoutList, ArrowRight, ChevronDown, ChevronUp, ChevronRight, Plus } from 'lucide-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -14,6 +14,7 @@ import { ManualBlockForm } from './ManualBlockForm'
 import { useSessions, useSessionStats, useGroupedSessions } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
+import { useSessionIdsWithCommits } from '../git/use-git'
 import { useUIStore } from '@/stores/use-ui-store'
 import { useFilterStore } from '@/stores/use-filter-store'
 import { cn } from '@/lib/utils'
@@ -40,11 +41,30 @@ export function SessionsPage(): React.JSX.Element {
     () => useFilterStore.getState().toSessionFilters(),
     [datePreset, startDate, endDate, filterClientId, filterProjectId]
   )
-  const { data: sessions, isLoading, error } = useSessions(filters)
+  const { data: rawSessions, isLoading, error } = useSessions(filters)
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['settings', 'all'],
+    queryFn: async () => {
+      const r = await window.api.settings.getAll()
+      return r.success ? r.data : {}
+    }
+  })
+  const afterHoursMode = settingsData?.['after_hours_mode'] === 'true'
+
+  const sessions = useMemo(() => {
+    if (!rawSessions || !afterHoursMode) return rawSessions
+    return rawSessions.filter((s) => {
+      const hour = new Date(s.startedAt).getHours()
+      return hour < 7 || hour >= 18
+    })
+  }, [rawSessions, afterHoursMode])
+
   const stats = useSessionStats(sessions, clients)
   const groups = useGroupedSessions(sessions, allProjects, clients)
+  const { data: sessionIdsWithCommits } = useSessionIdsWithCommits()
   const queryClient = useQueryClient()
   const setActiveView = useUIStore((s) => s.setActiveView)
   const navigate = useNavigate()
@@ -318,6 +338,7 @@ export function SessionsPage(): React.JSX.Element {
                                 session={session}
                                 projectColor={color}
                                 isSelected={selectedSessionId === session.id}
+                                hasCommits={sessionIdsWithCommits?.has(session.id)}
                                 onSelect={(e) => selectSession(session.id, e?.currentTarget)}
                               />
                               {selectedSessionId === session.id && (

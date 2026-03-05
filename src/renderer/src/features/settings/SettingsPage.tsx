@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, type ChangeEvent, type ReactNode } fr
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useDetectGitIdentity, useSetGitIdentity } from '../git/use-git'
 
@@ -37,14 +38,6 @@ export function SettingsPage(): React.JSX.Element {
   }, [])
 
   // ============= AI Configuration =============
-  const { data: aiMethod } = useQuery({
-    queryKey: ['ai', 'method'],
-    queryFn: async () => {
-      const r = await window.api.ai.getMethod()
-      return r.success ? r.data : 'none'
-    }
-  })
-
   const { data: hasKey } = useQuery({
     queryKey: ['ai', 'hasKey'],
     queryFn: async () => {
@@ -55,17 +48,6 @@ export function SettingsPage(): React.JSX.Element {
 
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [testResult, setTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
-
-  const setAiMethod = useMutation({
-    mutationFn: async (method: string) => {
-      const r = await window.api.ai.setMethod(method)
-      if (!r.success) throw new Error(r.error.message)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ai'] })
-      toast.success('AI method updated')
-    }
-  })
 
   const storeKey = useMutation({
     mutationFn: async (key: string) => {
@@ -155,6 +137,9 @@ export function SettingsPage(): React.JSX.Element {
     }
   }, [saveSetting])
 
+  // ============= After Hours Mode =============
+  const afterHoursMode = settings?.['after_hours_mode'] === 'true'
+
   // ============= Theme =============
   const currentAccent = settings?.['accent_theme'] ?? 'teal'
 
@@ -181,96 +166,66 @@ export function SettingsPage(): React.JSX.Element {
       <section>
         <SectionHeader title="AI Configuration" />
         <SectionCard>
-          <div className="mb-4 space-y-2">
+          <p className="mb-3 text-[12px] text-[var(--text-muted)]">
+            Add an Anthropic API key to enable AI-powered summaries when exporting reports.
+            Without a key, you can still generate work summaries from git commits.
+          </p>
+          <div className="space-y-2">
             <label className="text-[12px] font-semibold text-[var(--text-muted)]">
-              Summarization Method
+              Anthropic API Key
             </label>
-            <div className="flex gap-2">
-              {[
-                { id: 'claude-login', label: 'Claude Login', desc: 'Coming soon' },
-                { id: 'api-key', label: 'API Key', desc: 'Anthropic API key' },
-                { id: 'none', label: 'None', desc: 'Git commits only' }
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setAiMethod.mutate(opt.id)}
-                  disabled={opt.id === 'claude-login'}
-                  className={cn(
-                    'flex-1 rounded-md border px-3 py-2 text-left text-[12px] transition-colors',
-                    aiMethod === opt.id
-                      ? 'border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.1)]'
-                      : 'border-[var(--surface-border)] hover:bg-[var(--background-secondary)]',
-                    opt.id === 'claude-login' && 'cursor-not-allowed opacity-50'
-                  )}
+            {hasKey ? (
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[13px] text-[var(--text-secondary)]">
+                  sk-•••••••••••••••
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={testConnection}
+                  className="text-[11px]"
                 >
-                  <div className="font-semibold text-[var(--text-primary)]">{opt.label}</div>
-                  <div className="text-[var(--text-muted)]">{opt.desc}</div>
-                </button>
-              ))}
-            </div>
+                  {testResult === 'testing' ? 'Testing...' : 'Test Connection'}
+                </Button>
+                {testResult === 'success' && (
+                  <span className="text-[11px] text-[var(--accent)]">Valid</span>
+                )}
+                {testResult === 'error' && (
+                  <span className="text-[11px] text-[var(--destructive)]">Invalid</span>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (window.confirm('Remove your API key? You will need to re-enter it to use AI features.')) {
+                      removeKey.mutate()
+                    }
+                  }}
+                  className="text-[11px] text-[var(--destructive)]"
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
+                  placeholder="sk-ant-..."
+                  className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => apiKeyInput && storeKey.mutate(apiKeyInput)}
+                  disabled={!apiKeyInput}
+                  className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                >
+                  Save Key
+                </Button>
+              </div>
+            )}
           </div>
-
-          {aiMethod === 'api-key' && (
-            <div className="space-y-2">
-              <label className="text-[12px] font-semibold text-[var(--text-muted)]">
-                Anthropic API Key
-              </label>
-              {hasKey ? (
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[13px] text-[var(--text-secondary)]">
-                    sk-•••••••••••••••
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={testConnection}
-                    className="text-[11px]"
-                  >
-                    {testResult === 'testing' ? 'Testing...' : 'Test Connection'}
-                  </Button>
-                  {testResult === 'success' && (
-                    <span className="text-[11px] text-[var(--accent)]">Valid</span>
-                  )}
-                  {testResult === 'error' && (
-                    <span className="text-[11px] text-[var(--destructive)]">Invalid</span>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => removeKey.mutate()}
-                    className="text-[11px] text-[var(--destructive)]"
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    value={apiKeyInput}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setApiKeyInput(e.target.value)}
-                    placeholder="sk-ant-..."
-                    className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={() => apiKeyInput && storeKey.mutate(apiKeyInput)}
-                    disabled={!apiKeyInput}
-                    className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-                  >
-                    Save Key
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {aiMethod === 'none' && (
-            <p className="text-[12px] text-[var(--text-muted)]">
-              Sessions will use git commit messages as descriptions when available.
-            </p>
-          )}
         </SectionCard>
       </section>
 
@@ -358,6 +313,23 @@ export function SettingsPage(): React.JSX.Element {
                 Browse
               </Button>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              <label className="block text-[12px] font-semibold text-[var(--text-muted)]">
+                After Hours Mode
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Hide sessions between 7 AM – 6 PM in Sessions and Reports.
+              </p>
+            </div>
+            <Switch
+              checked={afterHoursMode}
+              onCheckedChange={(checked) =>
+                saveSetting.mutate({ key: 'after_hours_mode', value: checked ? 'true' : 'false' })
+              }
+            />
           </div>
         </SectionCard>
       </section>

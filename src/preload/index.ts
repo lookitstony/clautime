@@ -98,7 +98,12 @@ const api = {
       ipcRenderer.invoke('ai:generateSummary', sessionId),
     generateBatch: (
       sessionIds: number[]
-    ): Promise<IpcResult<number>> => ipcRenderer.invoke('ai:generateBatch', sessionIds)
+    ): Promise<IpcResult<number>> => ipcRenderer.invoke('ai:generateBatch', sessionIds),
+    generateReportSummary: (
+      filters: { startDate: string; endDate: string; projectId?: number; clientId?: number },
+      useAi?: boolean
+    ): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('ai:generateReportSummary', filters, useAi)
   },
   git: {
     scan: (
@@ -121,7 +126,11 @@ const api = {
       name: string,
       email: string
     ): Promise<IpcResult<void>> => ipcRenderer.invoke('git:setIdentity', name, email),
-    correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate')
+    correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate'),
+    getSessionIdsWithCommits: (): Promise<IpcResult<number[]>> =>
+      ipcRenderer.invoke('git:getSessionIdsWithCommits'),
+    getRemoteUrl: (projectId: number): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('git:getRemoteUrl', projectId)
   },
   updater: {
     checkForUpdates: (): Promise<import('../shared/types/ipc').IpcResult<void>> =>
@@ -142,7 +151,9 @@ const api = {
       filters: import('../shared/types/report').ReportFilters,
       format: import('../shared/types/report').ReportFormat
     ): Promise<import('../shared/types/ipc').IpcResult<import('../shared/types/report').ReportResult>> =>
-      ipcRenderer.invoke('report:generate', filters, format)
+      ipcRenderer.invoke('report:generate', filters, format),
+    exportPdf: (html: string, filename?: string): Promise<import('../shared/types/ipc').IpcResult<boolean>> =>
+      ipcRenderer.invoke('report:exportPdf', html, filename)
   },
   projects: {
     getAll: (

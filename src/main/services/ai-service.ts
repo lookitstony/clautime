@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, and, gte, lte, inArray, type SQL } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { aiSummaries } from '../db/schema/ai-summaries'
@@ -161,6 +161,152 @@ export const aiService = {
       .from(aiSummaries)
       .where(eq(aiSummaries.sessionId, sessionId))
       .get() ?? null
+  },
+
+  /**
+   * Generate an AI summary for a report by summarizing all git commit messages
+   * in the given date range (and optional project/client filters).
+   */
+  async generateReportSummary(filters: {
+    startDate: string
+    endDate: string
+    projectId?: number
+    clientId?: number
+  }, useAi = true): Promise<string | null> {
+    const db = getDb()
+
+    const conditions: SQL[] = [
+      gte(gitCommits.committedAt, filters.startDate),
+      lte(gitCommits.committedAt, filters.endDate)
+    ]
+    if (filters.projectId != null) {
+      conditions.push(eq(gitCommits.projectId, filters.projectId))
+    } else if (filters.clientId != null) {
+      const clientProjectIds = db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.clientId, filters.clientId))
+        .all()
+        .map((p) => p.id)
+      if (clientProjectIds.length === 0) {
+        log.info('No projects found for client, no commits to summarize')
+        return null
+      }
+      conditions.push(inArray(gitCommits.projectId, clientProjectIds))
+    }
+
+    const commits = db
+      .select()
+      .from(gitCommits)
+      .where(and(...conditions))
+      .orderBy(gitCommits.committedAt)
+      .all()
+
+    if (commits.length === 0) {
+      log.info('No commits found for report summary')
+      return null
+    }
+
+    // Deduplicate commit messages
+    const messages = [...new Set(commits.map((c) => c.message))].slice(0, 50)
+
+    // Try AI summarization if requested and API key is available
+    if (useAi) {
+      const apiKey = credentialService.getApiKey()
+      if (apiKey) {
+        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, messages)
+        if (aiSummary) return aiSummary
+      }
+    }
+
+    // Fallback: format git commits directly
+    log.info(`Building git-only report summary from ${commits.length} commits`)
+    // Group by project
+    const projectIds = [...new Set(commits.filter((c) => c.projectId != null).map((c) => c.projectId!))]
+    const projectMap = new Map<number, string>()
+    if (projectIds.length > 0) {
+      const allProjects = db.select().from(projects).all()
+      for (const p of allProjects) projectMap.set(p.id, p.name)
+    }
+
+    const grouped = new Map<string, string[]>()
+    for (const c of commits) {
+      const projName = c.projectId != null ? (projectMap.get(c.projectId) ?? 'Unknown') : 'Unknown'
+      const existing = grouped.get(projName) ?? []
+      if (!existing.includes(c.message)) existing.push(c.message)
+      grouped.set(projName, existing)
+    }
+
+    const lines: string[] = []
+    for (const [projName, msgs] of grouped) {
+      lines.push(`**${projName}**`)
+      for (const msg of msgs) {
+        lines.push(`- ${msg}`)
+      }
+      lines.push('')
+    }
+
+    return lines.join('\n').trim()
+  },
+
+  /** @internal Call Claude API to summarize commit messages */
+  async _aiSummarizeCommits(
+    apiKey: string,
+    filters: { startDate: string; endDate: string },
+    totalCount: number,
+    messages: string[]
+  ): Promise<string | null> {
+    const startLabel = new Date(filters.startDate).toLocaleDateString()
+    const endLabel = new Date(filters.endDate).toLocaleDateString()
+
+    const prompt = [
+      `Summarize the following work done during ${startLabel} to ${endLabel}.`,
+      `There were ${totalCount} commits total.`,
+      '',
+      'Commit messages:',
+      ...messages.map((m) => `- ${m}`),
+      '',
+      'Write a professional summary of the work accomplished in this format:',
+      '1. Start with a 1-2 sentence high-level overview of the work done.',
+      '2. Then list specific accomplishments as bullet points (use "- " prefix), grouping related work.',
+      'Focus on what was built, fixed, or improved.',
+      'Do not include commit hashes, timestamps, or technical jargon unless relevant.',
+      'Do not include a title or header line — start directly with the overview sentence.'
+    ].join('\n')
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        log.error(`Report summary API error (${response.status}):`, errorText)
+        return null
+      }
+
+      const data = await response.json()
+      const summary = data.content?.[0]?.type === 'text' ? data.content[0].text : null
+
+      if (summary) {
+        log.info(`Generated AI report summary from ${totalCount} commits`)
+      }
+
+      return summary
+    } catch (error) {
+      log.error('Failed to generate AI report summary:', error)
+      return null
+    }
   }
 }
 

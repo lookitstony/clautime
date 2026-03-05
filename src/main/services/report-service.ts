@@ -9,6 +9,7 @@ import type {
   ReportFilters,
   ReportFormat,
   ReportResult,
+  ReportSummary,
   SessionLineItem,
   DailySummaryItem,
   PeriodProjectItem,
@@ -43,16 +44,25 @@ export const reportService = {
     }
 
     // Fetch sessions
-    const rows = db
+    let rows = db
       .select()
       .from(sessions)
       .where(and(...conditions))
       .orderBy(sessions.startedAt)
       .all()
 
-    // Build lookup maps for project and client names
+    // After-hours filter: exclude sessions starting between 7am–6pm
+    if (filters.afterHoursOnly) {
+      rows = rows.filter((row) => {
+        const hour = new Date(row.startedAt).getHours()
+        return hour < 7 || hour >= 18
+      })
+    }
+
+    // Build lookup maps for project and client names/rates
     const projectMap = new Map<number, { name: string; clientId: number | null }>()
     const clientMap = new Map<number, string>()
+    const clientRateMap = new Map<number, number>()
 
     const allProjects = db.select().from(projects).all()
     for (const p of allProjects) {
@@ -61,6 +71,7 @@ export const reportService = {
     const allClients = db.select().from(clients).all()
     for (const c of allClients) {
       clientMap.set(c.id, c.name)
+      if (c.billableRate != null) clientRateMap.set(c.id, c.billableRate)
     }
 
     const getProjectInfo = (row: typeof rows[0]) => {
@@ -76,7 +87,8 @@ export const reportService = {
     const result: ReportResult = {
       format,
       filters,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      summary: null as unknown as ReportSummary // computed after format switch
     }
 
     switch (format) {
@@ -199,6 +211,38 @@ export const reportService = {
         result.periodSummary = summary
         break
       }
+    }
+
+    // Compute summary with billing
+    const billedAgg = new Map<number, { clientName: string; minutes: number; rate: number }>()
+    for (const row of rows) {
+      if (row.clientId != null && clientRateMap.has(row.clientId)) {
+        const existing = billedAgg.get(row.clientId)
+        if (existing) {
+          existing.minutes += row.durationMinutes
+        } else {
+          billedAgg.set(row.clientId, {
+            clientName: clientMap.get(row.clientId) ?? 'Unknown',
+            minutes: row.durationMinutes,
+            rate: clientRateMap.get(row.clientId)!
+          })
+        }
+      }
+    }
+
+    const billedByClient = Array.from(billedAgg.values()).map((b) => {
+      const hours = Math.round((b.minutes / 60) * 100) / 100
+      return { clientName: b.clientName, hours, rate: b.rate, cost: Math.round(hours * b.rate * 100) / 100 }
+    })
+
+    result.summary = {
+      totalSessions: rows.length,
+      totalDurationMinutes: rows.reduce((s, r) => s + r.durationMinutes, 0),
+      totalPrompts: rows.reduce((s, r) => s + r.promptCount, 0),
+      totalInputTokens: rows.reduce((s, r) => s + r.inputTokens, 0),
+      totalOutputTokens: rows.reduce((s, r) => s + r.outputTokens, 0),
+      totalBilledCost: billedByClient.reduce((s, b) => s + b.cost, 0),
+      billedByClient
     }
 
     const durationMs = Date.now() - startTime
