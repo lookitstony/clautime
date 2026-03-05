@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { SessionsPage } from '@/features/sessions/SessionsPage'
 import { ClientsPage } from '@/features/clients/ClientsPage'
 import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
 
@@ -77,13 +78,7 @@ const router = createMemoryRouter([
       },
       {
         path: 'settings',
-        element: (
-          <EmptyState
-            icon={Settings}
-            title="Settings"
-            description="Configure your ViberTime preferences"
-          />
-        )
+        element: <SettingsPage />
       }
     ]
   }

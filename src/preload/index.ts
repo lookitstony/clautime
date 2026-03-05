@@ -79,6 +79,16 @@ const api = {
       ipcRenderer.invoke('client:update', id, data),
     delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('client:delete', id)
   },
+  ai: {
+    getMethod: (): Promise<IpcResult<string>> => ipcRenderer.invoke('ai:getMethod'),
+    setMethod: (method: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('ai:setMethod', method),
+    hasApiKey: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('ai:hasApiKey'),
+    storeApiKey: (key: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('ai:storeApiKey', key),
+    removeApiKey: (): Promise<IpcResult<void>> => ipcRenderer.invoke('ai:removeApiKey'),
+    testConnection: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('ai:testConnection')
+  },
   git: {
     scan: (
       projectFilter?: number[]

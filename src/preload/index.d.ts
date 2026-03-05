@@ -49,6 +49,15 @@ interface ClientsApi {
   delete(id: number): Promise<IpcResult<void>>
 }
 
+interface AiApi {
+  getMethod(): Promise<IpcResult<string>>
+  setMethod(method: string): Promise<IpcResult<void>>
+  hasApiKey(): Promise<IpcResult<boolean>>
+  storeApiKey(key: string): Promise<IpcResult<void>>
+  removeApiKey(): Promise<IpcResult<void>>
+  testConnection(): Promise<IpcResult<boolean>>
+}
+
 interface GitApi {
   scan(projectFilter?: number[]): Promise<IpcResult<GitScanResult>>
   getCommitsForSession(sessionId: number): Promise<IpcResult<GitCommit[]>>
@@ -74,6 +83,7 @@ interface Api {
   clients: ClientsApi
   projects: ProjectsApi
   git: GitApi
+  ai: AiApi
 }
 
 declare global {
