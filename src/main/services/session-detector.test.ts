@@ -22,6 +22,7 @@ function makeMessage(
     usage: null,
     uuid: null,
     parentUuid: null,
+    isToolResult: false,
     ...overrides
   }
 }
@@ -180,6 +181,25 @@ describe('detectSessions', () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].messageCount).toBe(2)
+  })
+
+  it('should count only human prompts in messageCount (excludes assistant and tool results)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant' }),
+      makeMessage('2026-03-04T10:02:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:03:00Z', { type: 'assistant' }),
+      makeMessage('2026-03-04T10:04:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:05:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:06:00Z', { type: 'assistant' }),
+      makeMessage('2026-03-04T10:07:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(1)
+    // Only 3 human prompts: messages at :00, :04, :07 (user + not tool result)
+    expect(result[0].messageCount).toBe(3)
   })
 
   it('should include sourceFile from parsed data', () => {

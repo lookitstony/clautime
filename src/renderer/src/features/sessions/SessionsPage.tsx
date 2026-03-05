@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router'
-import { AlertTriangle, LayoutList, ArrowRight } from 'lucide-react'
+import { AlertTriangle, LayoutList, ArrowRight, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,10 +8,14 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { StatsBar } from './StatsBar'
 import { ProjectGroup } from './ProjectGroup'
 import { SessionRow } from './SessionRow'
+import { SessionDetailPanel } from './SessionDetailPanel'
+import { SessionFilterBar } from './SessionFilterBar'
 import { useSessions, useSessionStats, useGroupedSessions } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { useUIStore } from '@/stores/use-ui-store'
+import { useFilterStore } from '@/stores/use-filter-store'
+import { cn } from '@/lib/utils'
 import { getProjectColor, getDateKey, formatDateLabel, formatDuration } from '@/lib/format'
 import type { Session } from '../../../../shared/types/session'
 
@@ -26,16 +30,26 @@ function SessionListSkeleton(): React.JSX.Element {
 }
 
 export function SessionsPage(): React.JSX.Element {
-  const { data: sessions, isLoading, error } = useSessions()
+  const datePreset = useFilterStore((s) => s.datePreset)
+  const startDate = useFilterStore((s) => s.startDate)
+  const endDate = useFilterStore((s) => s.endDate)
+  const filterClientId = useFilterStore((s) => s.clientId)
+  const filterProjectId = useFilterStore((s) => s.projectId)
+  const filters = useMemo(
+    () => useFilterStore.getState().toSessionFilters(),
+    [datePreset, startDate, endDate, filterClientId, filterProjectId]
+  )
+  const { data: sessions, isLoading, error } = useSessions(filters)
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
-  const stats = useSessionStats(sessions, clients, allProjects)
+  const stats = useSessionStats(sessions, clients)
   const groups = useGroupedSessions(sessions, allProjects, clients)
   const queryClient = useQueryClient()
   const setActiveView = useUIStore((s) => s.setActiveView)
   const navigate = useNavigate()
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set())
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null)
 
   // Opens the Welcome Wizard by clearing setup_complete
@@ -60,6 +74,18 @@ export function SessionsPage(): React.JSX.Element {
     })
   }, [])
 
+  const toggleDay = useCallback((dayKey: string) => {
+    setExpandedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(dayKey)) {
+        next.delete(dayKey)
+      } else {
+        next.add(dayKey)
+      }
+      return next
+    })
+  }, [])
+
   // Clear selection when its parent group collapses
   const handleToggleGroup = useCallback(
     (key: string) => {
@@ -71,23 +97,105 @@ export function SessionsPage(): React.JSX.Element {
     [expandedGroups, toggleGroup]
   )
 
-  const selectSession = useCallback((id: number) => {
+  const allGroupKeys = useMemo(
+    () => groups.map((g) => g.projectId != null ? `project:${g.projectId}` : `path:${g.projectPath}`),
+    [groups]
+  )
+
+  const allDayKeys = useMemo(() => {
+    const keys: string[] = []
+    for (const group of groups) {
+      const groupKey = group.projectId != null ? `project:${group.projectId}` : `path:${group.projectPath}`
+      for (const session of group.sessions) {
+        const dk = `${groupKey}:${getDateKey(session.startedAt)}`
+        if (!keys.includes(dk)) keys.push(dk)
+      }
+    }
+    return keys
+  }, [groups])
+
+  const expandAll = useCallback(() => {
+    setExpandedGroups(new Set(allGroupKeys))
+    setExpandedDays(new Set(allDayKeys))
+  }, [allGroupKeys, allDayKeys])
+
+  const collapseAll = useCallback(() => {
+    setExpandedGroups(new Set())
+    setExpandedDays(new Set())
+    setSelectedSessionId(null)
+  }, [])
+
+  const expandAllDays = useCallback(() => {
+    setExpandedDays(new Set(allDayKeys))
+  }, [allDayKeys])
+
+  const collapseAllDays = useCallback(() => {
+    setExpandedDays(new Set())
+    setSelectedSessionId(null)
+  }, [])
+
+  const sessionRowRef = useRef<HTMLElement | null>(null)
+
+  const selectSession = useCallback((id: number, rowEl?: HTMLElement | null) => {
+    if (rowEl) sessionRowRef.current = rowEl
     setSelectedSessionId((prev) => (prev === id ? null : id))
   }, [])
 
+  const handleCloseDetail = useCallback(() => {
+    setSelectedSessionId(null)
+    // Return focus to the trigger row
+    requestAnimationFrame(() => {
+      sessionRowRef.current?.focus()
+    })
+  }, [])
+
+  const hasResults = !isLoading && !error && sessions && sessions.length > 0
+  const hasFilters = useFilterStore((s) => s.hasActiveFilters())
   const isEmpty = !isLoading && !error && (!sessions || sessions.length === 0)
+  const isFilteredEmpty = isEmpty && hasFilters
 
   return (
     <div className="flex h-full flex-col">
       <StatsBar
-        todayTotal={stats.todayTotal}
-        activeSessions={stats.activeSessions}
+        humanHours={stats.humanHours}
+        totalHours={stats.totalHours}
         totalSessions={stats.totalSessions}
-        tokensUsed={stats.tokensUsed}
+        totalPrompts={stats.totalPrompts}
         clientCount={stats.clientCount}
-        unassignedCount={stats.unassignedCount}
         isLoading={isLoading}
       />
+
+      {!isLoading && (hasResults || hasFilters) && (
+        <SessionFilterBar
+          clients={clients ?? []}
+          projects={allProjects ?? []}
+        />
+      )}
+
+      {hasResults && (
+        <div className="flex items-center gap-1 border-b border-[var(--surface-border)] px-4 py-1">
+          <span className="mr-auto text-[11px] text-[var(--text-muted)]">
+            {groups.length} project{groups.length !== 1 ? 's' : ''}
+          </span>
+          <Button variant="ghost" size="sm" onClick={expandAll} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+            <ChevronDown className="mr-0.5 h-3 w-3" />
+            Expand All
+          </Button>
+          <Button variant="ghost" size="sm" onClick={collapseAll} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+            <ChevronUp className="mr-0.5 h-3 w-3" />
+            Collapse All
+          </Button>
+          <span className="mx-1 h-3 w-px bg-[var(--surface-border)]" />
+          <Button variant="ghost" size="sm" onClick={expandAllDays} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+            <ChevronDown className="mr-0.5 h-3 w-3" />
+            Days
+          </Button>
+          <Button variant="ghost" size="sm" onClick={collapseAllDays} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+            <ChevronUp className="mr-0.5 h-3 w-3" />
+            Days
+          </Button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         {isLoading && <SessionListSkeleton />}
@@ -100,7 +208,23 @@ export function SessionsPage(): React.JSX.Element {
           />
         )}
 
-        {isEmpty && (
+        {isFilteredEmpty && (
+          <EmptyState
+            icon={LayoutList}
+            title="No Matching Sessions"
+            description="No sessions match the current filters"
+            action={
+              <Button
+                onClick={() => useFilterStore.getState().clearFilters()}
+                variant="ghost"
+              >
+                Clear Filters
+              </Button>
+            }
+          />
+        )}
+
+        {isEmpty && !hasFilters && (
           <EmptyState
             icon={LayoutList}
             title="No Sessions Found"
@@ -116,7 +240,7 @@ export function SessionsPage(): React.JSX.Element {
           />
         )}
 
-        {!isLoading && !isEmpty && (
+        {hasResults && (
           <div className="divide-y divide-[var(--surface-border)]">
             {groups.map((group) => {
               const groupKey = group.projectId != null
@@ -133,6 +257,7 @@ export function SessionsPage(): React.JSX.Element {
                   isUnassigned={group.isUnassigned}
                   sessionCount={group.sessionCount}
                   totalDurationMinutes={group.totalDurationMinutes}
+                  totalPrompts={group.totalPrompts}
                   isExpanded={expandedGroups.has(groupKey)}
                   onToggle={() => handleToggleGroup(groupKey)}
                 >
@@ -147,27 +272,54 @@ export function SessionsPage(): React.JSX.Element {
                         Map this directory to a client in Clients view
                       </button>
                     )}
-                    {groupSessionsByDay(group.sessions).map((dayGroup) => (
-                      <div key={dayGroup.dateKey}>
-                        <div className="flex items-center justify-between px-10 py-1.5">
-                          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                            {dayGroup.label}
-                          </span>
-                          <span className="text-[11px] text-[var(--text-muted)]">
-                            {dayGroup.sessions.length} session{dayGroup.sessions.length !== 1 ? 's' : ''} · {formatDuration(dayGroup.totalMinutes)}
-                          </span>
+                    {groupSessionsByDay(group.sessions).map((dayGroup) => {
+                      const dayKey = `${groupKey}:${dayGroup.dateKey}`
+                      const isDayExpanded = expandedDays.has(dayKey)
+                      return (
+                        <div key={dayGroup.dateKey}>
+                          <button
+                            type="button"
+                            onClick={() => toggleDay(dayKey)}
+                            className="flex w-full cursor-pointer items-center justify-between px-10 py-1.5 transition-colors hover:bg-[var(--background-elevated)]"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <ChevronRight
+                                size={12}
+                                className={cn(
+                                  'text-[var(--text-muted)] transition-transform duration-200',
+                                  isDayExpanded && 'rotate-90'
+                                )}
+                              />
+                              <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                                {dayGroup.label}
+                              </span>
+                            </span>
+                            <span className="text-[11px] text-[var(--text-muted)]">
+                              {dayGroup.sessions.length} session{dayGroup.sessions.length !== 1 ? 's' : ''} · {formatDuration(dayGroup.totalMinutes)}
+                            </span>
+                          </button>
+                          {isDayExpanded && dayGroup.sessions.map((session) => (
+                            <React.Fragment key={session.id}>
+                              <SessionRow
+                                session={session}
+                                projectColor={color}
+                                isSelected={selectedSessionId === session.id}
+                                onSelect={(e) => selectSession(session.id, e?.currentTarget)}
+                              />
+                              {selectedSessionId === session.id && (
+                                <SessionDetailPanel
+                                  session={session}
+                                  projectName={group.projectName}
+                                  clientName={group.clientName}
+                                  projectColor={color}
+                                  onClose={handleCloseDetail}
+                                />
+                              )}
+                            </React.Fragment>
+                          ))}
                         </div>
-                        {dayGroup.sessions.map((session) => (
-                          <SessionRow
-                            key={session.id}
-                            session={session}
-                            projectColor={color}
-                            isSelected={selectedSessionId === session.id}
-                            onSelect={() => selectSession(session.id)}
-                          />
-                        ))}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </ProjectGroup>
               )

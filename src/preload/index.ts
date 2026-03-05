@@ -35,7 +35,11 @@ const api = {
     getById: (
       id: number
     ): Promise<IpcResult<import('../shared/types/session').Session | null>> =>
-      ipcRenderer.invoke('session:getById', id)
+      ipcRenderer.invoke('session:getById', id),
+    getPromptTimings: (
+      sessionId: number
+    ): Promise<IpcResult<import('../shared/types/session').PromptTiming[]>> =>
+      ipcRenderer.invoke('session:getPromptTimings', sessionId)
   },
   clients: {
     getAll: (): Promise<IpcResult<import('../shared/types/client-project').Client[]>> =>

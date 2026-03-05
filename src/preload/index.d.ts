@@ -1,6 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { IpcResult } from '../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult, DiscoveredProject } from '../shared/types/session'
+import type { Session, SessionFilters, ScanResult, DiscoveredProject, PromptTiming } from '../shared/types/session'
 import type {
   Client,
   NewClient,
@@ -26,6 +26,7 @@ interface SessionsApi {
   reset(): Promise<IpcResult<void>>
   getAll(filters?: SessionFilters): Promise<IpcResult<Session[]>>
   getById(id: number): Promise<IpcResult<Session | null>>
+  getPromptTimings(sessionId: number): Promise<IpcResult<PromptTiming[]>>
 }
 
 interface ClientsApi {

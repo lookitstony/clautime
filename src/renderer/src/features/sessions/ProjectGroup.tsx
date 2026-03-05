@@ -16,6 +16,7 @@ interface ProjectGroupProps {
   isUnassigned?: boolean
   sessionCount: number
   totalDurationMinutes: number
+  totalPrompts: number
   isExpanded: boolean
   onToggle: () => void
   children: ReactNode
@@ -28,6 +29,7 @@ export function ProjectGroup({
   isUnassigned,
   sessionCount,
   totalDurationMinutes,
+  totalPrompts,
   isExpanded,
   onToggle,
   children
@@ -83,13 +85,13 @@ export function ProjectGroup({
             )}
             {projectName}
           </span>
-          <Badge
-            variant="secondary"
-            className="shrink-0 bg-[var(--background-elevated)] text-[10px] font-semibold uppercase text-[var(--text-secondary)]"
-          >
-            {sessionCount}
-          </Badge>
-          <span className="shrink-0 font-mono text-[13px] font-bold text-[var(--accent)]">
+          <span className="w-[5.5rem] shrink-0 text-right text-[11px] text-[var(--text-muted)]">
+            {sessionCount} {sessionCount === 1 ? 'session' : 'sessions'}
+          </span>
+          <span className="w-[5.5rem] shrink-0 text-right text-[11px] text-[var(--text-muted)]">
+            {totalPrompts} {totalPrompts === 1 ? 'prompt' : 'prompts'}
+          </span>
+          <span className="w-[4.5rem] shrink-0 text-right font-mono text-[13px] font-bold text-[var(--accent)]">
             {formatDuration(totalDurationMinutes)}
           </span>
         </div>

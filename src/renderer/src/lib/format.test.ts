@@ -4,7 +4,9 @@ import {
   formatTimeRange,
   formatRelativeTime,
   getProjectColor,
-  getProjectName
+  getProjectName,
+  getDateRangeForPreset,
+  formatShortDate
 } from './format'
 
 describe('formatDuration', () => {
@@ -105,5 +107,54 @@ describe('getProjectName', () => {
 
   it('returns path when no separator', () => {
     expect(getProjectName('ClawdTime')).toBe('ClawdTime')
+  })
+})
+
+describe('getDateRangeForPreset', () => {
+  it('today returns start and end of current day', () => {
+    const { startDate, endDate } = getDateRangeForPreset('today')
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const now = new Date()
+    expect(start.getDate()).toBe(now.getDate())
+    expect(start.getHours()).toBe(0)
+    expect(start.getMinutes()).toBe(0)
+    expect(end.getDate()).toBe(now.getDate())
+    expect(end.getHours()).toBe(23)
+    expect(end.getMinutes()).toBe(59)
+  })
+
+  it('this-week starts on Monday', () => {
+    const { startDate } = getDateRangeForPreset('this-week')
+    const start = new Date(startDate)
+    // Monday = 1
+    expect(start.getDay()).toBe(1)
+  })
+
+  it('last-week returns Mon–Sun range', () => {
+    const { startDate, endDate } = getDateRangeForPreset('last-week')
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    expect(start.getDay()).toBe(1) // Monday
+    expect(end.getDay()).toBe(0) // Sunday
+    // End date should be same calendar week — 6 calendar days after start
+    expect(end.getDate() - start.getDate() === 6 || end.getDate() < start.getDate()).toBe(true)
+  })
+
+  it('this-month starts on 1st of current month', () => {
+    const { startDate } = getDateRangeForPreset('this-month')
+    const start = new Date(startDate)
+    const now = new Date()
+    expect(start.getDate()).toBe(1)
+    expect(start.getMonth()).toBe(now.getMonth())
+  })
+})
+
+describe('formatShortDate', () => {
+  it('formats date as month and day', () => {
+    const result = formatShortDate('2026-03-05T12:00:00Z')
+    // Locale-dependent but should contain "Mar" and "5"
+    expect(result).toMatch(/Mar/)
+    expect(result).toMatch(/5/)
   })
 })

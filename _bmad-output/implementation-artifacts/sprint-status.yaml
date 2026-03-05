@@ -59,9 +59,9 @@ development_status:
   epic-2-retrospective: optional
 
   # Epic 3: Session Management & Corrections
-  epic-3: backlog
-  3-1-session-detail-panel: backlog
-  3-2-session-filtering: backlog
+  epic-3: in-progress
+  3-1-session-detail-panel: done
+  3-2-session-filtering: done
   3-3-edit-session-time-and-reassign-project: backlog
   3-4-split-session: backlog
   3-5-manual-time-blocks: backlog

@@ -23,6 +23,18 @@ export interface SessionFilters {
   startDate?: string
   endDate?: string
   source?: 'auto' | 'manual'
+  clientId?: number
+  projectId?: number
+}
+
+/** Timing data for a single human prompt → assistant response pair */
+export interface PromptTiming {
+  /** When the human prompt was sent */
+  promptAt: string
+  /** When the assistant response arrived (null if no response found) */
+  responseAt: string | null
+  /** Response latency in seconds */
+  latencySeconds: number | null
 }
 
 /** Result of a scan operation */

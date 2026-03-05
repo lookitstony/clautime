@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { Session, SessionFilters, ScanResult } from '../../../../shared/types/session'
+import type { Session, SessionFilters, ScanResult, PromptTiming } from '../../../../shared/types/session'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import { formatDuration, getProjectName } from '@/lib/format'
 
@@ -14,6 +14,20 @@ async function scanSessions(projectFilter?: string[]): Promise<ScanResult> {
   const result = await window.api.sessions.scan(undefined, projectFilter)
   if (!result.success) throw new Error(result.error.message)
   return result.data
+}
+
+async function fetchPromptTimings(sessionId: number): Promise<PromptTiming[]> {
+  const result = await window.api.sessions.getPromptTimings(sessionId)
+  if (!result.success) throw new Error(result.error.message)
+  return result.data
+}
+
+export function usePromptTimings(sessionId: number | null) {
+  return useQuery({
+    queryKey: ['sessions', 'promptTimings', sessionId],
+    queryFn: () => fetchPromptTimings(sessionId!),
+    enabled: sessionId != null
+  })
 }
 
 export function useSessions(filters?: SessionFilters) {
@@ -39,13 +53,11 @@ export function useScanSessions() {
 }
 
 export interface SessionStats {
-  todayTotal: string
-  activeSessions: number
+  humanHours: string
+  totalHours: string
   totalSessions: number
-  tokensUsed: number
+  totalPrompts: number
   clientCount: number
-  projectCount: number
-  unassignedCount: number
 }
 
 export interface ProjectGroup {
@@ -58,49 +70,65 @@ export interface ProjectGroup {
   sessions: Session[]
   sessionCount: number
   totalDurationMinutes: number
+  totalPrompts: number
 }
 
-function isToday(isoString: string): boolean {
-  const date = new Date(isoString)
-  const now = new Date()
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  )
+/**
+ * Merge overlapping time intervals and return total wall-clock minutes.
+ * This represents the actual "human time" spent, counting overlapping
+ * sessions (e.g., two projects open simultaneously) only once.
+ */
+function computeHumanMinutes(sessions: Session[]): number {
+  if (sessions.length === 0) return 0
+
+  const intervals = sessions
+    .map((s) => ({ start: new Date(s.startedAt).getTime(), end: new Date(s.endedAt).getTime() }))
+    .sort((a, b) => a.start - b.start)
+
+  let totalMs = 0
+  let curStart = intervals[0].start
+  let curEnd = intervals[0].end
+
+  for (let i = 1; i < intervals.length; i++) {
+    if (intervals[i].start <= curEnd) {
+      // Overlapping — extend current interval
+      curEnd = Math.max(curEnd, intervals[i].end)
+    } else {
+      // Gap — flush current interval
+      totalMs += curEnd - curStart
+      curStart = intervals[i].start
+      curEnd = intervals[i].end
+    }
+  }
+  totalMs += curEnd - curStart
+
+  return Math.round(totalMs / 60_000)
 }
 
 export function useSessionStats(
   sessions: Session[] | undefined,
-  clients?: Client[],
-  projects?: Project[]
+  clients?: Client[]
 ): SessionStats {
   if (!sessions || sessions.length === 0) {
     return {
-      todayTotal: '0m',
-      activeSessions: 0,
+      humanHours: '0m',
+      totalHours: '0m',
       totalSessions: 0,
-      tokensUsed: 0,
-      clientCount: clients?.length ?? 0,
-      projectCount: projects?.length ?? 0,
-      unassignedCount: 0
+      totalPrompts: 0,
+      clientCount: clients?.length ?? 0
     }
   }
 
-  const todayMinutes = sessions
-    .filter((s) => isToday(s.startedAt))
-    .reduce((sum, s) => sum + s.durationMinutes, 0)
-
-  const unassignedCount = sessions.filter((s) => s.projectId == null).length
+  const totalMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+  const totalPrompts = sessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0)
+  const humanMinutes = computeHumanMinutes(sessions)
 
   return {
-    todayTotal: formatDuration(todayMinutes),
-    activeSessions: 0, // Placeholder until live sessions
+    humanHours: formatDuration(humanMinutes),
+    totalHours: formatDuration(totalMinutes),
     totalSessions: sessions.length,
-    tokensUsed: 0, // Placeholder until token tracking (Epic 6)
-    clientCount: clients?.length ?? 0,
-    projectCount: projects?.length ?? 0,
-    unassignedCount
+    totalPrompts,
+    clientCount: clients?.length ?? 0
   }
 }
 
@@ -155,6 +183,10 @@ export function useGroupedSessions(
       sessionCount: group.sessions.length,
       totalDurationMinutes: group.sessions.reduce(
         (sum, s) => sum + s.durationMinutes,
+        0
+      ),
+      totalPrompts: group.sessions.reduce(
+        (sum, s) => sum + (s.promptCount ?? 0),
         0
       )
     }

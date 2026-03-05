@@ -8,6 +8,7 @@ describe('ProjectGroup', () => {
     projectColor: '#3b82f6',
     sessionCount: 5,
     totalDurationMinutes: 125,
+    totalPrompts: 42,
     isExpanded: false,
     onToggle: vi.fn(),
     children: <div data-testid="child-content">Sessions here</div>
@@ -16,7 +17,8 @@ describe('ProjectGroup', () => {
   it('renders project name and stats', () => {
     render(<ProjectGroup {...defaultProps} />)
     expect(screen.getByText('ClawdTime')).toBeInTheDocument()
-    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByText('5 sessions')).toBeInTheDocument()
+    expect(screen.getByText('42 prompts')).toBeInTheDocument()
     expect(screen.getByText('2h 5m')).toBeInTheDocument()
   })
 

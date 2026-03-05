@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { SessionsPage } from './SessionsPage'
+import { useFilterStore } from '@/stores/use-filter-store'
 import type { Session } from '../../../../shared/types/session'
 
 const mockSessions: Session[] = [
@@ -124,6 +125,7 @@ function createWrapper() {
 
 beforeEach(() => {
   stubApi()
+  useFilterStore.getState().clearFilters()
 })
 
 describe('SessionsPage', () => {
@@ -161,16 +163,18 @@ describe('SessionsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('2')).toBeInTheDocument() // total sessions
     })
-    expect(screen.getByText("Today's Total")).toBeInTheDocument()
+    expect(screen.getByText('Agent Hours')).toBeInTheDocument()
+    expect(screen.getByText('Prompts')).toBeInTheDocument()
   })
 
-  it('expands project group on click', async () => {
+  it('expands project group and day on click', async () => {
     stubApi(mockSessions)
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {
       expect(screen.getByText('ClawdTime')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('ClawdTime'))
+    // Expand project group — day headers appear (use Expand All to open everything)
+    fireEvent.click(screen.getByText('Expand All'))
     await waitFor(() => {
       expect(screen.getAllByText('Auto').length).toBeGreaterThan(0)
     })
@@ -215,6 +219,80 @@ describe('SessionsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Clients')).toBeInTheDocument()
     })
+  })
+
+  it('shows detail panel when a session row is clicked', async () => {
+    stubApi(mockSessions)
+    render(<SessionsPage />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    })
+
+    // Expand everything
+    fireEvent.click(screen.getByText('Expand All'))
+    await waitFor(() => {
+      expect(screen.getAllByText('Auto').length).toBeGreaterThan(0)
+    })
+
+    // Click a session row to open detail panel
+    const sessionRows = screen.getAllByRole('button', { name: /^Session/ })
+    fireEvent.click(sessionRows[0])
+
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: /details for session/i })).toBeInTheDocument()
+    })
+    expect(screen.getByText('No summary available')).toBeInTheDocument()
+  })
+
+  it('closes detail panel when clicking same session again', async () => {
+    stubApi(mockSessions)
+    render(<SessionsPage />, { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    })
+
+    // Expand everything
+    fireEvent.click(screen.getByText('Expand All'))
+    await waitFor(() => {
+      expect(screen.getAllByText('Auto').length).toBeGreaterThan(0)
+    })
+
+    const sessionRows = screen.getAllByRole('button', { name: /^Session/ })
+    // Open
+    fireEvent.click(sessionRows[0])
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: /details for session/i })).toBeInTheDocument()
+    })
+    // Close by clicking same row
+    fireEvent.click(sessionRows[0])
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: /details for session/i })).not.toBeInTheDocument()
+    })
+  })
+
+  it('shows filtered empty state when filters produce no results', async () => {
+    // API returns no sessions (simulating a filter that matches nothing)
+    stubApi([], mockClients, mockProjects)
+    useFilterStore.getState().setDatePreset('today')
+    render(<SessionsPage />, { wrapper: createWrapper() })
+    await waitFor(() => {
+      expect(screen.getByText('No Matching Sessions')).toBeInTheDocument()
+    })
+    // Filter bar should still be visible
+    expect(screen.getByRole('toolbar', { name: 'Session filters' })).toBeInTheDocument()
+    // Clear Filters button in the empty state
+    expect(screen.getByText('Clear Filters')).toBeInTheDocument()
+  })
+
+  it('hides filter bar when truly no sessions and no filters', async () => {
+    stubApi([])
+    render(<SessionsPage />, { wrapper: createWrapper() })
+    await waitFor(() => {
+      expect(screen.getByText('No Sessions Found')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('toolbar', { name: 'Session filters' })).not.toBeInTheDocument()
   })
 
 })

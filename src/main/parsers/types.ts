@@ -21,6 +21,7 @@ export interface ParsedMessage {
   usage: TokenUsage | null
   uuid: string | null
   parentUuid: string | null
+  isToolResult: boolean
 }
 
 /** Aggregated data from one session JSONL file. */

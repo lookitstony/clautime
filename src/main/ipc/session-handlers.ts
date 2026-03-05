@@ -6,7 +6,7 @@ import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult } from '../../shared/types/session'
+import type { Session, SessionFilters, ScanResult, PromptTiming } from '../../shared/types/session'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle(
@@ -62,6 +62,19 @@ export function registerSessionHandlers(): void {
       } catch (error) {
         log.error('IPC session:getById failed:', error)
         return ipcError('SESSION_GET_BY_ID_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'session:getPromptTimings',
+    async (_event, sessionId: number): Promise<IpcResult<PromptTiming[]>> => {
+      try {
+        const result = await sessionService.getPromptTimings(sessionId)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC session:getPromptTimings failed:', error)
+        return ipcError('SESSION_PROMPT_TIMINGS_ERROR', String(error))
       }
     }
   )

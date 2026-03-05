@@ -1,4 +1,4 @@
-import type { ParsedSessionData } from '../parsers/types'
+import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 import type { DetectedSession } from '../../shared/types/session'
 import { normalizePath } from '../../shared/paths'
 
@@ -90,7 +90,7 @@ export function decodeProjectPath(encoded: string): string {
 
 function buildDetectedSession(
   parsed: ParsedSessionData,
-  messages: { timestamp: string }[],
+  messages: ParsedMessage[],
   startIdx: number,
   endIdx: number,
   projectPath: string
@@ -101,6 +101,12 @@ function buildDetectedSession(
   const endMs = new Date(endedAt).getTime()
   const durationMinutes = Math.round((endMs - startMs) / (1000 * 60))
 
+  // Count only human prompts (user messages that are NOT tool results)
+  const humanPrompts = messages
+    .slice(startIdx, endIdx + 1)
+    .filter((m) => m.type === 'user' && !m.isToolResult)
+    .length
+
   return {
     startedAt,
     endedAt,
@@ -108,6 +114,6 @@ function buildDetectedSession(
     projectPath,
     claudeSessionId: parsed.sessionId,
     sourceFile: parsed.sourceFile,
-    messageCount: endIdx - startIdx + 1
+    messageCount: humanPrompts
   }
 }

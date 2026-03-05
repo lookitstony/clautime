@@ -1,4 +1,4 @@
-import { useCallback, type KeyboardEvent } from 'react'
+import { useCallback, type KeyboardEvent, type MouseEvent } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { formatTimeRange, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -8,7 +8,7 @@ interface SessionRowProps {
   session: Session
   projectColor: string
   isSelected: boolean
-  onSelect: () => void
+  onSelect: (e?: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => void
 }
 
 export function SessionRow({
@@ -18,10 +18,10 @@ export function SessionRow({
   onSelect
 }: SessionRowProps): React.JSX.Element {
   const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
+    (e: KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()
-        onSelect()
+        onSelect(e)
       }
     },
     [onSelect]
@@ -58,12 +58,13 @@ export function SessionRow({
         {session.source === 'auto' ? 'Auto' : 'Manual'}
       </Badge>
       <span className="min-w-0 flex-1" />
-      {session.promptCount > 0 && (
-        <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
-          {session.promptCount} {session.promptCount === 1 ? 'prompt' : 'prompts'}
-        </span>
-      )}
-      <span className="shrink-0 font-mono text-[13px] font-semibold text-[var(--text-primary)]">
+      <span className="w-[5.5rem] shrink-0" />
+      <span className="w-[5.5rem] shrink-0 text-right text-[11px] text-[var(--text-muted)]">
+        {session.promptCount > 0
+          ? `${session.promptCount} ${session.promptCount === 1 ? 'prompt' : 'prompts'}`
+          : ''}
+      </span>
+      <span className="w-[4.5rem] shrink-0 text-right font-mono text-[13px] font-semibold text-[var(--text-primary)]">
         {formatDuration(session.durationMinutes)}
       </span>
     </div>

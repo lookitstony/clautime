@@ -2,12 +2,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
 interface StatsBarProps {
-  todayTotal: string
-  activeSessions: number
+  humanHours: string
+  totalHours: string
   totalSessions: number
-  tokensUsed: number
-  clientCount?: number
-  unassignedCount?: number
+  totalPrompts: number
+  clientCount: number
   isLoading: boolean
 }
 
@@ -46,12 +45,11 @@ function StatCardSkeleton(): React.JSX.Element {
 }
 
 export function StatsBar({
-  todayTotal,
-  activeSessions,
+  humanHours,
+  totalHours,
   totalSessions,
-  tokensUsed,
+  totalPrompts,
   clientCount,
-  unassignedCount,
   isLoading
 }: StatsBarProps): React.JSX.Element {
   if (isLoading) {
@@ -70,9 +68,6 @@ export function StatsBar({
     )
   }
 
-  // Show client/project-aware stats when available, otherwise original placeholders
-  const hasAttribution = clientCount != null && clientCount > 0
-
   return (
     <div
       className="grid gap-3 p-4"
@@ -80,18 +75,11 @@ export function StatsBar({
         gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))'
       }}
     >
-      <StatCard label="Today's Total" value={todayTotal} accent />
-      {hasAttribution ? (
-        <StatCard label="Clients" value={clientCount} />
-      ) : (
-        <StatCard label="Active Sessions" value={activeSessions} />
-      )}
-      <StatCard label="Total Sessions" value={totalSessions} />
-      {hasAttribution ? (
-        <StatCard label="Unassigned" value={unassignedCount ?? 0} />
-      ) : (
-        <StatCard label="Tokens Used" value={tokensUsed.toLocaleString()} />
-      )}
+      <StatCard label="Human Hours" value={humanHours} accent />
+      <StatCard label="Agent Hours" value={totalHours} />
+      <StatCard label="Sessions" value={totalSessions} />
+      <StatCard label="Prompts" value={totalPrompts.toLocaleString()} />
+      {clientCount > 0 && <StatCard label="Clients" value={clientCount} />}
     </div>
   )
 }

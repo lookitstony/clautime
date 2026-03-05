@@ -77,3 +77,56 @@ export function getProjectName(projectPath: string): string {
   const segments = normalized.split('/').filter(Boolean)
   return segments[segments.length - 1] || projectPath
 }
+
+export type DatePreset = 'today' | 'this-week' | 'last-week' | 'this-month'
+
+/**
+ * Compute start/end ISO date strings for a date preset.
+ * Week starts on Monday.
+ */
+export function getDateRangeForPreset(preset: DatePreset): { startDate: string; endDate: string } {
+  const now = new Date()
+  const startOfDay = (d: Date): string => {
+    const s = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    return s.toISOString()
+  }
+  const endOfDay = (d: Date): string => {
+    const e = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+    return e.toISOString()
+  }
+
+  switch (preset) {
+    case 'today':
+      return { startDate: startOfDay(now), endDate: endOfDay(now) }
+    case 'this-week': {
+      const day = now.getDay()
+      const diff = day === 0 ? 6 : day - 1 // Monday = 0
+      const monday = new Date(now)
+      monday.setDate(now.getDate() - diff)
+      return { startDate: startOfDay(monday), endDate: endOfDay(now) }
+    }
+    case 'last-week': {
+      const day = now.getDay()
+      const diff = day === 0 ? 6 : day - 1
+      const thisMonday = new Date(now)
+      thisMonday.setDate(now.getDate() - diff)
+      const lastMonday = new Date(thisMonday)
+      lastMonday.setDate(thisMonday.getDate() - 7)
+      const lastSunday = new Date(thisMonday)
+      lastSunday.setDate(thisMonday.getDate() - 1)
+      return { startDate: startOfDay(lastMonday), endDate: endOfDay(lastSunday) }
+    }
+    case 'this-month': {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+      return { startDate: startOfDay(firstDay), endDate: endOfDay(now) }
+    }
+  }
+}
+
+/**
+ * Format an ISO date string as a short display date (e.g., "Mar 5").
+ */
+export function formatShortDate(isoString: string): string {
+  const d = new Date(isoString)
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}

@@ -49,7 +49,8 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
         }
       : null,
     uuid: (raw.uuid as string) || null,
-    parentUuid: (raw.parentUuid as string) || null
+    parentUuid: (raw.parentUuid as string) || null,
+    isToolResult: !!(raw.toolUseResult)
   }
 }
 
