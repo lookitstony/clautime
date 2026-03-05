@@ -3,6 +3,7 @@ import { registerSettingsHandlers } from './settings-handlers'
 import { registerSessionHandlers } from './session-handlers'
 import { registerDialogHandlers } from './dialog-handlers'
 import { registerClientProjectHandlers } from './client-project-handlers'
+import { registerGitHandlers } from './git-handlers'
 
 /** Register all IPC handlers. Call after database initialization. */
 export function registerIpcHandlers(): void {
@@ -11,5 +12,6 @@ export function registerIpcHandlers(): void {
   registerSessionHandlers()
   registerDialogHandlers()
   registerClientProjectHandlers()
+  registerGitHandlers()
   log.info('IPC handlers registered')
 }

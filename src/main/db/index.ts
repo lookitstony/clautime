@@ -9,13 +9,15 @@ import * as appSettingsSchema from './schema/app-settings'
 import * as scanStateSchema from './schema/scan-state'
 import * as clientsSchema from './schema/clients'
 import * as projectsSchema from './schema/projects'
+import * as gitCommitsSchema from './schema/git-commits'
 
 const schema = {
   ...sessionsSchema,
   ...appSettingsSchema,
   ...scanStateSchema,
   ...clientsSchema,
-  ...projectsSchema
+  ...projectsSchema,
+  ...gitCommitsSchema
 }
 
 let db: BetterSQLite3Database<typeof schema>

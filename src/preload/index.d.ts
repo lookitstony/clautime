@@ -1,6 +1,7 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { IpcResult } from '../shared/types/ipc'
 import type { Session, SessionFilters, ScanResult, DiscoveredProject, PromptTiming, UpdateSession } from '../shared/types/session'
+import type { GitCommit, GitScanResult, GitIdentity } from '../shared/types/git'
 import type {
   Client,
   NewClient,
@@ -48,6 +49,16 @@ interface ClientsApi {
   delete(id: number): Promise<IpcResult<void>>
 }
 
+interface GitApi {
+  scan(projectFilter?: number[]): Promise<IpcResult<GitScanResult>>
+  getCommitsForSession(sessionId: number): Promise<IpcResult<GitCommit[]>>
+  getCommitsForProject(projectId: number): Promise<IpcResult<GitCommit[]>>
+  detectIdentity(): Promise<IpcResult<GitIdentity | null>>
+  getIdentity(): Promise<IpcResult<GitIdentity | null>>
+  setIdentity(name: string, email: string): Promise<IpcResult<void>>
+  correlate(): Promise<IpcResult<number>>
+}
+
 interface ProjectsApi {
   getAll(clientId?: number): Promise<IpcResult<Project[]>>
   create(data: NewProject): Promise<IpcResult<Project>>
@@ -62,6 +73,7 @@ interface Api {
   sessions: SessionsApi
   clients: ClientsApi
   projects: ProjectsApi
+  git: GitApi
 }
 
 declare global {

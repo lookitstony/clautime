@@ -79,6 +79,29 @@ const api = {
       ipcRenderer.invoke('client:update', id, data),
     delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('client:delete', id)
   },
+  git: {
+    scan: (
+      projectFilter?: number[]
+    ): Promise<IpcResult<import('../shared/types/git').GitScanResult>> =>
+      ipcRenderer.invoke('git:scan', projectFilter),
+    getCommitsForSession: (
+      sessionId: number
+    ): Promise<IpcResult<import('../shared/types/git').GitCommit[]>> =>
+      ipcRenderer.invoke('git:getCommitsForSession', sessionId),
+    getCommitsForProject: (
+      projectId: number
+    ): Promise<IpcResult<import('../shared/types/git').GitCommit[]>> =>
+      ipcRenderer.invoke('git:getCommitsForProject', projectId),
+    detectIdentity: (): Promise<IpcResult<import('../shared/types/git').GitIdentity | null>> =>
+      ipcRenderer.invoke('git:detectIdentity'),
+    getIdentity: (): Promise<IpcResult<import('../shared/types/git').GitIdentity | null>> =>
+      ipcRenderer.invoke('git:getIdentity'),
+    setIdentity: (
+      name: string,
+      email: string
+    ): Promise<IpcResult<void>> => ipcRenderer.invoke('git:setIdentity', name, email),
+    correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate')
+  },
   projects: {
     getAll: (
       clientId?: number
