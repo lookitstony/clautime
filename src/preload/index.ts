@@ -123,6 +123,13 @@ const api = {
     ): Promise<IpcResult<void>> => ipcRenderer.invoke('git:setIdentity', name, email),
     correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate')
   },
+  reports: {
+    generate: (
+      filters: import('../shared/types/report').ReportFilters,
+      format: import('../shared/types/report').ReportFormat
+    ): Promise<import('../shared/types/ipc').IpcResult<import('../shared/types/report').ReportResult>> =>
+      ipcRenderer.invoke('report:generate', filters, format)
+  },
   projects: {
     getAll: (
       clientId?: number

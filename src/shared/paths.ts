@@ -9,3 +9,9 @@ export function normalizePath(p: string): string {
   }
   return p
 }
+
+export function getProjectName(projectPath: string): string {
+  const normalized = projectPath.replace(/\\/g, '/')
+  const segments = normalized.split('/').filter(Boolean)
+  return segments[segments.length - 1] || projectPath
+}

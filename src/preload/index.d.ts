@@ -10,6 +10,7 @@ import type {
   NewProject,
   UpdateProject
 } from '../shared/types/client-project'
+import type { ReportFilters, ReportFormat, ReportResult } from '../shared/types/report'
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
@@ -71,6 +72,10 @@ interface GitApi {
   correlate(): Promise<IpcResult<number>>
 }
 
+interface ReportsApi {
+  generate(filters: ReportFilters, format: ReportFormat): Promise<IpcResult<ReportResult>>
+}
+
 interface ProjectsApi {
   getAll(clientId?: number): Promise<IpcResult<Project[]>>
   create(data: NewProject): Promise<IpcResult<Project>>
@@ -85,6 +90,7 @@ interface Api {
   sessions: SessionsApi
   clients: ClientsApi
   projects: ProjectsApi
+  reports: ReportsApi
   git: GitApi
   ai: AiApi
 }

@@ -1,11 +1,7 @@
 import { useCallback } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, Outlet, useNavigate } from 'react-router'
-import {
-  Activity,
-  FileBarChart,
-  Settings
-} from 'lucide-react'
+import { Activity } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { ActivityBar } from '@/components/shared/ActivityBar'
@@ -15,6 +11,7 @@ import { SessionsPage } from '@/features/sessions/SessionsPage'
 import { ClientsPage } from '@/features/clients/ClientsPage'
 import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
 import { SettingsPage } from '@/features/settings/SettingsPage'
+import { ReportsPage } from '@/features/reports/ReportsPage'
 import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
 
@@ -64,13 +61,7 @@ const router = createMemoryRouter([
       },
       {
         path: 'reports',
-        element: (
-          <EmptyState
-            icon={FileBarChart}
-            title="No Reports"
-            description="Generate reports once you have session data"
-          />
-        )
+        element: <ReportsPage />
       },
       {
         path: 'clients',
