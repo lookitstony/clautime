@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
-import { ChevronRight, Pencil, FolderSync, Scissors } from 'lucide-react'
+import { ChevronRight, Pencil, FolderSync, Scissors, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { formatDuration, formatTimeRange } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { usePromptTimings, useUpdateSession, useSplitSession } from './use-sessions'
+import { usePromptTimings, useUpdateSession, useSplitSession, useDeleteSession } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
@@ -125,8 +125,16 @@ export function SessionDetailPanel({
   const [splitTime, setSplitTime] = useState('')
   const [splitError, setSplitError] = useState<string | null>(null)
 
+  // Edit description state (manual sessions)
+  const [isEditingDesc, setIsEditingDesc] = useState(false)
+  const [editDesc, setEditDesc] = useState('')
+
+  // Delete confirmation state (manual sessions)
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+
   const updateSession = useUpdateSession()
   const splitSession = useSplitSession()
+  const deleteSession = useDeleteSession()
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
 
@@ -363,6 +371,56 @@ export function SessionDetailPanel({
     [executeSplit]
   )
 
+  // Edit description handlers
+  const startEditDesc = useCallback(() => {
+    setEditDesc(session.description ?? '')
+    setIsEditingDesc(true)
+  }, [session.description])
+
+  const saveDescEdit = useCallback(() => {
+    const prev = { description: session.description }
+    updateSession.mutate(
+      { id: session.id, data: { description: editDesc || null } },
+      {
+        onSuccess: () => {
+          setIsEditingDesc(false)
+          toast.success('Description updated', {
+            action: {
+              label: 'Undo',
+              onClick: () => {
+                updateSession.mutate({ id: session.id, data: prev })
+              }
+            },
+            duration: 5000
+          })
+        }
+      }
+    )
+  }, [editDesc, session, updateSession])
+
+  const handleDescKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        saveDescEdit()
+      } else if (e.key === 'Escape') {
+        e.stopPropagation()
+        setIsEditingDesc(false)
+      }
+    },
+    [saveDescEdit]
+  )
+
+  // Delete handler
+  const handleDelete = useCallback(() => {
+    deleteSession.mutate(session.id, {
+      onSuccess: () => {
+        toast.success('Session deleted')
+        onClose()
+      }
+    })
+  }, [session.id, deleteSession, onClose])
+
   const isAuto = session.source === 'auto'
   const editDuration = isEditingTime ? computeEditDuration() : null
   const splitPreview = isSplitting ? computeSplitPreview() : null
@@ -507,7 +565,26 @@ export function SessionDetailPanel({
         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           Description
         </div>
-        {session.description ? (
+        {isEditingDesc ? (
+          <div>
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              onKeyDown={handleDescKeyDown}
+              rows={3}
+              className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              autoFocus
+            />
+            <div className="mt-1 flex gap-1">
+              <Button size="sm" variant="ghost" onClick={saveDescEdit} className="h-6 px-2 text-[11px] text-[var(--accent)]">
+                Save
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsEditingDesc(false)} className="h-6 px-2 text-[11px]">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : session.description ? (
           <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
             {session.description}
           </p>
@@ -628,12 +705,45 @@ export function SessionDetailPanel({
           </>
         ) : (
           <>
-            <Button variant="ghost" size="sm" disabled title="Coming in a future update">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={startEditDesc}
+              disabled={isEditingDesc}
+            >
+              <Pencil className="mr-1 h-3 w-3" />
               Edit Description
             </Button>
-            <Button variant="ghost" size="sm" disabled title="Coming in a future update">
-              Delete
-            </Button>
+            {isConfirmingDelete ? (
+              <div className="flex items-center gap-1">
+                <span className="text-[12px] text-[var(--text-muted)]">Delete this session?</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDelete}
+                  className="h-6 px-2 text-[11px] text-[var(--destructive)]"
+                >
+                  Confirm
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsConfirmingDelete(false)}
+                  className="h-6 px-2 text-[11px]"
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsConfirmingDelete(true)}
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                Delete
+              </Button>
+            )}
           </>
         )}
       </div>

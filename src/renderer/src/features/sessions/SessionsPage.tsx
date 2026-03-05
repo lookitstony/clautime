@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router'
-import { AlertTriangle, LayoutList, ArrowRight, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react'
+import { AlertTriangle, LayoutList, ArrowRight, ChevronDown, ChevronUp, ChevronRight, Plus } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -10,6 +10,7 @@ import { ProjectGroup } from './ProjectGroup'
 import { SessionRow } from './SessionRow'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import { SessionFilterBar } from './SessionFilterBar'
+import { ManualBlockForm } from './ManualBlockForm'
 import { useSessions, useSessionStats, useGroupedSessions } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
@@ -51,6 +52,7 @@ export function SessionsPage(): React.JSX.Element {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set())
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null)
+  const [showManualForm, setShowManualForm] = useState(false)
 
   // Opens the Welcome Wizard by clearing setup_complete
   const showWizard = useMutation({
@@ -177,6 +179,16 @@ export function SessionsPage(): React.JSX.Element {
           <span className="mr-auto text-[11px] text-[var(--text-muted)]">
             {groups.length} project{groups.length !== 1 ? 's' : ''}
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowManualForm(true)}
+            className="h-6 px-2 text-[11px] text-[var(--accent)]"
+          >
+            <Plus className="mr-0.5 h-3 w-3" />
+            Manual Block
+          </Button>
+          <span className="mx-1 h-3 w-px bg-[var(--surface-border)]" />
           <Button variant="ghost" size="sm" onClick={expandAll} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
             <ChevronDown className="mr-0.5 h-3 w-3" />
             Expand All
@@ -327,6 +339,8 @@ export function SessionsPage(): React.JSX.Element {
           </div>
         )}
       </div>
+
+      <ManualBlockForm open={showManualForm} onOpenChange={setShowManualForm} />
     </div>
   )
 }

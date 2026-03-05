@@ -120,18 +120,53 @@ describe('SessionDetailPanel', () => {
     expect(reassignBtn).not.toBeDisabled()
   })
 
-  it('shows Edit Description and Delete buttons for manual sessions', () => {
+  it('shows enabled Edit Description and Delete buttons for manual sessions', () => {
     const session = { ...baseSession, source: 'manual' as const }
     render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
 
     const editDescBtn = screen.getByRole('button', { name: /edit description/i })
     const deleteBtn = screen.getByRole('button', { name: /^delete$/i })
     expect(editDescBtn).toBeInTheDocument()
+    expect(editDescBtn).not.toBeDisabled()
     expect(deleteBtn).toBeInTheDocument()
+    expect(deleteBtn).not.toBeDisabled()
 
     // Should NOT show auto-only buttons
     expect(screen.queryByRole('button', { name: /edit time/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /reassign project/i })).not.toBeInTheDocument()
+  })
+
+  describe('Manual Session Actions', () => {
+    it('shows edit description textarea when Edit Description is clicked', () => {
+      const session = { ...baseSession, source: 'manual' as const, description: 'Test desc' }
+      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /edit description/i }))
+
+      const textarea = screen.getByRole('textbox')
+      expect(textarea).toBeInTheDocument()
+      expect(textarea).toHaveValue('Test desc')
+    })
+
+    it('shows delete confirmation when Delete is clicked', () => {
+      const session = { ...baseSession, source: 'manual' as const }
+      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+
+      expect(screen.getByText('Delete this session?')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /confirm/i })).toBeInTheDocument()
+    })
+
+    it('cancels delete confirmation', () => {
+      const session = { ...baseSession, source: 'manual' as const }
+      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+      expect(screen.queryByText('Delete this session?')).not.toBeInTheDocument()
+    })
   })
 
   it('calls onClose when Escape is pressed', () => {
