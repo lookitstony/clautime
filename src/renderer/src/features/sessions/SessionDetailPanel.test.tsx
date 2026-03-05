@@ -35,7 +35,8 @@ vi.stubGlobal('window', {
     },
     clients: { getAll: vi.fn().mockResolvedValue({ success: true, data: [] }) },
     projects: { getAll: mockGetAll },
-    git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) }
+    git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) },
+    ai: { getSummary: vi.fn().mockResolvedValue({ success: true, data: { summary: '', tier: 'none' } }) }
   }
 })
 

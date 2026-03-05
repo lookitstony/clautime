@@ -87,7 +87,18 @@ const api = {
     storeApiKey: (key: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('ai:storeApiKey', key),
     removeApiKey: (): Promise<IpcResult<void>> => ipcRenderer.invoke('ai:removeApiKey'),
-    testConnection: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('ai:testConnection')
+    testConnection: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('ai:testConnection'),
+    getSummary: (
+      sessionId: number
+    ): Promise<IpcResult<{ summary: string; tier: string }>> =>
+      ipcRenderer.invoke('ai:getSummary', sessionId),
+    generateSummary: (
+      sessionId: number
+    ): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('ai:generateSummary', sessionId),
+    generateBatch: (
+      sessionIds: number[]
+    ): Promise<IpcResult<number>> => ipcRenderer.invoke('ai:generateBatch', sessionIds)
   },
   git: {
     scan: (

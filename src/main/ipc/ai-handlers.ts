@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { credentialService } from '../services/credential-service'
+import { aiService } from '../services/ai-service'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 
 export function registerAiHandlers(): void {
@@ -63,6 +64,45 @@ export function registerAiHandlers(): void {
       } catch (error) {
         log.error('IPC ai:removeApiKey failed:', error)
         return ipcError('AI_REMOVE_KEY_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ai:getSummary',
+    async (_event, sessionId: number): Promise<IpcResult<{ summary: string; tier: string }>> => {
+      try {
+        const result = await aiService.getSessionSummary(sessionId)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC ai:getSummary failed:', error)
+        return ipcError('AI_SUMMARY_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ai:generateSummary',
+    async (_event, sessionId: number): Promise<IpcResult<string | null>> => {
+      try {
+        const result = await aiService.generateSummary(sessionId)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC ai:generateSummary failed:', error)
+        return ipcError('AI_GENERATE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ai:generateBatch',
+    async (_event, sessionIds: number[]): Promise<IpcResult<number>> => {
+      try {
+        const count = await aiService.generateBatchSummaries(sessionIds)
+        return ipcSuccess(count)
+      } catch (error) {
+        log.error('IPC ai:generateBatch failed:', error)
+        return ipcError('AI_BATCH_ERROR', String(error))
       }
     }
   )

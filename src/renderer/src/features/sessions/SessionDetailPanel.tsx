@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { formatDuration, formatTimeRange } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { usePromptTimings, useUpdateSession, useSplitSession, useDeleteSession } from './use-sessions'
+import { usePromptTimings, useUpdateSession, useSplitSession, useDeleteSession, useSessionSummary, useGenerateSummary } from './use-sessions'
 import { useGitCommitsForSession } from '../git/use-git'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
@@ -112,6 +112,10 @@ export function SessionDetailPanel({
   const { data: timings, isLoading: timingsLoading, isError, error } = usePromptTimings(
     showTimings ? session.id : null
   )
+
+  // AI Summary (three-tier)
+  const { data: summaryData } = useSessionSummary(session.id)
+  const generateSummary = useGenerateSummary()
 
   // Git commits
   const [showCommits, setShowCommits] = useState(false)
@@ -566,10 +570,17 @@ export function SessionDetailPanel({
         )
       )}
 
-      {/* Description / Summary */}
+      {/* Description / Summary (three-tier) */}
       <div className="mb-4">
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          Description
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Description
+          </span>
+          {summaryData?.tier && summaryData.tier !== 'none' && (
+            <span className="rounded bg-[var(--background-secondary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+              {summaryData.tier === 'ai' ? 'AI Summary' : 'Git Commits'}
+            </span>
+          )}
         </div>
         {isEditingDesc ? (
           <div>
@@ -594,8 +605,23 @@ export function SessionDetailPanel({
           <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
             {session.description}
           </p>
+        ) : summaryData?.summary ? (
+          <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
+            {summaryData.summary}
+          </p>
         ) : (
-          <p className="text-[13px] italic text-[var(--text-muted)]">No summary available</p>
+          <div className="flex items-center gap-2">
+            <p className="text-[13px] italic text-[var(--text-muted)]">No summary available</p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => generateSummary.mutate(session.id)}
+              disabled={generateSummary.isPending}
+              className="h-6 px-2 text-[11px] text-[var(--accent)]"
+            >
+              {generateSummary.isPending ? 'Generating...' : 'Generate Summary'}
+            </Button>
+          </div>
         )}
       </div>
 

@@ -101,6 +101,33 @@ export function useCreateSession() {
   })
 }
 
+export function useSessionSummary(sessionId: number | null) {
+  return useQuery({
+    queryKey: ['ai', 'summary', sessionId],
+    queryFn: async () => {
+      const result = await window.api.ai.getSummary(sessionId!)
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    enabled: sessionId != null
+  })
+}
+
+export function useGenerateSummary() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (sessionId: number) => {
+      const result = await window.api.ai.generateSummary(sessionId)
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai', 'summary'] })
+      toast.success('Summary generated')
+    }
+  })
+}
+
 export function useScanSessions() {
   const queryClient = useQueryClient()
   return useMutation({

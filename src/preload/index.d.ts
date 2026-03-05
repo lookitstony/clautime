@@ -56,6 +56,9 @@ interface AiApi {
   storeApiKey(key: string): Promise<IpcResult<void>>
   removeApiKey(): Promise<IpcResult<void>>
   testConnection(): Promise<IpcResult<boolean>>
+  getSummary(sessionId: number): Promise<IpcResult<{ summary: string; tier: string }>>
+  generateSummary(sessionId: number): Promise<IpcResult<string | null>>
+  generateBatch(sessionIds: number[]): Promise<IpcResult<number>>
 }
 
 interface GitApi {
