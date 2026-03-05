@@ -33,7 +33,7 @@ describe('StatusBar', () => {
   it('renders with default values when no sessions', async () => {
     render(<StatusBar />, { wrapper: createWrapper() })
     expect(screen.getByText('0 sessions')).toBeInTheDocument()
-    expect(screen.getByText(/today/)).toBeInTheDocument()
+    expect(screen.getByText(/total/)).toBeInTheDocument()
   })
 
   it('has status role for accessibility', () => {
@@ -41,8 +41,8 @@ describe('StatusBar', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
-  it('renders today total', () => {
+  it('renders total hours', () => {
     render(<StatusBar />, { wrapper: createWrapper() })
-    expect(screen.getByText(/today/)).toBeInTheDocument()
+    expect(screen.getByText(/total/)).toBeInTheDocument()
   })
 })

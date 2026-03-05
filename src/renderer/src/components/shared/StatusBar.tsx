@@ -1,14 +1,26 @@
+import { useState, useEffect } from 'react'
 import { useSessions, useSessionStats } from '@/features/sessions/use-sessions'
 import { useClients } from '@/features/clients/use-clients'
-import { useProjects } from '@/features/clients/use-projects'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Wifi, WifiOff } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
   const { data: sessions } = useSessions()
   const { data: clients } = useClients()
-  const { data: projects } = useProjects()
-  const stats = useSessionStats(sessions, clients, projects)
+  const stats = useSessionStats(sessions, clients)
   const queryClient = useQueryClient()
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const resetMutation = useMutation({
     mutationFn: async () => {
@@ -21,8 +33,8 @@ export function StatusBar(): React.JSX.Element {
     }
   })
 
-  const projectInfo = stats.clientCount > 0
-    ? `${stats.clientCount} client${stats.clientCount !== 1 ? 's' : ''} · ${stats.projectCount} project${stats.projectCount !== 1 ? 's' : ''}${stats.unassignedCount > 0 ? ` · ${stats.unassignedCount} unassigned` : ''}`
+  const statusText = stats.clientCount > 0
+    ? `${stats.clientCount} client${stats.clientCount !== 1 ? 's' : ''} · ${stats.totalSessions} session${stats.totalSessions !== 1 ? 's' : ''}`
     : `${stats.totalSessions} session${stats.totalSessions !== 1 ? 's' : ''}`
 
   return (
@@ -33,7 +45,13 @@ export function StatusBar(): React.JSX.Element {
       aria-live="polite"
     >
       <div className="flex items-center gap-3 text-[var(--text-muted)]">
-        <span>{projectInfo}</span>
+        <span>{statusText}</span>
+        {!isOnline && (
+          <span className="flex items-center gap-1 text-amber-400">
+            <WifiOff size={10} />
+            Offline
+          </span>
+        )}
         {import.meta.env.DEV && (
           <button
             onClick={() => resetMutation.mutate()}
@@ -44,7 +62,7 @@ export function StatusBar(): React.JSX.Element {
         )}
       </div>
       <div className="font-mono text-[var(--accent)]">
-        <span>{stats.todayTotal} today</span>
+        <span>{stats.humanHours} total</span>
       </div>
     </footer>
   )
