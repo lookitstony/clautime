@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { ProjectForm } from './ProjectForm'
+import { ProjectPicker } from './ProjectPicker'
 import { useProjects, useDeleteProject } from './use-projects'
 import type { Project } from '../../../../shared/types/client-project'
 
@@ -26,6 +27,7 @@ export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
   const { data: projects, isLoading } = useProjects(clientId)
   const deleteProject = useDeleteProject()
   const [formOpen, setFormOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null)
 
@@ -125,11 +127,16 @@ export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
         </div>
       ))}
 
-      <div className="px-10 pt-1">
+      <div className="flex gap-2 px-10 pt-1">
+        <Button variant="ghost" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 text-[12px]">
+          + Assign Projects
+        </Button>
         <Button variant="ghost" size="sm" onClick={handleAddProject} className="gap-1.5 text-[12px]">
-          + Add Project
+          + Add Manually
         </Button>
       </div>
+
+      <ProjectPicker clientId={clientId} open={pickerOpen} onClose={() => setPickerOpen(false)} />
 
       <ProjectForm
         open={formOpen}

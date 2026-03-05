@@ -52,10 +52,10 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Client & Project Management
-  epic-2: in-progress
+  epic-2: done
   2-1-client-and-project-database-schema: done
   2-2-clients-and-projects-management-ui: done
-  2-3-session-to-client-project-attribution: backlog
+  2-3-session-to-client-project-attribution: done
   epic-2-retrospective: optional
 
   # Epic 3: Session Management & Corrections

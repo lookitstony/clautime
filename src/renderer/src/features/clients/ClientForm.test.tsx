@@ -9,6 +9,7 @@ const mockClient: Client = {
   id: 1,
   name: 'Acme Corp',
   color: 'var(--project-1)',
+  billableRate: null,
   isActive: true,
   createdAt: '2026-03-04T00:00:00.000Z',
   updatedAt: '2026-03-04T00:00:00.000Z'

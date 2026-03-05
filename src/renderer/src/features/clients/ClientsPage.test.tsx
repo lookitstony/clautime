@@ -9,6 +9,7 @@ const mockClients: Client[] = [
     id: 1,
     name: 'Acme Corp',
     color: 'var(--project-1)',
+    billableRate: null,
     isActive: true,
     createdAt: '2026-03-04T00:00:00.000Z',
     updatedAt: '2026-03-04T00:00:00.000Z'
@@ -17,6 +18,7 @@ const mockClients: Client[] = [
     id: 2,
     name: 'Beta Inc',
     color: 'var(--project-2)',
+    billableRate: null,
     isActive: true,
     createdAt: '2026-03-04T00:00:00.000Z',
     updatedAt: '2026-03-04T00:00:00.000Z'

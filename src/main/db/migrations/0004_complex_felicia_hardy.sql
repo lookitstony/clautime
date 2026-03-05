@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `prompt_count` integer DEFAULT 0 NOT NULL;

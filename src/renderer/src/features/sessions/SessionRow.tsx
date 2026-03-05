@@ -58,6 +58,11 @@ export function SessionRow({
         {session.source === 'auto' ? 'Auto' : 'Manual'}
       </Badge>
       <span className="min-w-0 flex-1" />
+      {session.promptCount > 0 && (
+        <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
+          {session.promptCount} {session.promptCount === 1 ? 'prompt' : 'prompts'}
+        </span>
+      )}
       <span className="shrink-0 font-mono text-[13px] font-semibold text-[var(--text-primary)]">
         {formatDuration(session.durationMinutes)}
       </span>

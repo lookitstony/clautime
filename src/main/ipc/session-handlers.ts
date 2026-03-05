@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { sessionService } from '../services/session-service'
+import { clientProjectService } from '../services/client-project-service'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
@@ -17,7 +18,8 @@ export function registerSessionHandlers(): void {
     ): Promise<IpcResult<ScanResult>> => {
       try {
         const result = await sessionService.scanSessions(claudeDir, projectFilter)
-        return ipcSuccess(result)
+        const attributedCount = clientProjectService.attributeSessions()
+        return ipcSuccess({ ...result, attributedCount })
       } catch (error) {
         log.error('IPC session:scan failed:', error)
         return ipcError('SESSION_SCAN_ERROR', String(error))

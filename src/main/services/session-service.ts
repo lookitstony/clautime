@@ -45,7 +45,7 @@ export const sessionService = {
     if (filesToProcess.length === 0) {
       const durationMs = Date.now() - startTime
       log.info(`Scan complete (no changes) in ${durationMs}ms`)
-      return { newSessions: 0, updatedFiles: 0, totalFiles: allFiles.length, durationMs }
+      return { newSessions: 0, updatedFiles: 0, totalFiles: allFiles.length, durationMs, attributedCount: 0 }
     }
 
     // 3. Parse changed files
@@ -88,6 +88,7 @@ export const sessionService = {
               source: 'auto' as const,
               status: 'completed' as const,
               claudeSessionId: d.claudeSessionId,
+              promptCount: d.messageCount,
               sourceFile: d.sourceFile,
               createdAt: now,
               updatedAt: now
@@ -132,7 +133,8 @@ export const sessionService = {
       newSessions: detected.length,
       updatedFiles: filesToProcess.length,
       totalFiles: allFiles.length,
-      durationMs
+      durationMs,
+      attributedCount: 0
     }
   },
 

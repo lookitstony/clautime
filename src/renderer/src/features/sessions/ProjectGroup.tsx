@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils'
 interface ProjectGroupProps {
   projectName: string
   projectColor: string
+  clientName?: string | null
+  isUnassigned?: boolean
   sessionCount: number
   totalDurationMinutes: number
   isExpanded: boolean
@@ -22,6 +24,8 @@ interface ProjectGroupProps {
 export function ProjectGroup({
   projectName,
   projectColor,
+  clientName,
+  isUnassigned,
   sessionCount,
   totalDurationMinutes,
   isExpanded,
@@ -38,13 +42,19 @@ export function ProjectGroup({
     [onToggle]
   )
 
+  const label = isUnassigned
+    ? `${projectName} (Unassigned)`
+    : clientName
+      ? `${clientName} / ${projectName}`
+      : projectName
+
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <CollapsibleTrigger asChild>
         <div
           role="group"
           aria-expanded={isExpanded}
-          aria-label={`${projectName} - ${sessionCount} sessions, ${formatDuration(totalDurationMinutes)} total`}
+          aria-label={`${label} - ${sessionCount} sessions, ${formatDuration(totalDurationMinutes)} total`}
           tabIndex={0}
           onKeyDown={handleKeyDown}
           className={cn(
@@ -61,10 +71,16 @@ export function ProjectGroup({
             )}
           />
           <span
-            className="h-2 w-2 shrink-0 rounded-full"
-            style={{ backgroundColor: projectColor }}
+            className={cn('h-2 w-2 shrink-0 rounded-full', isUnassigned && 'opacity-40')}
+            style={{ backgroundColor: isUnassigned ? 'var(--text-muted)' : projectColor }}
           />
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+            {clientName && !isUnassigned && (
+              <span className="font-normal text-[var(--text-muted)]">
+                {clientName}
+                <span className="mx-1.5">/</span>
+              </span>
+            )}
             {projectName}
           </span>
           <Badge

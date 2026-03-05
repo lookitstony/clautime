@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
-import { AlertTriangle, LayoutList } from 'lucide-react'
+import { useNavigate } from 'react-router'
+import { AlertTriangle, LayoutList, ArrowRight } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,6 +9,9 @@ import { StatsBar } from './StatsBar'
 import { ProjectGroup } from './ProjectGroup'
 import { SessionRow } from './SessionRow'
 import { useSessions, useSessionStats, useGroupedSessions } from './use-sessions'
+import { useClients } from '../clients/use-clients'
+import { useProjects } from '../clients/use-projects'
+import { useUIStore } from '@/stores/use-ui-store'
 import { getProjectColor, getDateKey, formatDateLabel, formatDuration } from '@/lib/format'
 import type { Session } from '../../../../shared/types/session'
 
@@ -23,9 +27,13 @@ function SessionListSkeleton(): React.JSX.Element {
 
 export function SessionsPage(): React.JSX.Element {
   const { data: sessions, isLoading, error } = useSessions()
-  const stats = useSessionStats(sessions)
-  const groups = useGroupedSessions(sessions)
+  const { data: clients } = useClients()
+  const { data: allProjects } = useProjects()
+  const stats = useSessionStats(sessions, clients, allProjects)
+  const groups = useGroupedSessions(sessions, allProjects, clients)
   const queryClient = useQueryClient()
+  const setActiveView = useUIStore((s) => s.setActiveView)
+  const navigate = useNavigate()
 
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null)
@@ -40,14 +48,13 @@ export function SessionsPage(): React.JSX.Element {
     }
   })
 
-  const toggleGroup = useCallback((projectPath: string) => {
+  const toggleGroup = useCallback((key: string) => {
     setExpandedGroups((prev) => {
-      const isCollapsing = prev.has(projectPath)
       const next = new Set(prev)
-      if (isCollapsing) {
-        next.delete(projectPath)
+      if (next.has(key)) {
+        next.delete(key)
       } else {
-        next.add(projectPath)
+        next.add(key)
       }
       return next
     })
@@ -55,11 +62,11 @@ export function SessionsPage(): React.JSX.Element {
 
   // Clear selection when its parent group collapses
   const handleToggleGroup = useCallback(
-    (projectPath: string) => {
-      if (expandedGroups.has(projectPath)) {
+    (key: string) => {
+      if (expandedGroups.has(key)) {
         setSelectedSessionId(null)
       }
-      toggleGroup(projectPath)
+      toggleGroup(key)
     },
     [expandedGroups, toggleGroup]
   )
@@ -77,6 +84,8 @@ export function SessionsPage(): React.JSX.Element {
         activeSessions={stats.activeSessions}
         totalSessions={stats.totalSessions}
         tokensUsed={stats.tokensUsed}
+        clientCount={stats.clientCount}
+        unassignedCount={stats.unassignedCount}
         isLoading={isLoading}
       />
 
@@ -109,41 +118,60 @@ export function SessionsPage(): React.JSX.Element {
 
         {!isLoading && !isEmpty && (
           <div className="divide-y divide-[var(--surface-border)]">
-            {groups.map((group) => (
-              <ProjectGroup
-                key={group.projectPath}
-                projectName={group.projectName}
-                projectColor={getProjectColor(group.projectPath)}
-                sessionCount={group.sessionCount}
-                totalDurationMinutes={group.totalDurationMinutes}
-                isExpanded={expandedGroups.has(group.projectPath)}
-                onToggle={() => handleToggleGroup(group.projectPath)}
-              >
-                <div className="pb-1">
-                  {groupSessionsByDay(group.sessions).map((dayGroup) => (
-                    <div key={dayGroup.dateKey}>
-                      <div className="flex items-center justify-between px-10 py-1.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                          {dayGroup.label}
-                        </span>
-                        <span className="text-[11px] text-[var(--text-muted)]">
-                          {dayGroup.sessions.length} session{dayGroup.sessions.length !== 1 ? 's' : ''} · {formatDuration(dayGroup.totalMinutes)}
-                        </span>
+            {groups.map((group) => {
+              const groupKey = group.projectId != null
+                ? `project:${group.projectId}`
+                : `path:${group.projectPath}`
+              const color = group.clientColor ?? getProjectColor(group.projectPath)
+
+              return (
+                <ProjectGroup
+                  key={groupKey}
+                  projectName={group.projectName}
+                  projectColor={color}
+                  clientName={group.clientName}
+                  isUnassigned={group.isUnassigned}
+                  sessionCount={group.sessionCount}
+                  totalDurationMinutes={group.totalDurationMinutes}
+                  isExpanded={expandedGroups.has(groupKey)}
+                  onToggle={() => handleToggleGroup(groupKey)}
+                >
+                  <div className="pb-1">
+                    {group.isUnassigned && (
+                      <button
+                        type="button"
+                        onClick={() => { setActiveView('/clients'); navigate('/clients') }}
+                        className="flex w-full items-center gap-2 px-10 py-2 text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent)]"
+                      >
+                        <ArrowRight size={12} />
+                        Map this directory to a client in Clients view
+                      </button>
+                    )}
+                    {groupSessionsByDay(group.sessions).map((dayGroup) => (
+                      <div key={dayGroup.dateKey}>
+                        <div className="flex items-center justify-between px-10 py-1.5">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                            {dayGroup.label}
+                          </span>
+                          <span className="text-[11px] text-[var(--text-muted)]">
+                            {dayGroup.sessions.length} session{dayGroup.sessions.length !== 1 ? 's' : ''} · {formatDuration(dayGroup.totalMinutes)}
+                          </span>
+                        </div>
+                        {dayGroup.sessions.map((session) => (
+                          <SessionRow
+                            key={session.id}
+                            session={session}
+                            projectColor={color}
+                            isSelected={selectedSessionId === session.id}
+                            onSelect={() => selectSession(session.id)}
+                          />
+                        ))}
                       </div>
-                      {dayGroup.sessions.map((session) => (
-                        <SessionRow
-                          key={session.id}
-                          session={session}
-                          projectColor={getProjectColor(group.projectPath)}
-                          isSelected={selectedSessionId === session.id}
-                          onSelect={() => selectSession(session.id)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </ProjectGroup>
-            ))}
+                    ))}
+                  </div>
+                </ProjectGroup>
+              )
+            })}
           </div>
         )}
       </div>

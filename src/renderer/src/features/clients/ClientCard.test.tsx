@@ -8,6 +8,7 @@ const mockClient: Client = {
   id: 1,
   name: 'Acme Corp',
   color: 'var(--project-1)',
+  billableRate: null,
   isActive: true,
   createdAt: '2026-03-04T00:00:00.000Z',
   updatedAt: '2026-03-04T00:00:00.000Z'
@@ -36,6 +37,9 @@ beforeEach(() => {
       update: vi.fn(),
       delete: vi.fn(),
       attributeSessions: vi.fn()
+    },
+    sessions: {
+      getAll: vi.fn().mockResolvedValue({ success: true, data: [] })
     },
     dialog: {
       openFolder: vi.fn().mockResolvedValue({ success: true, data: null })
@@ -135,6 +139,7 @@ describe('ClientCard', () => {
     await waitFor(() => {
       expect(screen.getByText('No projects yet')).toBeInTheDocument()
     })
-    expect(screen.getByText('+ Add Project')).toBeInTheDocument()
+    expect(screen.getByText('+ Assign Projects')).toBeInTheDocument()
+    expect(screen.getByText('+ Add Manually')).toBeInTheDocument()
   })
 })

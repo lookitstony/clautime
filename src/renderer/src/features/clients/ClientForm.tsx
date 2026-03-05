@@ -39,6 +39,7 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
 
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(CLIENT_COLORS[0])
+  const [billableRate, setBillableRate] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -46,9 +47,11 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
       if (client) {
         setName(client.name)
         setColor(client.color)
+        setBillableRate(client.billableRate != null ? String(client.billableRate) : '')
       } else {
         setName('')
         setColor(CLIENT_COLORS[0])
+        setBillableRate('')
       }
       setError('')
     }
@@ -60,15 +63,18 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
 
     setError('')
 
+    const parsedRate = billableRate.trim() ? parseFloat(billableRate) : null
+    const rateValue = parsedRate != null && !isNaN(parsedRate) && parsedRate > 0 ? parsedRate : null
+
     try {
       if (isEdit && client) {
         await updateClient.mutateAsync({
           id: client.id,
-          data: { name: trimmedName, color }
+          data: { name: trimmedName, color, billableRate: rateValue }
         })
         toast.success('Client updated')
       } else {
-        await createClient.mutateAsync({ name: trimmedName, color })
+        await createClient.mutateAsync({ name: trimmedName, color, billableRate: rateValue })
         toast.success('Client created')
       }
       onClose()
@@ -147,6 +153,32 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
                   {color === c && <Check size={14} className="text-white" />}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="client-rate" className="text-[13px] font-medium">
+              Billable Rate
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] text-[var(--text-muted)]">$</span>
+              <input
+                id="client-rate"
+                type="number"
+                min="0"
+                step="0.01"
+                value={billableRate}
+                onChange={(e) => setBillableRate(e.target.value)}
+                placeholder="0.00"
+                className={cn(
+                  'w-32 rounded-md border px-3 py-2 text-[13px]',
+                  'bg-[var(--background-secondary)] text-[var(--text-primary)]',
+                  'placeholder:text-[var(--text-muted)]',
+                  'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
+                  'border-[var(--surface-border)]'
+                )}
+              />
+              <span className="text-[12px] text-[var(--text-muted)]">/ hour</span>
             </div>
           </div>
         </div>

@@ -45,10 +45,55 @@ describe('StatsBar', () => {
         isLoading={true}
       />
     )
-    // Should not render labels when loading
     expect(screen.queryByText("Today's Total")).not.toBeInTheDocument()
-    // Should render skeleton elements
     const skeletons = container.querySelectorAll('[data-slot="skeleton"]')
     expect(skeletons.length).toBeGreaterThan(0)
+  })
+
+  it('shows client count when clients exist', () => {
+    render(
+      <StatsBar
+        todayTotal="1h"
+        activeSessions={0}
+        totalSessions={10}
+        tokensUsed={0}
+        clientCount={3}
+        unassignedCount={2}
+        isLoading={false}
+      />
+    )
+    expect(screen.getByText('Clients')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+  })
+
+  it('shows unassigned count when clients exist', () => {
+    render(
+      <StatsBar
+        todayTotal="1h"
+        activeSessions={0}
+        totalSessions={10}
+        tokensUsed={0}
+        clientCount={2}
+        unassignedCount={5}
+        isLoading={false}
+      />
+    )
+    expect(screen.getByText('Unassigned')).toBeInTheDocument()
+    expect(screen.getByText('5')).toBeInTheDocument()
+  })
+
+  it('shows original stats when no clients', () => {
+    render(
+      <StatsBar
+        todayTotal="2h"
+        activeSessions={1}
+        totalSessions={8}
+        tokensUsed={500}
+        clientCount={0}
+        isLoading={false}
+      />
+    )
+    expect(screen.getByText('Active Sessions')).toBeInTheDocument()
+    expect(screen.getByText('Tokens Used')).toBeInTheDocument()
   })
 })

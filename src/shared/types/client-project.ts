@@ -3,6 +3,8 @@ export interface Client {
   id: number
   name: string
   color: string
+  /** Hourly rate in dollars. Null = no rate set. */
+  billableRate: number | null
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -13,12 +15,15 @@ export interface NewClient {
   name: string
   /** CSS variable reference, e.g. 'var(--project-1)'. Auto-assigned if omitted. */
   color?: string
+  /** Hourly rate in dollars. */
+  billableRate?: number | null
 }
 
 /** Data for updating an existing client. All fields optional. */
 export interface UpdateClient {
   name?: string
   color?: string
+  billableRate?: number | null
   isActive?: boolean
 }
 

@@ -1,17 +1,14 @@
 import { useSessions, useSessionStats } from '@/features/sessions/use-sessions'
-import { formatRelativeTime } from '@/lib/format'
+import { useClients } from '@/features/clients/use-clients'
+import { useProjects } from '@/features/clients/use-projects'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 export function StatusBar(): React.JSX.Element {
   const { data: sessions } = useSessions()
-  const stats = useSessionStats(sessions)
+  const { data: clients } = useClients()
+  const { data: projects } = useProjects()
+  const stats = useSessionStats(sessions, clients, projects)
   const queryClient = useQueryClient()
-
-  const projectCount = sessions
-    ? new Set(sessions.map((s) => s.projectPath)).size
-    : 0
-
-  const lastScan = sessions && sessions.length > 0 ? 'recently' : 'never'
 
   const resetMutation = useMutation({
     mutationFn: async () => {
@@ -24,6 +21,10 @@ export function StatusBar(): React.JSX.Element {
     }
   })
 
+  const projectInfo = stats.clientCount > 0
+    ? `${stats.clientCount} client${stats.clientCount !== 1 ? 's' : ''} · ${stats.projectCount} project${stats.projectCount !== 1 ? 's' : ''}${stats.unassignedCount > 0 ? ` · ${stats.unassignedCount} unassigned` : ''}`
+    : `${stats.totalSessions} session${stats.totalSessions !== 1 ? 's' : ''}`
+
   return (
     <footer
       className="flex h-6 shrink-0 items-center justify-between border-t border-[var(--surface-border)] bg-[var(--background-secondary)] px-3"
@@ -32,8 +33,7 @@ export function StatusBar(): React.JSX.Element {
       aria-live="polite"
     >
       <div className="flex items-center gap-3 text-[var(--text-muted)]">
-        <span>Watching {projectCount} projects</span>
-        <span>Last scan: {lastScan}</span>
+        <span>{projectInfo}</span>
         {import.meta.env.DEV && (
           <button
             onClick={() => resetMutation.mutate()}

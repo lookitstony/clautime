@@ -6,6 +6,8 @@ interface StatsBarProps {
   activeSessions: number
   totalSessions: number
   tokensUsed: number
+  clientCount?: number
+  unassignedCount?: number
   isLoading: boolean
 }
 
@@ -48,6 +50,8 @@ export function StatsBar({
   activeSessions,
   totalSessions,
   tokensUsed,
+  clientCount,
+  unassignedCount,
   isLoading
 }: StatsBarProps): React.JSX.Element {
   if (isLoading) {
@@ -66,6 +70,9 @@ export function StatsBar({
     )
   }
 
+  // Show client/project-aware stats when available, otherwise original placeholders
+  const hasAttribution = clientCount != null && clientCount > 0
+
   return (
     <div
       className="grid gap-3 p-4"
@@ -74,9 +81,17 @@ export function StatsBar({
       }}
     >
       <StatCard label="Today's Total" value={todayTotal} accent />
-      <StatCard label="Active Sessions" value={activeSessions} />
+      {hasAttribution ? (
+        <StatCard label="Clients" value={clientCount} />
+      ) : (
+        <StatCard label="Active Sessions" value={activeSessions} />
+      )}
       <StatCard label="Total Sessions" value={totalSessions} />
-      <StatCard label="Tokens Used" value={tokensUsed.toLocaleString()} />
+      {hasAttribution ? (
+        <StatCard label="Unassigned" value={unassignedCount ?? 0} />
+      ) : (
+        <StatCard label="Tokens Used" value={tokensUsed.toLocaleString()} />
+      )}
     </div>
   )
 }

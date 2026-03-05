@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
 
 export const clients = sqliteTable(
   'clients',
@@ -6,6 +6,7 @@ export const clients = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     name: text('name').notNull().unique(),
     color: text('color').notNull(),
+    billableRate: real('billable_rate'),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at')
       .notNull()

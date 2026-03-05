@@ -9,6 +9,7 @@ export interface Session {
   description: string | null
   status: 'active' | 'completed'
   claudeSessionId: string | null
+  promptCount: number
   sourceFile: string | null
   projectId: number | null
   clientId: number | null
@@ -30,6 +31,7 @@ export interface ScanResult {
   updatedFiles: number
   totalFiles: number
   durationMs: number
+  attributedCount: number
 }
 
 /** A project discovered during folder scanning */

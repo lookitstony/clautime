@@ -22,7 +22,6 @@ describe('ProjectGroup', () => {
 
   it('hides children when collapsed', () => {
     render(<ProjectGroup {...defaultProps} isExpanded={false} />)
-    // Collapsible removes content from DOM when closed
     expect(screen.queryByTestId('child-content')).not.toBeInTheDocument()
   })
 
@@ -54,7 +53,7 @@ describe('ProjectGroup', () => {
     expect(onToggle).toHaveBeenCalled()
   })
 
-  it('has correct aria-label', () => {
+  it('has correct aria-label without client name', () => {
     render(<ProjectGroup {...defaultProps} />)
     const group = screen.getByRole('group')
     expect(group).toHaveAttribute(
@@ -69,5 +68,50 @@ describe('ProjectGroup', () => {
 
     rerender(<ProjectGroup {...defaultProps} isExpanded={true} />)
     expect(screen.getByRole('group')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('displays client name when provided', () => {
+    render(<ProjectGroup {...defaultProps} clientName="Acme Corp" />)
+    expect(screen.getByText('Acme Corp')).toBeInTheDocument()
+    expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+  })
+
+  it('includes client name in aria-label when provided', () => {
+    render(<ProjectGroup {...defaultProps} clientName="Acme Corp" />)
+    const group = screen.getByRole('group')
+    expect(group).toHaveAttribute(
+      'aria-label',
+      'Acme Corp / ClawdTime - 5 sessions, 2h 5m total'
+    )
+  })
+
+  it('renders separator between client name and project name', () => {
+    render(<ProjectGroup {...defaultProps} clientName="Acme Corp" />)
+    expect(screen.getByText('/')).toBeInTheDocument()
+  })
+
+  it('uses muted color dot for unassigned groups', () => {
+    const { container } = render(
+      <ProjectGroup {...defaultProps} isUnassigned={true} />
+    )
+    const dot = container.querySelector('.rounded-full')
+    expect(dot).toHaveClass('opacity-40')
+  })
+
+  it('includes (Unassigned) in aria-label for unassigned groups', () => {
+    render(<ProjectGroup {...defaultProps} isUnassigned={true} />)
+    const group = screen.getByRole('group')
+    expect(group).toHaveAttribute(
+      'aria-label',
+      'ClawdTime (Unassigned) - 5 sessions, 2h 5m total'
+    )
+  })
+
+  it('does not show opacity on assigned groups', () => {
+    const { container } = render(
+      <ProjectGroup {...defaultProps} isUnassigned={false} />
+    )
+    const dot = container.querySelector('.rounded-full')
+    expect(dot).not.toHaveClass('opacity-40')
   })
 })

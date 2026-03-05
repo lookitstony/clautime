@@ -36,7 +36,7 @@ beforeEach(() => {
     sessions: {
       scan: vi.fn().mockResolvedValue({
         success: true,
-        data: { newSessions: 5, updatedFiles: 3, totalFiles: 10, durationMs: 100 }
+        data: { newSessions: 5, updatedFiles: 3, totalFiles: 10, durationMs: 100, attributedCount: 0 }
       }),
       getAll: vi.fn().mockResolvedValue({ success: true, data: [] }),
       getById: vi.fn()

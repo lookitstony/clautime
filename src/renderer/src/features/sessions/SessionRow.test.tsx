@@ -13,7 +13,10 @@ const mockSession: Session = {
   description: null,
   status: 'completed',
   claudeSessionId: 'abc-123',
+  promptCount: 12,
   sourceFile: '/home/user/.claude/projects/test/session.jsonl',
+  projectId: null,
+  clientId: null,
   createdAt: '2026-03-04T12:00:00Z',
   updatedAt: '2026-03-04T12:00:00Z'
 }
@@ -70,5 +73,20 @@ describe('SessionRow', () => {
   it('has aria-expanded attribute', () => {
     render(<SessionRow {...defaultProps} isSelected={true} />)
     expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('displays prompt count when greater than zero', () => {
+    render(<SessionRow {...defaultProps} />)
+    expect(screen.getByText('12 prompts')).toBeInTheDocument()
+  })
+
+  it('hides prompt count when zero', () => {
+    render(
+      <SessionRow
+        {...defaultProps}
+        session={{ ...mockSession, promptCount: 0 }}
+      />
+    )
+    expect(screen.queryByText(/prompts?/)).not.toBeInTheDocument()
   })
 })

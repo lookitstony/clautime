@@ -18,6 +18,13 @@ beforeEach(() => {
       getAll: vi.fn().mockResolvedValue({ success: true, data: [] }),
       scan: vi.fn(),
       getById: vi.fn()
+    },
+    clients: {
+      getAll: vi.fn().mockResolvedValue({ success: true, data: [] })
+    },
+    projects: {
+      getAll: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      attributeSessions: vi.fn().mockResolvedValue({ success: true, data: 0 })
     }
   })
 })
@@ -25,7 +32,7 @@ beforeEach(() => {
 describe('StatusBar', () => {
   it('renders with default values when no sessions', async () => {
     render(<StatusBar />, { wrapper: createWrapper() })
-    expect(screen.getByText('Watching 0 projects')).toBeInTheDocument()
+    expect(screen.getByText('0 sessions')).toBeInTheDocument()
     expect(screen.getByText(/today/)).toBeInTheDocument()
   })
 
@@ -34,8 +41,8 @@ describe('StatusBar', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
-  it('renders scan status', () => {
+  it('renders today total', () => {
     render(<StatusBar />, { wrapper: createWrapper() })
-    expect(screen.getByText('Last scan: never')).toBeInTheDocument()
+    expect(screen.getByText(/today/)).toBeInTheDocument()
   })
 })

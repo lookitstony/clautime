@@ -22,6 +22,7 @@ function toClient(row: typeof clients.$inferSelect): Client {
     id: row.id,
     name: row.name,
     color: row.color,
+    billableRate: row.billableRate ?? null,
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
@@ -75,7 +76,13 @@ export const clientProjectService = {
 
     const result = db
       .insert(clients)
-      .values({ name: data.name, color, createdAt: now, updatedAt: now })
+      .values({
+        name: data.name,
+        color,
+        billableRate: data.billableRate ?? null,
+        createdAt: now,
+        updatedAt: now
+      })
       .returning()
       .get()
 
@@ -96,6 +103,7 @@ export const clientProjectService = {
       .set({
         ...(data.name !== undefined && { name: data.name }),
         ...(data.color !== undefined && { color: data.color }),
+        ...(data.billableRate !== undefined && { billableRate: data.billableRate }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         updatedAt: now
       })

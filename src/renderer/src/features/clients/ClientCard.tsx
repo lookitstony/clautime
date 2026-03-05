@@ -92,6 +92,14 @@ export function ClientCard({
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
             {client.name}
           </span>
+          {client.billableRate != null && (
+            <Badge
+              variant="secondary"
+              className="shrink-0 bg-[var(--background-elevated)] text-[10px] font-semibold text-[var(--text-secondary)]"
+            >
+              ${client.billableRate}/hr
+            </Badge>
+          )}
           <Badge
             variant="secondary"
             className="shrink-0 bg-[var(--background-elevated)] text-[10px] font-semibold uppercase text-[var(--text-secondary)]"

@@ -14,6 +14,7 @@ export const sessions = sqliteTable(
     description: text('description'),
     status: text('status').notNull().$type<'active' | 'completed'>().default('completed'),
     claudeSessionId: text('claude_session_id'),
+    promptCount: integer('prompt_count').notNull().default(0),
     sourceFile: text('source_file'),
     projectId: integer('project_id').references(() => projects.id),
     clientId: integer('client_id').references(() => clients.id),
