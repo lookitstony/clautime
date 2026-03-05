@@ -7,8 +7,16 @@ import log from 'electron-log/main.js'
 import * as sessionsSchema from './schema/sessions'
 import * as appSettingsSchema from './schema/app-settings'
 import * as scanStateSchema from './schema/scan-state'
+import * as clientsSchema from './schema/clients'
+import * as projectsSchema from './schema/projects'
 
-const schema = { ...sessionsSchema, ...appSettingsSchema, ...scanStateSchema }
+const schema = {
+  ...sessionsSchema,
+  ...appSettingsSchema,
+  ...scanStateSchema,
+  ...clientsSchema,
+  ...projectsSchema
+}
 
 let db: BetterSQLite3Database<typeof schema>
 let sqlite: Database.Database

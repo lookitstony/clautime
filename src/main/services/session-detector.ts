@@ -1,5 +1,6 @@
 import type { ParsedSessionData } from '../parsers/types'
 import type { DetectedSession } from '../../shared/types/session'
+import { normalizePath } from '../../shared/paths'
 
 /**
  * Detect individual work sessions from parsed session data by identifying
@@ -85,18 +86,6 @@ export function decodeProjectPath(encoded: string): string {
   }
 
   return encoded.replace(/-/g, '/')
-}
-
-/**
- * Normalize path for consistent grouping.
- * Windows: forward slashes → backslashes, uppercase drive letter.
- */
-function normalizePath(p: string): string {
-  const driveMatch = p.match(/^([a-zA-Z]):/)
-  if (driveMatch) {
-    return driveMatch[1].toUpperCase() + ':' + p.slice(2).replace(/\//g, '\\')
-  }
-  return p
 }
 
 function buildDetectedSession(

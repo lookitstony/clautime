@@ -52,8 +52,8 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Client & Project Management
-  epic-2: backlog
-  2-1-client-and-project-database-schema: backlog
+  epic-2: in-progress
+  2-1-client-and-project-database-schema: done
   2-2-clients-and-projects-management-ui: backlog
   2-3-session-to-client-project-attribution: backlog
   epic-2-retrospective: optional

@@ -36,6 +36,38 @@ const api = {
       id: number
     ): Promise<IpcResult<import('../shared/types/session').Session | null>> =>
       ipcRenderer.invoke('session:getById', id)
+  },
+  clients: {
+    getAll: (): Promise<IpcResult<import('../shared/types/client-project').Client[]>> =>
+      ipcRenderer.invoke('client:getAll'),
+    create: (
+      data: import('../shared/types/client-project').NewClient
+    ): Promise<IpcResult<import('../shared/types/client-project').Client>> =>
+      ipcRenderer.invoke('client:create', data),
+    update: (
+      id: number,
+      data: import('../shared/types/client-project').UpdateClient
+    ): Promise<IpcResult<import('../shared/types/client-project').Client>> =>
+      ipcRenderer.invoke('client:update', id, data),
+    delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('client:delete', id)
+  },
+  projects: {
+    getAll: (
+      clientId?: number
+    ): Promise<IpcResult<import('../shared/types/client-project').Project[]>> =>
+      ipcRenderer.invoke('project:getAll', clientId),
+    create: (
+      data: import('../shared/types/client-project').NewProject
+    ): Promise<IpcResult<import('../shared/types/client-project').Project>> =>
+      ipcRenderer.invoke('project:create', data),
+    update: (
+      id: number,
+      data: import('../shared/types/client-project').UpdateProject
+    ): Promise<IpcResult<import('../shared/types/client-project').Project>> =>
+      ipcRenderer.invoke('project:update', id, data),
+    delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('project:delete', id),
+    attributeSessions: (): Promise<IpcResult<number>> =>
+      ipcRenderer.invoke('project:attributeSessions')
   }
 }
 

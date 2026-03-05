@@ -15,6 +15,13 @@
       "when": 1772655564790,
       "tag": "0001_absurd_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772669101871,
+      "tag": "0002_fat_morph",
+      "breakpoints": true
     }
   ]
 }

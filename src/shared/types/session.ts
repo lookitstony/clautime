@@ -10,6 +10,8 @@ export interface Session {
   status: 'active' | 'completed'
   claudeSessionId: string | null
   sourceFile: string | null
+  projectId: number | null
+  clientId: number | null
   createdAt: string
   updatedAt: string
 }

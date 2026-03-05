@@ -259,7 +259,7 @@ describe('sessionService', () => {
       expect(allSessions.find((s) => s.source === 'manual')).toBeDefined()
     })
 
-    it('should use default idle timeout of 10 minutes when not configured', async () => {
+    it('should use default idle timeout of 15 minutes when not configured', async () => {
       const file1 = '/home/user/.claude/projects/test/session1.jsonl'
 
       mockDiscoverFiles.mockResolvedValue([file1])
@@ -267,10 +267,10 @@ describe('sessionService', () => {
       mockParseFile.mockResolvedValue(
         makeParsedSession(file1, [
           makeMessage('2026-03-04T10:00:00Z'),
-          // 9 minute gap (< 10 default) — should NOT split
-          makeMessage('2026-03-04T10:09:00Z'),
-          // 11 minute gap (> 10 default) — should split
-          makeMessage('2026-03-04T10:20:00Z')
+          // 14 minute gap (< 15 default) — should NOT split
+          makeMessage('2026-03-04T10:14:00Z'),
+          // 16 minute gap (> 15 default) — should split
+          makeMessage('2026-03-04T10:30:00Z')
         ])
       )
 
