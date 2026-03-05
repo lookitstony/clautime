@@ -4,7 +4,6 @@ import { createMemoryRouter, RouterProvider, Outlet, useNavigate } from 'react-r
 import {
   Activity,
   FileBarChart,
-  Users,
   Settings
 } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -13,6 +12,7 @@ import { ActivityBar } from '@/components/shared/ActivityBar'
 import { StatusBar } from '@/components/shared/StatusBar'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { SessionsPage } from '@/features/sessions/SessionsPage'
+import { ClientsPage } from '@/features/clients/ClientsPage'
 import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
 import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
@@ -73,13 +73,7 @@ const router = createMemoryRouter([
       },
       {
         path: 'clients',
-        element: (
-          <EmptyState
-            icon={Users}
-            title="No Clients"
-            description="Add clients and projects to organize your sessions"
-          />
-        )
+        element: <ClientsPage />
       },
       {
         path: 'settings',
