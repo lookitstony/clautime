@@ -1,4 +1,5 @@
-import { autoUpdater } from 'electron-updater'
+import pkg from 'electron-updater'
+const { autoUpdater } = pkg
 import { BrowserWindow } from 'electron'
 import log from 'electron-log/main.js'
 
