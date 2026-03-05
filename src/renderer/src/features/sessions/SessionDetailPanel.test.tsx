@@ -34,7 +34,8 @@ vi.stubGlobal('window', {
       split: mockSplit
     },
     clients: { getAll: vi.fn().mockResolvedValue({ success: true, data: [] }) },
-    projects: { getAll: mockGetAll }
+    projects: { getAll: mockGetAll },
+    git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) }
   }
 })
 

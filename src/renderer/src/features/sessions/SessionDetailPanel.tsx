@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
-import { ChevronRight, Pencil, FolderSync, Scissors, Trash2 } from 'lucide-react'
+import { ChevronRight, Pencil, FolderSync, Scissors, Trash2, GitCommitHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,9 +14,11 @@ import {
 import { formatDuration, formatTimeRange } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { usePromptTimings, useUpdateSession, useSplitSession, useDeleteSession } from './use-sessions'
+import { useGitCommitsForSession } from '../git/use-git'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
+import type { GitCommit } from '../../../../shared/types/git'
 
 interface SessionDetailPanelProps {
   session: Session
@@ -110,6 +112,10 @@ export function SessionDetailPanel({
   const { data: timings, isLoading: timingsLoading, isError, error } = usePromptTimings(
     showTimings ? session.id : null
   )
+
+  // Git commits
+  const [showCommits, setShowCommits] = useState(false)
+  const { data: gitCommitsData } = useGitCommitsForSession(showCommits ? session.id : null)
 
   // Edit time state
   const [isEditingTime, setIsEditingTime] = useState(false)
@@ -620,6 +626,44 @@ export function SessionDetailPanel({
               {timings && timings.length > 0 && <PromptTimeline timings={timings} />}
               {timings && timings.length === 0 && (
                 <p className="text-[12px] italic text-[var(--text-muted)]">No prompt data found in source file</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Git Commits (collapsible) */}
+      {session.projectId && (
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setShowCommits((v) => !v)}
+            className="mb-2 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+          >
+            <ChevronRight
+              size={12}
+              className={cn('transition-transform duration-200', showCommits && 'rotate-90')}
+            />
+            Git Commits
+          </button>
+          {showCommits && (
+            <div className="rounded-md bg-[var(--background-secondary)] px-3 py-2">
+              {gitCommitsData && gitCommitsData.length > 0 ? (
+                <div className="space-y-1">
+                  {gitCommitsData.map((c) => (
+                    <div key={c.id} className="flex items-start gap-2 text-[12px]">
+                      <GitCommitHorizontal size={12} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                      <span className="font-mono text-[11px] text-[var(--text-muted)]">
+                        {c.hash.slice(0, 7)}
+                      </span>
+                      <span className="text-[var(--text-secondary)]">{c.message}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : gitCommitsData && gitCommitsData.length === 0 ? (
+                <p className="text-[12px] italic text-[var(--text-muted)]">No commits found for this session</p>
+              ) : (
+                <p className="text-[12px] text-[var(--text-muted)]">Loading...</p>
               )}
             </div>
           )}
