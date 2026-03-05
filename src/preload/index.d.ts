@@ -72,6 +72,14 @@ interface GitApi {
   correlate(): Promise<IpcResult<number>>
 }
 
+interface UpdaterApi {
+  checkForUpdates(): Promise<IpcResult<void>>
+  downloadAndInstall(): Promise<IpcResult<void>>
+  getVersion(): Promise<IpcResult<string>>
+  onUpdateAvailable(callback: (info: { version: string; releaseDate: string }) => void): void
+  onUpdateDownloaded(callback: () => void): void
+}
+
 interface ReportsApi {
   generate(filters: ReportFilters, format: ReportFormat): Promise<IpcResult<ReportResult>>
 }
@@ -91,6 +99,7 @@ interface Api {
   clients: ClientsApi
   projects: ProjectsApi
   reports: ReportsApi
+  updater: UpdaterApi
   git: GitApi
   ai: AiApi
 }

@@ -123,6 +123,20 @@ const api = {
     ): Promise<IpcResult<void>> => ipcRenderer.invoke('git:setIdentity', name, email),
     correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate')
   },
+  updater: {
+    checkForUpdates: (): Promise<import('../shared/types/ipc').IpcResult<void>> =>
+      ipcRenderer.invoke('updater:checkForUpdates'),
+    downloadAndInstall: (): Promise<import('../shared/types/ipc').IpcResult<void>> =>
+      ipcRenderer.invoke('updater:downloadAndInstall'),
+    getVersion: (): Promise<import('../shared/types/ipc').IpcResult<string>> =>
+      ipcRenderer.invoke('updater:getVersion'),
+    onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
+      ipcRenderer.on('updater:update-available', (_event, info) => callback(info))
+    },
+    onUpdateDownloaded: (callback: () => void) => {
+      ipcRenderer.on('updater:update-downloaded', () => callback())
+    }
+  },
   reports: {
     generate: (
       filters: import('../shared/types/report').ReportFilters,

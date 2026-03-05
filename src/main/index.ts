@@ -13,6 +13,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initializeDatabase, closeDatabase } from './db'
 import { registerIpcHandlers } from './ipc'
+import { updaterService } from './services/updater-service'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -62,6 +63,12 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  // Initialize auto-updater (only in production)
+  if (!is.dev) {
+    updaterService.initialize()
+    updaterService.startPeriodicChecks()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

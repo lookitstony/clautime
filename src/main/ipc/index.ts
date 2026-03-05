@@ -6,6 +6,7 @@ import { registerClientProjectHandlers } from './client-project-handlers'
 import { registerGitHandlers } from './git-handlers'
 import { registerAiHandlers } from './ai-handlers'
 import { registerReportHandlers } from './report-handlers'
+import { registerUpdaterHandlers } from './updater-handlers'
 
 /** Register all IPC handlers. Call after database initialization. */
 export function registerIpcHandlers(): void {
@@ -17,5 +18,6 @@ export function registerIpcHandlers(): void {
   registerGitHandlers()
   registerAiHandlers()
   registerReportHandlers()
+  registerUpdaterHandlers()
   log.info('IPC handlers registered')
 }

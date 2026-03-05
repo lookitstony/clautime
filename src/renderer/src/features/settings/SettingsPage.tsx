@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, type ChangeEvent } from 'react'
+import { useState, useCallback, useEffect, type ChangeEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,13 @@ function SectionCard({ children }: { children: React.ReactNode }): React.JSX.Ele
 
 export function SettingsPage(): React.JSX.Element {
   const queryClient = useQueryClient()
+  const [appVersion, setAppVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.api.updater.getVersion().then((r) => {
+      if (r.success) setAppVersion(r.data)
+    })
+  }, [])
 
   // ============= AI Configuration =============
   const { data: aiMethod } = useQuery({
@@ -390,8 +397,21 @@ export function SettingsPage(): React.JSX.Element {
       <section>
         <SectionCard>
           <div className="flex items-center justify-between text-[12px] text-[var(--text-muted)]">
-            <span>ClawdTime v0.1.0</span>
-            <span>Built with Electron + React + Vite</span>
+            <span>ClawdTime v{appVersion ?? '0.1.0'}</span>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => {
+                  window.api.updater.checkForUpdates()
+                  toast.info('Checking for updates...')
+                }}
+              >
+                Check for Updates
+              </Button>
+              <span>Built with Electron + React + Vite</span>
+            </div>
           </div>
         </SectionCard>
       </section>
