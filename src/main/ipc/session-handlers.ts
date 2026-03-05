@@ -106,6 +106,19 @@ export function registerSessionHandlers(): void {
   )
 
   ipcMain.handle(
+    'session:split',
+    async (_event, id: number, splitAt: string): Promise<IpcResult<Session[]>> => {
+      try {
+        const [s1, s2] = sessionService.splitSession(id, splitAt)
+        return ipcSuccess([s1, s2])
+      } catch (error) {
+        log.error('IPC session:split failed:', error)
+        return ipcError('SESSION_SPLIT_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
     'session:create',
     async (
       _event,

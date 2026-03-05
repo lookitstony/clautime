@@ -22,6 +22,7 @@ vi.stubGlobal('HTMLSelectElement', { prototype: HtmlSelectProto })
 
 // Mock window.api
 const mockUpdate = vi.fn().mockResolvedValue({ success: true, data: {} })
+const mockSplit = vi.fn().mockResolvedValue({ success: true, data: [{}, {}] })
 const mockGetAll = vi.fn().mockResolvedValue({ success: true, data: [] })
 
 vi.stubGlobal('window', {
@@ -29,7 +30,8 @@ vi.stubGlobal('window', {
   api: {
     sessions: {
       getPromptTimings: vi.fn().mockResolvedValue({ success: true, data: [] }),
-      update: mockUpdate
+      update: mockUpdate,
+      split: mockSplit
     },
     clients: { getAll: vi.fn().mockResolvedValue({ success: true, data: [] }) },
     projects: { getAll: mockGetAll }
@@ -203,6 +205,47 @@ describe('SessionDetailPanel', () => {
       // Should cancel edit mode, NOT close the panel
       expect(screen.queryByPlaceholderText('HH:MM:SS')).not.toBeInTheDocument()
       expect(defaultProps.onClose).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Split Session', () => {
+    it('shows Split Session button for auto sessions', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+      expect(screen.getByRole('button', { name: /split session/i })).toBeInTheDocument()
+    })
+
+    it('shows split UI when Split Session is clicked', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /split session/i }))
+
+      expect(screen.getByPlaceholderText('HH:MM:SS')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /split here/i })).toBeInTheDocument()
+    })
+
+    it('shows duration preview for valid split point', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /split session/i }))
+      // The default split is at the midpoint, so preview should render
+      expect(screen.getByText(/Session 1:/)).toBeInTheDocument()
+      expect(screen.getByText(/Session 2:/)).toBeInTheDocument()
+    })
+
+    it('cancels split when Cancel is clicked', () => {
+      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: /split session/i }))
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+      // Split UI should be gone — no "Split Here" button
+      expect(screen.queryByRole('button', { name: /split here/i })).not.toBeInTheDocument()
+    })
+
+    it('disables Split Session button for very short sessions', () => {
+      const session = { ...baseSession, durationMinutes: 1 }
+      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+      expect(screen.getByRole('button', { name: /split session/i })).toBeDisabled()
     })
   })
 

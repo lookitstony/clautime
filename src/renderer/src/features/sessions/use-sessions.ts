@@ -64,6 +64,20 @@ export function useDeleteSession() {
   })
 }
 
+export function useSplitSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, splitAt }: { id: number; splitAt: string }) => {
+      const result = await window.api.sessions.split(id, splitAt)
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    }
+  })
+}
+
 export function useCreateSession() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
-import { ChevronRight, Pencil, FolderSync } from 'lucide-react'
+import { ChevronRight, Pencil, FolderSync, Scissors } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { formatDuration, formatTimeRange } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { usePromptTimings, useUpdateSession } from './use-sessions'
+import { usePromptTimings, useUpdateSession, useSplitSession } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
@@ -120,7 +120,13 @@ export function SessionDetailPanel({
   // Reassign project state
   const [isReassigning, setIsReassigning] = useState(false)
 
+  // Split session state
+  const [isSplitting, setIsSplitting] = useState(false)
+  const [splitTime, setSplitTime] = useState('')
+  const [splitError, setSplitError] = useState<string | null>(null)
+
   const updateSession = useUpdateSession()
+  const splitSession = useSplitSession()
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
 
@@ -143,11 +149,17 @@ export function SessionDetailPanel({
           e.stopPropagation()
           return
         }
+        if (isSplitting) {
+          setIsSplitting(false)
+          setSplitError(null)
+          e.stopPropagation()
+          return
+        }
         e.stopPropagation()
         onClose()
       }
     },
-    [onClose, isEditingTime, isReassigning]
+    [onClose, isEditingTime, isReassigning, isSplitting]
   )
 
   // Edit time handlers
@@ -279,8 +291,81 @@ export function SessionDetailPanel({
     [session, allProjects, updateSession]
   )
 
+  // Split session handlers
+  const startSplit = useCallback(() => {
+    // Default split point to midpoint
+    const startMs = new Date(session.startedAt).getTime()
+    const endMs = new Date(session.endedAt).getTime()
+    const midMs = startMs + (endMs - startMs) / 2
+    const mid = new Date(midMs)
+    setSplitTime(
+      [mid.getHours(), mid.getMinutes(), mid.getSeconds()]
+        .map((v) => String(v).padStart(2, '0'))
+        .join(':')
+    )
+    setSplitError(null)
+    setIsSplitting(true)
+  }, [session.startedAt, session.endedAt])
+
+  const computeSplitPreview = (): { dur1: number; dur2: number } | null => {
+    const splitIso = timeStringToIso(splitTime, session.startedAt)
+    if (!splitIso) return null
+    const startMs = new Date(session.startedAt).getTime()
+    const endMs = new Date(session.endedAt).getTime()
+    const splitMs = new Date(splitIso).getTime()
+    if (splitMs <= startMs || splitMs >= endMs) return null
+    return {
+      dur1: Math.round((splitMs - startMs) / 60_000),
+      dur2: Math.round((endMs - splitMs) / 60_000)
+    }
+  }
+
+  const executeSplit = useCallback(() => {
+    const splitIso = timeStringToIso(splitTime, session.startedAt)
+    if (!splitIso) {
+      setSplitError('Invalid time format (HH:MM:SS)')
+      return
+    }
+    const startMs = new Date(session.startedAt).getTime()
+    const endMs = new Date(session.endedAt).getTime()
+    const splitMs = new Date(splitIso).getTime()
+    if (splitMs <= startMs || splitMs >= endMs) {
+      setSplitError('Split point must be between start and end')
+      return
+    }
+
+    splitSession.mutate(
+      { id: session.id, splitAt: splitIso },
+      {
+        onSuccess: () => {
+          setIsSplitting(false)
+          setSplitError(null)
+          toast.success('Session split into two')
+        },
+        onError: (err) => {
+          setSplitError(err.message)
+        }
+      }
+    )
+  }, [splitTime, session, splitSession])
+
+  const handleSplitKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        executeSplit()
+      } else if (e.key === 'Escape') {
+        e.stopPropagation()
+        setIsSplitting(false)
+        setSplitError(null)
+      }
+    },
+    [executeSplit]
+  )
+
   const isAuto = session.source === 'auto'
   const editDuration = isEditingTime ? computeEditDuration() : null
+  const splitPreview = isSplitting ? computeSplitPreview() : null
 
   // Group projects by client for the reassign dropdown
   const projectsByClient = allProjects?.reduce(
@@ -464,6 +549,51 @@ export function SessionDetailPanel({
         </div>
       )}
 
+      {/* Split session inline panel */}
+      {isSplitting && (
+        <div className="mb-4 rounded-md bg-[var(--background-secondary)] px-3 py-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Split Session
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] text-[var(--text-secondary)]">Split at:</span>
+            <input
+              type="text"
+              value={splitTime}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                setSplitTime(e.target.value)
+                setSplitError(null)
+              }}
+              onKeyDown={handleSplitKeyDown}
+              placeholder="HH:MM:SS"
+              className="w-24 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              autoFocus
+            />
+          </div>
+          {splitPreview && (
+            <div className="mt-2 flex gap-4 text-[12px]">
+              <span className="text-[var(--text-secondary)]">
+                Session 1: <span className="font-mono font-semibold text-[var(--text-primary)]">{formatDuration(splitPreview.dur1)}</span>
+              </span>
+              <span className="text-[var(--text-secondary)]">
+                Session 2: <span className="font-mono font-semibold text-[var(--text-primary)]">{formatDuration(splitPreview.dur2)}</span>
+              </span>
+            </div>
+          )}
+          {splitError && (
+            <div className="mt-1 text-[11px] text-[var(--destructive)]">{splitError}</div>
+          )}
+          <div className="mt-2 flex gap-1">
+            <Button size="sm" variant="ghost" onClick={executeSplit} className="h-6 px-2 text-[11px] text-[var(--accent)]">
+              Split Here
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setIsSplitting(false); setSplitError(null) }} className="h-6 px-2 text-[11px]">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="flex items-center gap-2">
         {isAuto ? (
@@ -485,6 +615,15 @@ export function SessionDetailPanel({
             >
               <FolderSync className="mr-1 h-3 w-3" />
               Reassign Project
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={startSplit}
+              disabled={isSplitting || session.durationMinutes < 2}
+            >
+              <Scissors className="mr-1 h-3 w-3" />
+              Split Session
             </Button>
           </>
         ) : (

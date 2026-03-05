@@ -255,6 +255,82 @@ export const sessionService = {
   },
 
   /**
+   * Split a session into two at the given split point.
+   * Returns both new sessions. The original is deleted.
+   */
+  splitSession(id: number, splitAt: string): [typeof sessions.$inferSelect, typeof sessions.$inferSelect] {
+    const db = getDb()
+    const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
+    if (!existing) {
+      throw new Error(`Session ${id} not found`)
+    }
+
+    const startMs = new Date(existing.startedAt).getTime()
+    const endMs = new Date(existing.endedAt).getTime()
+    const splitMs = new Date(splitAt).getTime()
+
+    if (splitMs <= startMs || splitMs >= endMs) {
+      throw new Error('Split point must be between session start and end')
+    }
+
+    const now = new Date().toISOString()
+    const dur1 = Math.round((splitMs - startMs) / 60_000)
+    const dur2 = Math.round((endMs - splitMs) / 60_000)
+
+    // Estimate prompt split proportionally
+    const ratio = (splitMs - startMs) / (endMs - startMs)
+    const prompts1 = Math.round(existing.promptCount * ratio)
+    const prompts2 = existing.promptCount - prompts1
+
+    db.transaction((tx) => {
+      // Delete original
+      tx.delete(sessions).where(eq(sessions.id, id)).run()
+
+      // Insert two new sessions
+      tx.insert(sessions)
+        .values([
+          {
+            projectPath: existing.projectPath,
+            startedAt: existing.startedAt,
+            endedAt: splitAt,
+            durationMinutes: dur1,
+            source: existing.source as 'auto' | 'manual',
+            description: existing.description,
+            status: 'completed' as const,
+            claudeSessionId: existing.claudeSessionId,
+            promptCount: prompts1,
+            sourceFile: existing.sourceFile,
+            projectId: existing.projectId,
+            clientId: existing.clientId,
+            createdAt: now,
+            updatedAt: now
+          },
+          {
+            projectPath: existing.projectPath,
+            startedAt: splitAt,
+            endedAt: existing.endedAt,
+            durationMinutes: dur2,
+            source: existing.source as 'auto' | 'manual',
+            description: existing.description,
+            status: 'completed' as const,
+            claudeSessionId: existing.claudeSessionId,
+            promptCount: prompts2,
+            sourceFile: existing.sourceFile,
+            projectId: existing.projectId,
+            clientId: existing.clientId,
+            createdAt: now,
+            updatedAt: now
+          }
+        ])
+        .run()
+    })
+
+    // Return the two new sessions (most recent inserts)
+    const all = db.select().from(sessions).orderBy(sessions.id).all()
+    return [all[all.length - 2], all[all.length - 1]]
+  },
+
+  /**
    * Extract prompt timings for a session by re-parsing its source JSONL file.
    * Returns human prompt → assistant response pairs with latency.
    */

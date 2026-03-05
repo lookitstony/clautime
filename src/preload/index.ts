@@ -47,6 +47,11 @@ const api = {
       ipcRenderer.invoke('session:update', id, data),
     delete: (id: number): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('session:delete', id),
+    split: (
+      id: number,
+      splitAt: string
+    ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
+      ipcRenderer.invoke('session:split', id, splitAt),
     create: (
       data: {
         projectPath: string

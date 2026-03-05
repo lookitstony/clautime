@@ -29,6 +29,7 @@ interface SessionsApi {
   getPromptTimings(sessionId: number): Promise<IpcResult<PromptTiming[]>>
   update(id: number, data: UpdateSession): Promise<IpcResult<Session>>
   delete(id: number): Promise<IpcResult<void>>
+  split(id: number, splitAt: string): Promise<IpcResult<Session[]>>
   create(data: {
     projectPath: string
     startedAt: string
