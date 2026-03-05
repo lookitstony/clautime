@@ -10,6 +10,8 @@ export interface Session {
   status: 'active' | 'completed'
   claudeSessionId: string | null
   promptCount: number
+  inputTokens: number
+  outputTokens: number
   sourceFile: string | null
   projectId: number | null
   clientId: number | null
@@ -73,4 +75,6 @@ export interface DetectedSession {
   claudeSessionId: string
   sourceFile: string
   messageCount: number
+  inputTokens: number
+  outputTokens: number
 }

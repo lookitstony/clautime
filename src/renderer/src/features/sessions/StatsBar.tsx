@@ -1,11 +1,13 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCompactNumber } from '@/lib/format'
 
 interface StatsBarProps {
   humanHours: string
   totalHours: string
   totalSessions: number
   totalPrompts: number
+  totalTokens: number
   clientCount: number
   isLoading: boolean
 }
@@ -49,6 +51,7 @@ export function StatsBar({
   totalHours,
   totalSessions,
   totalPrompts,
+  totalTokens,
   clientCount,
   isLoading
 }: StatsBarProps): React.JSX.Element {
@@ -79,6 +82,7 @@ export function StatsBar({
       <StatCard label="Agent Hours" value={totalHours} />
       <StatCard label="Sessions" value={totalSessions} />
       <StatCard label="Prompts" value={totalPrompts.toLocaleString()} />
+      {totalTokens > 0 && <StatCard label="Tokens" value={formatCompactNumber(totalTokens)} />}
       {clientCount > 0 && <StatCard label="Clients" value={clientCount} />}
     </div>
   )

@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { formatDuration, formatTimeRange } from '@/lib/format'
+import { formatDuration, formatTimeRange, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { usePromptTimings, useUpdateSession, useSplitSession, useDeleteSession, useSessionSummary, useGenerateSummary } from './use-sessions'
 import { useGitCommitsForSession } from '../git/use-git'
@@ -513,6 +513,12 @@ export function SessionDetailPanel({
           </>
         )}
         <StatCard label="Prompts" value={String(session.promptCount)} />
+        {(session.inputTokens > 0 || session.outputTokens > 0) && (
+          <StatCard
+            label="Tokens"
+            value={formatCompactNumber(session.inputTokens + session.outputTokens)}
+          />
+        )}
         <StatCard
           label="Source"
           value={isAuto ? 'Auto-detected' : 'Manual'}

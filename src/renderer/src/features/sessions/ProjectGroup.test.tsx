@@ -9,6 +9,7 @@ describe('ProjectGroup', () => {
     sessionCount: 5,
     totalDurationMinutes: 125,
     totalPrompts: 42,
+    totalTokens: 50000,
     isExpanded: false,
     onToggle: vi.fn(),
     children: <div data-testid="child-content">Sessions here</div>

@@ -6,7 +6,7 @@ import {
   CollapsibleTrigger
 } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
-import { formatDuration } from '@/lib/format'
+import { formatDuration, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface ProjectGroupProps {
@@ -17,6 +17,7 @@ interface ProjectGroupProps {
   sessionCount: number
   totalDurationMinutes: number
   totalPrompts: number
+  totalTokens: number
   isExpanded: boolean
   onToggle: () => void
   children: ReactNode
@@ -30,6 +31,7 @@ export function ProjectGroup({
   sessionCount,
   totalDurationMinutes,
   totalPrompts,
+  totalTokens,
   isExpanded,
   onToggle,
   children
@@ -91,6 +93,11 @@ export function ProjectGroup({
           <span className="w-[5.5rem] shrink-0 text-right text-[11px] text-[var(--text-muted)]">
             {totalPrompts} {totalPrompts === 1 ? 'prompt' : 'prompts'}
           </span>
+          {totalTokens > 0 && (
+            <span className="w-[4.5rem] shrink-0 text-right font-mono text-[11px] text-[var(--text-muted)]">
+              {formatCompactNumber(totalTokens)}
+            </span>
+          )}
           <span className="w-[4.5rem] shrink-0 text-right font-mono text-[13px] font-bold text-[var(--accent)]">
             {formatDuration(totalDurationMinutes)}
           </span>

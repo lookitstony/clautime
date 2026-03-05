@@ -89,6 +89,8 @@ export const sessionService = {
               status: 'completed' as const,
               claudeSessionId: d.claudeSessionId,
               promptCount: d.messageCount,
+              inputTokens: d.inputTokens,
+              outputTokens: d.outputTokens,
               sourceFile: d.sourceFile,
               createdAt: now,
               updatedAt: now
@@ -277,10 +279,14 @@ export const sessionService = {
     const dur1 = Math.round((splitMs - startMs) / 60_000)
     const dur2 = Math.round((endMs - splitMs) / 60_000)
 
-    // Estimate prompt split proportionally
+    // Estimate prompt and token split proportionally
     const ratio = (splitMs - startMs) / (endMs - startMs)
     const prompts1 = Math.round(existing.promptCount * ratio)
     const prompts2 = existing.promptCount - prompts1
+    const inputTokens1 = Math.round(existing.inputTokens * ratio)
+    const inputTokens2 = existing.inputTokens - inputTokens1
+    const outputTokens1 = Math.round(existing.outputTokens * ratio)
+    const outputTokens2 = existing.outputTokens - outputTokens1
 
     db.transaction((tx) => {
       // Delete original
@@ -299,6 +305,8 @@ export const sessionService = {
             status: 'completed' as const,
             claudeSessionId: existing.claudeSessionId,
             promptCount: prompts1,
+            inputTokens: inputTokens1,
+            outputTokens: outputTokens1,
             sourceFile: existing.sourceFile,
             projectId: existing.projectId,
             clientId: existing.clientId,
@@ -315,6 +323,8 @@ export const sessionService = {
             status: 'completed' as const,
             claudeSessionId: existing.claudeSessionId,
             promptCount: prompts2,
+            inputTokens: inputTokens2,
+            outputTokens: outputTokens2,
             sourceFile: existing.sourceFile,
             projectId: existing.projectId,
             clientId: existing.clientId,

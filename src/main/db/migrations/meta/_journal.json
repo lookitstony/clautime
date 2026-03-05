@@ -50,6 +50,13 @@
       "when": 1772718045741,
       "tag": "0006_hard_rhodey",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1772719130267,
+      "tag": "0007_mysterious_caretaker",
+      "breakpoints": true
     }
   ]
 }

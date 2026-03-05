@@ -14,6 +14,8 @@ const mockSession: Session = {
   status: 'completed',
   claudeSessionId: 'abc-123',
   promptCount: 12,
+  inputTokens: 0,
+  outputTokens: 0,
   sourceFile: '/home/user/.claude/projects/test/session.jsonl',
   projectId: null,
   clientId: null,

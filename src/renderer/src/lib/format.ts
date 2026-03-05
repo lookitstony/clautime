@@ -78,6 +78,12 @@ export function getProjectName(projectPath: string): string {
   return segments[segments.length - 1] || projectPath
 }
 
+export function formatCompactNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+
 export type DatePreset = 'today' | 'this-week' | 'last-week' | 'this-month'
 
 /**

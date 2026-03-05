@@ -148,6 +148,7 @@ export interface SessionStats {
   totalHours: string
   totalSessions: number
   totalPrompts: number
+  totalTokens: number
   clientCount: number
 }
 
@@ -162,6 +163,7 @@ export interface ProjectGroup {
   sessionCount: number
   totalDurationMinutes: number
   totalPrompts: number
+  totalTokens: number
 }
 
 /**
@@ -206,12 +208,14 @@ export function useSessionStats(
       totalHours: '0m',
       totalSessions: 0,
       totalPrompts: 0,
+      totalTokens: 0,
       clientCount: clients?.length ?? 0
     }
   }
 
   const totalMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0)
   const totalPrompts = sessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0)
+  const totalTokens = sessions.reduce((sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0), 0)
   const humanMinutes = computeHumanMinutes(sessions)
 
   return {
@@ -219,6 +223,7 @@ export function useSessionStats(
     totalHours: formatDuration(totalMinutes),
     totalSessions: sessions.length,
     totalPrompts,
+    totalTokens,
     clientCount: clients?.length ?? 0
   }
 }
@@ -278,6 +283,10 @@ export function useGroupedSessions(
       ),
       totalPrompts: group.sessions.reduce(
         (sum, s) => sum + (s.promptCount ?? 0),
+        0
+      ),
+      totalTokens: group.sessions.reduce(
+        (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),
         0
       )
     }

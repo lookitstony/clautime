@@ -163,6 +163,7 @@ export function SessionsPage(): React.JSX.Element {
         totalHours={stats.totalHours}
         totalSessions={stats.totalSessions}
         totalPrompts={stats.totalPrompts}
+        totalTokens={stats.totalTokens}
         clientCount={stats.clientCount}
         isLoading={isLoading}
       />
@@ -270,6 +271,7 @@ export function SessionsPage(): React.JSX.Element {
                   sessionCount={group.sessionCount}
                   totalDurationMinutes={group.totalDurationMinutes}
                   totalPrompts={group.totalPrompts}
+                  totalTokens={group.totalTokens}
                   isExpanded={expandedGroups.has(groupKey)}
                   onToggle={() => handleToggleGroup(groupKey)}
                 >

@@ -209,6 +209,32 @@ describe('detectSessions', () => {
     const result = detectSessions(parsed, 10)
     expect(result[0].sourceFile).toBe('/path/to/session.jsonl')
   })
+
+  it('should accumulate token usage per segment', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', {
+        type: 'assistant',
+        usage: { inputTokens: 100, outputTokens: 200, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+      }),
+      makeMessage('2026-03-04T10:05:00Z', {
+        type: 'assistant',
+        usage: { inputTokens: 150, outputTokens: 300, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+      }),
+      // 20 min gap
+      makeMessage('2026-03-04T10:25:00Z', {
+        type: 'assistant',
+        usage: { inputTokens: 50, outputTokens: 80, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+      })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].inputTokens).toBe(250)
+    expect(result[0].outputTokens).toBe(500)
+    expect(result[1].inputTokens).toBe(50)
+    expect(result[1].outputTokens).toBe(80)
+  })
 })
 
 describe('detectSessionsFromMultiple', () => {

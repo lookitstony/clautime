@@ -101,11 +101,22 @@ function buildDetectedSession(
   const endMs = new Date(endedAt).getTime()
   const durationMinutes = Math.round((endMs - startMs) / (1000 * 60))
 
+  const segment = messages.slice(startIdx, endIdx + 1)
+
   // Count only human prompts (user messages that are NOT tool results)
-  const humanPrompts = messages
-    .slice(startIdx, endIdx + 1)
+  const humanPrompts = segment
     .filter((m) => m.type === 'user' && !m.isToolResult)
     .length
+
+  // Accumulate token usage for this segment
+  let inputTokens = 0
+  let outputTokens = 0
+  for (const m of segment) {
+    if (m.usage) {
+      inputTokens += m.usage.inputTokens
+      outputTokens += m.usage.outputTokens
+    }
+  }
 
   return {
     startedAt,
@@ -114,6 +125,8 @@ function buildDetectedSession(
     projectPath,
     claudeSessionId: parsed.sessionId,
     sourceFile: parsed.sourceFile,
-    messageCount: humanPrompts
+    messageCount: humanPrompts,
+    inputTokens,
+    outputTokens
   }
 }

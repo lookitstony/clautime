@@ -51,6 +51,8 @@ const baseSession: Session = {
   status: 'completed',
   claudeSessionId: 'abc123',
   promptCount: 24,
+  inputTokens: 50000,
+  outputTokens: 75000,
   sourceFile: 'test.jsonl',
   projectId: 1,
   clientId: 1,

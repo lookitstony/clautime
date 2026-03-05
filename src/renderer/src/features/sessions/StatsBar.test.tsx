@@ -7,6 +7,7 @@ const baseProps = {
   totalHours: '2h 30m',
   totalSessions: 15,
   totalPrompts: 1234,
+  totalTokens: 125000,
   clientCount: 0,
   isLoading: false
 }
