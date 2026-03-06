@@ -394,24 +394,6 @@ export function SettingsPage(): React.JSX.Element {
             />
           </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <label className="block text-[12px] font-semibold text-[var(--text-muted)]">
-                Test Notification
-              </label>
-              <p className="text-[11px] text-[var(--text-muted)]">
-                Send a test notification to verify they work on your system.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.api.live.testNotification()}
-            >
-              Send Test
-            </Button>
-          </div>
-
           <div>
             <label className="mb-1 block text-[12px] font-semibold text-[var(--text-muted)]">
               Claude Directory

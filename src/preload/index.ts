@@ -167,7 +167,6 @@ const api = {
     getAvailableSounds: () => ipcRenderer.invoke('live:getAvailableSounds'),
     playTestSound: () => ipcRenderer.invoke('live:playTestSound'),
     selectCustomSound: () => ipcRenderer.invoke('live:selectCustomSound'),
-    testNotification: () => ipcRenderer.invoke('live:testNotification'),
     onSessionsUpdated: (callback: () => void) => {
       ipcRenderer.on('watcher:sessionsUpdated', () => callback())
     },

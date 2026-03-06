@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs'
 import { join, parse as pathParse } from 'node:path'
-import { ipcMain, dialog, Notification } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import { statSync } from 'node:fs'
 import log from 'electron-log/main.js'
 import { liveMonitorService } from '../services/live-monitor-service'
@@ -160,22 +160,6 @@ export function registerLiveHandlers(): void {
     'live:timerStopped',
     async (): Promise<IpcResult<void>> => {
       trayService.clearTimer()
-      return ipcSuccess(undefined)
-    }
-  )
-
-  ipcMain.handle(
-    'live:testNotification',
-    async (): Promise<IpcResult<void>> => {
-      log.info('Test notification: isSupported =', Notification.isSupported())
-      const n = new Notification({
-        title: '🧪 ClawdTime Test',
-        body: 'If you see this, notifications work!'
-      })
-      n.on('show', () => log.info('Test notification: show event'))
-      n.on('failed', (_e, err) => log.warn('Test notification: failed', err))
-      n.on('click', () => log.info('Test notification: clicked'))
-      n.show()
       return ipcSuccess(undefined)
     }
   )
