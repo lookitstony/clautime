@@ -7,7 +7,7 @@ log.transports.file.level = 'info'
 log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
 log.transports.console.level = 'debug'
 
-import { app, shell, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -55,6 +55,11 @@ function createWindow(): void {
     }
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
+  ipcMain.handle('window:hide', () => mainWindow?.hide())
+  ipcMain.handle('window:quit', () => {
+    isQuitting = true
+    app.quit()
+  })
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
   mainWindow.on('maximize', () => {
@@ -71,23 +76,7 @@ function createWindow(): void {
   mainWindow.on('close', (e) => {
     if (!isQuitting && mainWindow) {
       e.preventDefault()
-      dialog
-        .showMessageBox(mainWindow, {
-          type: 'question',
-          buttons: ['Minimize to Tray', 'Quit'],
-          defaultId: 0,
-          cancelId: 0,
-          title: 'ClawdTime',
-          message: 'What would you like to do?'
-        })
-        .then(({ response }) => {
-          if (response === 1) {
-            isQuitting = true
-            app.quit()
-          } else {
-            mainWindow?.hide()
-          }
-        })
+      mainWindow.webContents.send('window:close-requested')
     }
   })
 

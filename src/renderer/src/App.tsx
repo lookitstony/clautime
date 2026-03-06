@@ -17,6 +17,7 @@ import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
 import { useLiveStore } from '@/stores/use-live-store'
 import { ManualTimerDialog } from '@/features/live/ManualTimerDialog'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { useLiveBroadcastSync } from '@/features/live/use-live'
 import type { ProjectLiveStatus } from '../../shared/types/live'
 
@@ -52,7 +53,13 @@ function RootLayout(): React.JSX.Element {
   useLiveBroadcastSync()
   const { isFirstLaunch, isLoading } = useIsFirstLaunch()
   const navigate = useNavigate()
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false)
   const [stopDialog, setStopDialog] = useState<{ open: boolean; project: ProjectLiveStatus | null }>({ open: false, project: null })
+
+  // Listen for window close request from main process
+  useEffect(() => {
+    window.api.window.onCloseRequested(() => setCloseDialogOpen(true))
+  }, [])
 
   // Listen for stop dialog requests from widgets
   useEffect(() => {
@@ -119,6 +126,22 @@ function RootLayout(): React.JSX.Element {
           onClose={() => setStopDialog({ open: false, project: null })}
         />
       )}
+      <ConfirmDialog
+        open={closeDialogOpen}
+        title="Close ClawdTime"
+        description="Would you like to minimize to the system tray or quit the application?"
+        confirmLabel="Quit"
+        cancelLabel="Minimize to Tray"
+        variant="destructive"
+        onConfirm={() => {
+          setCloseDialogOpen(false)
+          window.api.window.quit()
+        }}
+        onCancel={() => {
+          setCloseDialogOpen(false)
+          window.api.window.hide()
+        }}
+      />
       <Toaster />
     </TooltipProvider>
   )

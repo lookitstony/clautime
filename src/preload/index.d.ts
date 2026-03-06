@@ -117,8 +117,11 @@ interface WindowApi {
   minimize(): Promise<void>
   maximize(): Promise<void>
   close(): Promise<void>
+  hide(): Promise<void>
+  quit(): Promise<void>
   isMaximized(): Promise<boolean>
   onMaximizedChanged(callback: (isMaximized: boolean) => void): void
+  onCloseRequested(callback: () => void): void
 }
 
 interface ProjectsApi {

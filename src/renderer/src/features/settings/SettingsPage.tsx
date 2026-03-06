@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef, type ChangeEvent, type ReactNode } from 'react'
+import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Volume2, VolumeX, LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
 import { useDetectGitIdentity, useSetGitIdentity } from '../git/use-git'
 
@@ -49,6 +50,8 @@ export function SettingsPage(): React.JSX.Element {
 
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [testResult, setTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
 
   const storeKey = useMutation({
     mutationFn: async (key: string) => {
@@ -217,11 +220,7 @@ export function SettingsPage(): React.JSX.Element {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    if (window.confirm('Remove your API key? You will need to re-enter it to use AI features.')) {
-                      removeKey.mutate()
-                    }
-                  }}
+                  onClick={() => setConfirmRemoveKey(true)}
                   className="text-[11px] text-[var(--destructive)]"
                 >
                   Remove
@@ -439,22 +438,7 @@ export function SettingsPage(): React.JSX.Element {
               variant="ghost"
               disabled={isResetting}
               className="text-[11px] text-red-400 hover:text-red-400 hover:bg-red-500/15"
-              onClick={async () => {
-                if (!window.confirm('This will delete all sessions and re-import from scratch. Continue?')) return
-                setIsResetting(true)
-                try {
-                  await window.api.sessions.reset()
-                  await window.api.sessions.scan()
-                  queryClient.invalidateQueries({ queryKey: ['sessions'] })
-                  queryClient.invalidateQueries({ queryKey: ['live'] })
-                  queryClient.invalidateQueries({ queryKey: ['git'] })
-                  toast.success('Sessions reset and re-scanned')
-                } catch {
-                  toast.error('Reset failed')
-                } finally {
-                  setIsResetting(false)
-                }
-              }}
+              onClick={() => setConfirmReset(true)}
             >
               {isResetting && <LoaderCircle size={14} className="mr-1 animate-spin" />}
               {isResetting ? 'Rescanning...' : 'Reset & Rescan'}
@@ -568,6 +552,46 @@ export function SettingsPage(): React.JSX.Element {
           </div>
         </SectionCard>
       </section>
+
+      <ConfirmDialog
+        open={confirmRemoveKey}
+        title="Remove API Key"
+        description="Remove your API key? You will need to re-enter it to use AI features."
+        confirmLabel="Remove"
+        cancelLabel="Keep"
+        variant="destructive"
+        onConfirm={() => {
+          setConfirmRemoveKey(false)
+          removeKey.mutate()
+        }}
+        onCancel={() => setConfirmRemoveKey(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="Reset Sessions"
+        description="This will delete all sessions and re-import from scratch. This cannot be undone."
+        confirmLabel="Reset & Rescan"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={async () => {
+          setConfirmReset(false)
+          setIsResetting(true)
+          try {
+            await window.api.sessions.reset()
+            await window.api.sessions.scan()
+            queryClient.invalidateQueries({ queryKey: ['sessions'] })
+            queryClient.invalidateQueries({ queryKey: ['live'] })
+            queryClient.invalidateQueries({ queryKey: ['git'] })
+            toast.success('Sessions reset and re-scanned')
+          } catch {
+            toast.error('Reset failed')
+          } finally {
+            setIsResetting(false)
+          }
+        }}
+        onCancel={() => setConfirmReset(false)}
+      />
     </div>
   )
 }

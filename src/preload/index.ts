@@ -189,9 +189,14 @@ const api = {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
+    hide: () => ipcRenderer.invoke('window:hide'),
+    quit: () => ipcRenderer.invoke('window:quit'),
     isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
     onMaximizedChanged: (callback: (isMaximized: boolean) => void) => {
       ipcRenderer.on('window:maximized-changed', (_event, val) => callback(val))
+    },
+    onCloseRequested: (callback: () => void) => {
+      ipcRenderer.on('window:close-requested', () => callback())
     }
   },
   projects: {
