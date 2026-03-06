@@ -58,6 +58,10 @@ function createWindow(): void {
   ipcMain.handle('window:hide', () => mainWindow?.hide())
   ipcMain.handle('window:quit', () => {
     isQuitting = true
+    // Destroy the window immediately to avoid freeze, then quit
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy()
+    }
     app.quit()
   })
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
@@ -127,8 +131,8 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  // App lives in tray — do not quit when windows close
-  // Quitting happens via tray menu or Cmd+Q/Alt+F4
+  // If window was closed (not hidden), quit the app
+  if (isQuitting) app.quit()
 })
 
 app.on('will-quit', () => {
