@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect, type ChangeEvent, type ReactNode } from 'react'
+import { useState, useCallback, useEffect, useRef, type ChangeEvent, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Volume2, VolumeX, LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
@@ -109,12 +110,17 @@ export function SettingsPage(): React.JSX.Element {
   // ============= Session Detection =============
   const [idleTimeout, setIdleTimeout] = useState(15)
   const [claudeDir, setClaudeDir] = useState('')
+  const [alertMode, setAlertMode] = useState<'percent' | 'minutes'>('percent')
+  const [alertMinutes, setAlertMinutes] = useState(5)
 
   useEffect(() => {
     if (settings) {
       const timeout = settings['idle_timeout_minutes']
       if (timeout) setIdleTimeout(parseInt(timeout, 10) || 15)
       setClaudeDir(settings['claude_dir'] ?? '')
+      setAlertMode((settings['alert_threshold_mode'] as 'percent' | 'minutes') ?? 'percent')
+      const am = settings['alert_threshold_minutes']
+      if (am) setAlertMinutes(parseInt(am, 10) || 5)
     }
   }, [settings])
 
@@ -136,6 +142,21 @@ export function SettingsPage(): React.JSX.Element {
       saveSetting.mutate({ key: 'claude_dir', value: r.data })
     }
   }, [saveSetting])
+
+  // ============= Notification Volume =============
+  const [notifVolume, setNotifVolume] = useState(50)
+  const volumeInitialized = useRef(false)
+
+  useEffect(() => {
+    if (settings && !volumeInitialized.current) {
+      const vol = settings['notification_volume']
+      if (vol != null) setNotifVolume(parseInt(vol, 10) || 50)
+      volumeInitialized.current = true
+    }
+  }, [settings])
+
+  // ============= Reset =============
+  const [isResetting, setIsResetting] = useState(false)
 
   // ============= After Hours Mode =============
   const afterHoursMode = settings?.['after_hours_mode'] === 'true'
@@ -301,6 +322,96 @@ export function SettingsPage(): React.JSX.Element {
             </div>
           </div>
 
+          <div className="mb-4">
+            <label className="mb-1 block text-[12px] font-semibold text-[var(--text-muted)]">
+              Widget Alert Threshold
+            </label>
+            <p className="mb-2 text-[11px] text-[var(--text-muted)]">
+              When the widget border transitions from green to yellow (warning).
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setAlertMode('percent')
+                  saveSetting.mutate({ key: 'alert_threshold_mode', value: 'percent' })
+                }}
+                className={cn(
+                  'rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors',
+                  alertMode === 'percent'
+                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                    : 'border-[var(--surface-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-border)]/30'
+                )}
+              >
+                75% of idle time
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAlertMode('minutes')
+                  saveSetting.mutate({ key: 'alert_threshold_mode', value: 'minutes' })
+                }}
+                className={cn(
+                  'rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors',
+                  alertMode === 'minutes'
+                    ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                    : 'border-[var(--surface-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-border)]/30'
+                )}
+              >
+                Fixed minutes
+              </button>
+              {alertMode === 'minutes' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={alertMinutes}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setAlertMinutes(parseInt(e.target.value, 10) || 1)}
+                    onBlur={() => saveSetting.mutate({ key: 'alert_threshold_minutes', value: String(alertMinutes) })}
+                    className="w-16 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 text-center font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                  />
+                  <span className="text-[12px] text-[var(--text-muted)]">min</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-[12px] font-semibold text-[var(--text-muted)]">
+                Widget Glow Effect
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Animated glow around floating widgets indicating activity status.
+              </p>
+            </div>
+            <Switch
+              checked={settings?.['widget_glow_enabled'] !== 'false'}
+              onCheckedChange={(checked) =>
+                saveSetting.mutate({ key: 'widget_glow_enabled', value: checked ? 'true' : 'false' })
+              }
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-[12px] font-semibold text-[var(--text-muted)]">
+                Test Notification
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Send a test notification to verify they work on your system.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.api.live.testNotification()}
+            >
+              Send Test
+            </Button>
+          </div>
+
           <div>
             <label className="mb-1 block text-[12px] font-semibold text-[var(--text-muted)]">
               Claude Directory
@@ -330,6 +441,94 @@ export function SettingsPage(): React.JSX.Element {
                 saveSetting.mutate({ key: 'after_hours_mode', value: checked ? 'true' : 'false' })
               }
             />
+          </div>
+
+          <div className="flex items-center justify-between border-t border-[var(--surface-border)] pt-3 mt-3">
+            <div>
+              <label className="block text-[12px] font-semibold text-[var(--text-muted)]">
+                Reset Sessions
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Clear all session data and re-scan from JSONL files.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isResetting}
+              className="text-[11px] text-red-400 hover:text-red-400 hover:bg-red-500/15"
+              onClick={async () => {
+                if (!window.confirm('This will delete all sessions and re-import from scratch. Continue?')) return
+                setIsResetting(true)
+                try {
+                  await window.api.sessions.reset()
+                  await window.api.sessions.scan()
+                  queryClient.invalidateQueries({ queryKey: ['sessions'] })
+                  queryClient.invalidateQueries({ queryKey: ['live'] })
+                  queryClient.invalidateQueries({ queryKey: ['git'] })
+                  toast.success('Sessions reset and re-scanned')
+                } catch {
+                  toast.error('Reset failed')
+                } finally {
+                  setIsResetting(false)
+                }
+              }}
+            >
+              {isResetting && <LoaderCircle size={14} className="mr-1 animate-spin" />}
+              {isResetting ? 'Rescanning...' : 'Reset & Rescan'}
+            </Button>
+          </div>
+        </SectionCard>
+      </section>
+
+      {/* Notifications */}
+      <section>
+        <SectionHeader title="Notifications" />
+        <SectionCard>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-[var(--text-muted)]">
+              Alert Volume
+            </label>
+            <p className="mb-2 text-[11px] text-[var(--text-muted)]">
+              Volume for idle prompt alert sounds.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = notifVolume === 0 ? 50 : 0
+                  setNotifVolume(newVal)
+                  saveSetting.mutate({ key: 'notification_volume', value: String(newVal) }, {
+                    onSuccess: () => { if (newVal > 0) window.api.live.playTestSound() }
+                  })
+                }}
+                className="rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
+                aria-label={notifVolume === 0 ? 'Unmute' : 'Mute'}
+              >
+                {notifVolume === 0 ? (
+                  <VolumeX size={18} className="text-red-400" />
+                ) : (
+                  <Volume2 size={18} className="text-[var(--text-secondary)]" />
+                )}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={notifVolume}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNotifVolume(parseInt(e.target.value, 10))}
+                onMouseUp={() => saveSetting.mutate({ key: 'notification_volume', value: String(notifVolume) }, {
+                  onSuccess: () => { if (notifVolume > 0) window.api.live.playTestSound() }
+                })}
+                onTouchEnd={() => saveSetting.mutate({ key: 'notification_volume', value: String(notifVolume) }, {
+                  onSuccess: () => { if (notifVolume > 0) window.api.live.playTestSound() }
+                })}
+                className="flex-1"
+              />
+              <span className="w-12 text-right font-mono text-[13px] text-[var(--text-primary)]">
+                {notifVolume === 0 ? 'Mute' : `${notifVolume}%`}
+              </span>
+            </div>
           </div>
         </SectionCard>
       </section>

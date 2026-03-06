@@ -22,19 +22,14 @@ vi.stubGlobal('HTMLSelectElement', { prototype: HtmlSelectProto })
 
 // Mock window.api
 const mockUpdate = vi.fn().mockResolvedValue({ success: true, data: {} })
-const mockSplit = vi.fn().mockResolvedValue({ success: true, data: [{}, {}] })
-const mockGetAll = vi.fn().mockResolvedValue({ success: true, data: [] })
 
 vi.stubGlobal('window', {
   ...window,
   api: {
     sessions: {
       getPromptTimings: vi.fn().mockResolvedValue({ success: true, data: [] }),
-      update: mockUpdate,
-      split: mockSplit
+      update: mockUpdate
     },
-    clients: { getAll: vi.fn().mockResolvedValue({ success: true, data: [] }) },
-    projects: { getAll: mockGetAll },
     git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) },
     ai: { getSummary: vi.fn().mockResolvedValue({ success: true, data: { summary: '', tier: 'none' } }) }
   }
@@ -113,15 +108,12 @@ describe('SessionDetailPanel', () => {
     expect(screen.queryByText('No summary available')).not.toBeInTheDocument()
   })
 
-  it('shows enabled Edit Time and Reassign Project buttons for auto sessions', () => {
+  it('shows enabled Edit Time button for auto sessions', () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
     const editBtn = screen.getByRole('button', { name: /edit time/i })
-    const reassignBtn = screen.getByRole('button', { name: /reassign project/i })
     expect(editBtn).toBeInTheDocument()
     expect(editBtn).not.toBeDisabled()
-    expect(reassignBtn).toBeInTheDocument()
-    expect(reassignBtn).not.toBeDisabled()
   })
 
   it('shows enabled Edit Description and Delete buttons for manual sessions', () => {
@@ -137,7 +129,6 @@ describe('SessionDetailPanel', () => {
 
     // Should NOT show auto-only buttons
     expect(screen.queryByRole('button', { name: /edit time/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /reassign project/i })).not.toBeInTheDocument()
   })
 
   describe('Manual Session Actions', () => {
@@ -247,66 +238,4 @@ describe('SessionDetailPanel', () => {
     })
   })
 
-  describe('Split Session', () => {
-    it('shows Split Session button for auto sessions', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-      expect(screen.getByRole('button', { name: /split session/i })).toBeInTheDocument()
-    })
-
-    it('shows split UI when Split Session is clicked', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-
-      fireEvent.click(screen.getByRole('button', { name: /split session/i }))
-
-      expect(screen.getByPlaceholderText('HH:MM:SS')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /split here/i })).toBeInTheDocument()
-    })
-
-    it('shows duration preview for valid split point', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-
-      fireEvent.click(screen.getByRole('button', { name: /split session/i }))
-      // The default split is at the midpoint, so preview should render
-      expect(screen.getByText(/Session 1:/)).toBeInTheDocument()
-      expect(screen.getByText(/Session 2:/)).toBeInTheDocument()
-    })
-
-    it('cancels split when Cancel is clicked', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-
-      fireEvent.click(screen.getByRole('button', { name: /split session/i }))
-      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
-
-      // Split UI should be gone — no "Split Here" button
-      expect(screen.queryByRole('button', { name: /split here/i })).not.toBeInTheDocument()
-    })
-
-    it('disables Split Session button for very short sessions', () => {
-      const session = { ...baseSession, durationMinutes: 1 }
-      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
-      expect(screen.getByRole('button', { name: /split session/i })).toBeDisabled()
-    })
-  })
-
-  describe('Reassign Project', () => {
-    it('shows project dropdown when Reassign Project is clicked', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-
-      fireEvent.click(screen.getByRole('button', { name: /reassign project/i }))
-
-      // The reassign dropdown should appear with a cancel button
-      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
-    })
-
-    it('cancels reassign mode on cancel click', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-
-      fireEvent.click(screen.getByRole('button', { name: /reassign project/i }))
-      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
-
-      // Should show original client/project names again
-      expect(screen.getByText('Acme Corp')).toBeInTheDocument()
-      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
-    })
-  })
 })

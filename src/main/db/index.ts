@@ -11,6 +11,7 @@ import * as clientsSchema from './schema/clients'
 import * as projectsSchema from './schema/projects'
 import * as gitCommitsSchema from './schema/git-commits'
 import * as aiSummariesSchema from './schema/ai-summaries'
+import * as projectAlertConfigSchema from './schema/project-alert-config'
 
 const schema = {
   ...sessionsSchema,
@@ -19,7 +20,8 @@ const schema = {
   ...clientsSchema,
   ...projectsSchema,
   ...gitCommitsSchema,
-  ...aiSummariesSchema
+  ...aiSummariesSchema,
+  ...projectAlertConfigSchema
 }
 
 let db: BetterSQLite3Database<typeof schema>

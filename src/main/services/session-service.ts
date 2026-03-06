@@ -1,11 +1,13 @@
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { eq, and, gte, lte, type SQL } from 'drizzle-orm'
+import { eq, and, gte, lte, inArray, type SQL } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
+import { aiSummaries } from '../db/schema/ai-summaries'
+import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
@@ -67,11 +69,32 @@ export const sessionService = {
 
     db.transaction((tx) => {
       // Delete stale auto sessions for re-scanned files
+      // Must first remove FK references from ai_summaries and git_commits
       if (sourceFiles.length > 0) {
         for (const sf of sourceFiles) {
-          tx.delete(sessions)
+          // Find session IDs about to be deleted
+          const staleIds = tx
+            .select({ id: sessions.id })
+            .from(sessions)
             .where(and(eq(sessions.source, 'auto'), eq(sessions.sourceFile, sf)))
-            .run()
+            .all()
+            .map((r) => r.id)
+
+          if (staleIds.length > 0) {
+            // Remove AI summaries referencing these sessions
+            tx.delete(aiSummaries)
+              .where(inArray(aiSummaries.sessionId, staleIds))
+              .run()
+            // Unlink git commits (nullable FK — set to null, don't delete)
+            tx.update(gitCommits)
+              .set({ sessionId: null })
+              .where(inArray(gitCommits.sessionId, staleIds))
+              .run()
+            // Now safe to delete the sessions
+            tx.delete(sessions)
+              .where(and(eq(sessions.source, 'auto'), eq(sessions.sourceFile, sf)))
+              .run()
+          }
         }
       }
 

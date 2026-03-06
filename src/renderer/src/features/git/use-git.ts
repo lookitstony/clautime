@@ -62,6 +62,30 @@ export function useSetGitIdentity() {
   })
 }
 
+export function useGitRemoteUrl(projectId: number | null) {
+  return useQuery({
+    queryKey: ['git', 'remoteUrl', projectId],
+    queryFn: async () => {
+      const result = await window.api.git.getRemoteUrl(projectId!)
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    enabled: projectId != null,
+    staleTime: Infinity // remote URL won't change during a session
+  })
+}
+
+export function useSessionIdsWithCommits() {
+  return useQuery({
+    queryKey: ['git', 'sessionIdsWithCommits'],
+    queryFn: async () => {
+      const result = await window.api.git.getSessionIdsWithCommits()
+      if (!result.success) throw new Error(result.error.message)
+      return new Set(result.data)
+    }
+  })
+}
+
 export function useGitScan() {
   const queryClient = useQueryClient()
   return useMutation({

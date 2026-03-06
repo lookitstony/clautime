@@ -223,21 +223,36 @@ export const gitService = {
    */
   correlateCommitsWithSessions(): number {
     const db = getDb()
-    const allCommits = db.select().from(gitCommits).all()
     const allSessions = db.select().from(sessions).all()
 
+    // Build a set of valid session IDs for stale detection
+    const validSessionIds = new Set(allSessions.map((s) => s.id))
+
+    // Reset stale correlations (sessionId points to a deleted/recreated session)
+    const allCommits = db.select().from(gitCommits).all()
+    for (const commit of allCommits) {
+      if (commit.sessionId != null && !validSessionIds.has(commit.sessionId)) {
+        db.update(gitCommits)
+          .set({ sessionId: null })
+          .where(eq(gitCommits.id, commit.id))
+          .run()
+      }
+    }
+
+    // Re-fetch after cleanup
+    const uncorrelated = db.select().from(gitCommits).all().filter((c) => c.sessionId == null)
     let correlated = 0
 
-    for (const commit of allCommits) {
-      if (commit.sessionId != null) continue // already correlated
+    // 5-minute buffer: commits often happen shortly after a session ends
+    const BUFFER_MS = 5 * 60 * 1000
 
+    for (const commit of uncorrelated) {
       const commitTime = new Date(commit.committedAt).getTime()
 
-      // Find a matching session for the same project
       const matchingSession = allSessions.find((s) => {
         if (s.projectId !== commit.projectId) return false
         const startMs = new Date(s.startedAt).getTime()
-        const endMs = new Date(s.endedAt).getTime()
+        const endMs = new Date(s.endedAt).getTime() + BUFFER_MS
         return commitTime >= startMs && commitTime <= endMs
       })
 
@@ -277,5 +292,48 @@ export const gitService = {
       .where(eq(gitCommits.projectId, projectId))
       .orderBy(gitCommits.committedAt)
       .all()
+  },
+
+  /**
+   * Get the GitHub/remote HTTPS URL for a project directory.
+   * Converts SSH and git:// URLs to HTTPS. Returns null if not a git repo or no remote.
+   */
+  async getRemoteUrl(dirPath: string): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: dirPath })
+      const raw = stdout.trim()
+      if (!raw) return null
+      // Normalize SSH (git@github.com:user/repo.git) to HTTPS
+      const sshMatch = raw.match(/^git@([^:]+):(.+?)(?:\.git)?$/)
+      if (sshMatch) return `https://${sshMatch[1]}/${sshMatch[2]}`
+      // Strip .git suffix from HTTPS URLs
+      return raw.replace(/\.git$/, '')
+    } catch {
+      return null
+    }
+  },
+
+  /**
+   * Get the remote URL for a project by its DB ID.
+   */
+  async getRemoteUrlForProject(projectId: number): Promise<string | null> {
+    const db = getDb()
+    const project = db.select().from(projects).where(eq(projects.id, projectId)).get()
+    if (!project) return null
+    return this.getRemoteUrl(project.directoryPath)
+  },
+
+  /**
+   * Get set of session IDs that have at least one correlated git commit.
+   */
+  getSessionIdsWithCommits(): number[] {
+    const db = getDb()
+    const rows = db
+      .selectDistinct({ sessionId: gitCommits.sessionId })
+      .from(gitCommits)
+      .all()
+    return rows
+      .filter((r): r is { sessionId: number } => r.sessionId != null)
+      .map((r) => r.sessionId)
   }
 }

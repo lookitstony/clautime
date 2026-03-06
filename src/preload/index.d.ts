@@ -11,6 +11,7 @@ import type {
   UpdateProject
 } from '../shared/types/client-project'
 import type { ReportFilters, ReportFormat, ReportResult } from '../shared/types/report'
+import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../shared/types/live'
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
@@ -93,6 +94,33 @@ interface ReportsApi {
   exportPdf(html: string, filename?: string): Promise<IpcResult<boolean>>
 }
 
+interface LiveApi {
+  getTodayStats(): Promise<IpcResult<TodayStats>>
+  getProjectStatuses(): Promise<IpcResult<ProjectLiveStatus[]>>
+  setWatching(projectId: number, enabled: boolean): Promise<IpcResult<void>>
+  getAlertConfig(projectId: number): Promise<IpcResult<ProjectAlertConfig>>
+  setAlertConfig(projectId: number, alertSound: string): Promise<IpcResult<void>>
+  getAvailableSounds(): Promise<IpcResult<{ name: string; filename: string }[]>>
+  playTestSound(): Promise<IpcResult<void>>
+  selectCustomSound(): Promise<IpcResult<string | null>>
+  onSessionsUpdated(callback: () => void): void
+  onNewProject(callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void): void
+  timerStarted(projectName: string, startedAt: string): Promise<IpcResult<void>>
+  timerStopped(): Promise<IpcResult<void>>
+  toggleWidget(projectId: number): Promise<IpcResult<void>>
+  showStopDialog(projectId: number): Promise<IpcResult<void>>
+  onWidgetAlert(callback: (info: { projectName: string }) => void): void
+  onOpenStopDialog(callback: (projectId: number) => void): void
+}
+
+interface WindowApi {
+  minimize(): Promise<void>
+  maximize(): Promise<void>
+  close(): Promise<void>
+  isMaximized(): Promise<boolean>
+  onMaximizedChanged(callback: (isMaximized: boolean) => void): void
+}
+
 interface ProjectsApi {
   getAll(clientId?: number): Promise<IpcResult<Project[]>>
   create(data: NewProject): Promise<IpcResult<Project>>
@@ -106,11 +134,13 @@ interface Api {
   settings: SettingsApi
   sessions: SessionsApi
   clients: ClientsApi
+  live: LiveApi
   projects: ProjectsApi
   reports: ReportsApi
   updater: UpdaterApi
   git: GitApi
   ai: AiApi
+  window: WindowApi
 }
 
 declare global {

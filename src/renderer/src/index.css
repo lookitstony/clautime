@@ -78,6 +78,34 @@
 }
 
 /* ============================================
+   Light Theme
+   Apply via data attribute: <html data-theme="light">
+   ============================================ */
+[data-theme="light"] {
+  /* Background layers — light blue-grey, mirrors dark theme structure */
+  --background-primary: #dce1e8;
+  --background-secondary: #cdd4de;
+  --background-elevated: #e8ecf2;
+
+  /* Surface & borders */
+  --surface-border: #b8c0cd;
+
+  /* Text hierarchy */
+  --text-primary: #1c2333;
+  --text-secondary: #4a5568;
+  --text-muted: #7a8599;
+
+  /* Accent */
+  --accent: #0d9488;
+  --accent-rgb: 13, 148, 136;
+
+  /* Semantic overrides */
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --primary-foreground: #ffffff;
+}
+
+/* ============================================
    Accent Theme Variants
    Apply via data attribute: <html data-accent="amber">
    ============================================ */
@@ -118,4 +146,27 @@ body {
 
 #root {
   min-height: 100vh;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }

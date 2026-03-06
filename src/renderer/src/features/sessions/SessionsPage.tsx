@@ -62,9 +62,9 @@ export function SessionsPage(): React.JSX.Element {
     })
   }, [rawSessions, afterHoursMode])
 
-  const stats = useSessionStats(sessions, clients)
-  const groups = useGroupedSessions(sessions, allProjects, clients)
   const { data: sessionIdsWithCommits } = useSessionIdsWithCommits()
+  const stats = useSessionStats(sessions, clients, sessionIdsWithCommits)
+  const groups = useGroupedSessions(sessions, allProjects, clients)
   const queryClient = useQueryClient()
   const setActiveView = useUIStore((s) => s.setActiveView)
   const navigate = useNavigate()
@@ -185,6 +185,7 @@ export function SessionsPage(): React.JSX.Element {
         totalPrompts={stats.totalPrompts}
         totalTokens={stats.totalTokens}
         clientCount={stats.clientCount}
+        commitSessions={stats.commitSessions}
         isLoading={isLoading}
       />
 
@@ -201,29 +202,27 @@ export function SessionsPage(): React.JSX.Element {
             {groups.length} project{groups.length !== 1 ? 's' : ''}
           </span>
           <Button
-            variant="ghost"
-            size="sm"
+            size="xs"
             onClick={() => setShowManualForm(true)}
-            className="h-6 px-2 text-[11px] text-[var(--accent)]"
           >
             <Plus className="mr-0.5 h-3 w-3" />
             Manual Block
           </Button>
           <span className="mx-1 h-3 w-px bg-[var(--surface-border)]" />
-          <Button variant="ghost" size="sm" onClick={expandAll} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+          <Button variant="ghost" size="xs" onClick={expandAll}>
             <ChevronDown className="mr-0.5 h-3 w-3" />
             Expand All
           </Button>
-          <Button variant="ghost" size="sm" onClick={collapseAll} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+          <Button variant="ghost" size="xs" onClick={collapseAll}>
             <ChevronUp className="mr-0.5 h-3 w-3" />
             Collapse All
           </Button>
           <span className="mx-1 h-3 w-px bg-[var(--surface-border)]" />
-          <Button variant="ghost" size="sm" onClick={expandAllDays} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+          <Button variant="ghost" size="xs" onClick={expandAllDays}>
             <ChevronDown className="mr-0.5 h-3 w-3" />
             Days
           </Button>
-          <Button variant="ghost" size="sm" onClick={collapseAllDays} className="h-6 px-2 text-[11px] text-[var(--text-muted)]">
+          <Button variant="ghost" size="xs" onClick={collapseAllDays}>
             <ChevronUp className="mr-0.5 h-3 w-3" />
             Days
           </Button>
@@ -263,10 +262,7 @@ export function SessionsPage(): React.JSX.Element {
             title="No Sessions Found"
             description="Scan for your Claude Code projects and import session history"
             action={
-              <Button
-                onClick={() => showWizard.mutate()}
-                className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-              >
+              <Button onClick={() => showWizard.mutate()}>
                 Scan for Projects
               </Button>
             }

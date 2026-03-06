@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { sessionService } from '../services/session-service'
 import { clientProjectService } from '../services/client-project-service'
+import { gitService } from '../services/git-service'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
@@ -19,6 +20,13 @@ export function registerSessionHandlers(): void {
       try {
         const result = await sessionService.scanSessions(claudeDir, projectFilter)
         const attributedCount = clientProjectService.attributeSessions()
+        // Auto-trigger git scan after session scan (non-blocking)
+        gitService.scanCommits().then((scanResult) => {
+          const correlated = gitService.correlateCommitsWithSessions()
+          log.info(`Auto git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`)
+        }).catch((err) => {
+          log.warn('Auto git scan failed (non-critical):', err)
+        })
         return ipcSuccess({ ...result, attributedCount })
       } catch (error) {
         log.error('IPC session:scan failed:', error)

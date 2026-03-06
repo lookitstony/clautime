@@ -1,17 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCompactNumber } from '@/lib/format'
-
-interface StatsBarProps {
-  humanHours: string
-  totalHours: string
-  totalSessions: number
-  totalPrompts: number
-  totalTokens: number
-  clientCount: number
-  commitSessions: number
-  isLoading: boolean
-}
+import type { TodayStats } from '../../../../shared/types/live'
 
 interface StatCardProps {
   label: string
@@ -47,24 +37,20 @@ function StatCardSkeleton(): React.JSX.Element {
   )
 }
 
-export function StatsBar({
-  humanHours,
-  totalHours,
-  totalSessions,
-  totalPrompts,
-  totalTokens,
-  clientCount,
-  commitSessions,
-  isLoading
-}: StatsBarProps): React.JSX.Element {
-  if (isLoading) {
+interface LiveStatsBarProps {
+  stats: TodayStats | undefined
+  isLoading: boolean
+}
+
+export function LiveStatsBar({ stats, isLoading }: LiveStatsBarProps): React.JSX.Element {
+  if (isLoading || !stats) {
     return (
       <div
         className="grid gap-3 p-4"
-        style={{
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))'
-        }}
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}
       >
+        <StatCardSkeleton />
+        <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
         <StatCardSkeleton />
@@ -76,17 +62,14 @@ export function StatsBar({
   return (
     <div
       className="grid gap-3 p-4"
-      style={{
-        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))'
-      }}
+      style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}
     >
-      <StatCard label="Human Hours" value={humanHours} accent />
-      <StatCard label="Agent Hours" value={totalHours} />
-      <StatCard label="Sessions" value={totalSessions} />
-      <StatCard label="Prompts" value={totalPrompts.toLocaleString()} />
-      {commitSessions > 0 && <StatCard label="Commits" value={commitSessions} />}
-      {totalTokens > 0 && <StatCard label="Tokens" value={formatCompactNumber(totalTokens)} />}
-      {clientCount > 0 && <StatCard label="Clients" value={clientCount} />}
+      <StatCard label="Human Hours" value={stats.humanHours} accent />
+      <StatCard label="Agent Hours" value={stats.agentHours} />
+      <StatCard label="Sessions" value={stats.totalSessions} />
+      <StatCard label="Prompts" value={stats.totalPrompts.toLocaleString()} />
+      <StatCard label="Commits" value={stats.totalCommits} />
+      <StatCard label="Tokens" value={formatCompactNumber(stats.totalTokens)} />
     </div>
   )
 }

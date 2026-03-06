@@ -102,4 +102,30 @@ export function registerGitHandlers(): void {
       }
     }
   )
+
+  ipcMain.handle(
+    'git:getRemoteUrl',
+    async (_event, projectId: number): Promise<IpcResult<string | null>> => {
+      try {
+        const url = await gitService.getRemoteUrlForProject(projectId)
+        return ipcSuccess(url)
+      } catch (error) {
+        log.error('IPC git:getRemoteUrl failed:', error)
+        return ipcError('GIT_REMOTE_URL_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'git:getSessionIdsWithCommits',
+    async (): Promise<IpcResult<number[]>> => {
+      try {
+        const ids = gitService.getSessionIdsWithCommits()
+        return ipcSuccess(ids)
+      } catch (error) {
+        log.error('IPC git:getSessionIdsWithCommits failed:', error)
+        return ipcError('GIT_SESSION_IDS_ERROR', String(error))
+      }
+    }
+  )
 }

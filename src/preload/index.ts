@@ -155,6 +155,46 @@ const api = {
     exportPdf: (html: string, filename?: string): Promise<import('../shared/types/ipc').IpcResult<boolean>> =>
       ipcRenderer.invoke('report:exportPdf', html, filename)
   },
+  live: {
+    getTodayStats: () => ipcRenderer.invoke('live:getTodayStats'),
+    getProjectStatuses: () => ipcRenderer.invoke('live:getProjectStatuses'),
+    setWatching: (projectId: number, enabled: boolean) =>
+      ipcRenderer.invoke('live:setWatching', projectId, enabled),
+    getAlertConfig: (projectId: number) =>
+      ipcRenderer.invoke('live:getAlertConfig', projectId),
+    setAlertConfig: (projectId: number, alertSound: string) =>
+      ipcRenderer.invoke('live:setAlertConfig', projectId, alertSound),
+    getAvailableSounds: () => ipcRenderer.invoke('live:getAvailableSounds'),
+    playTestSound: () => ipcRenderer.invoke('live:playTestSound'),
+    selectCustomSound: () => ipcRenderer.invoke('live:selectCustomSound'),
+    testNotification: () => ipcRenderer.invoke('live:testNotification'),
+    onSessionsUpdated: (callback: () => void) => {
+      ipcRenderer.on('watcher:sessionsUpdated', () => callback())
+    },
+    onNewProject: (callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void) => {
+      ipcRenderer.on('watcher:newProject', (_event, info) => callback(info))
+    },
+    timerStarted: (projectName: string, startedAt: string) =>
+      ipcRenderer.invoke('live:timerStarted', projectName, startedAt),
+    timerStopped: () => ipcRenderer.invoke('live:timerStopped'),
+    toggleWidget: (projectId: number) => ipcRenderer.invoke('live:toggleWidget', projectId),
+    showStopDialog: (projectId: number) => ipcRenderer.invoke('live:showStopDialog', projectId),
+    onWidgetAlert: (callback: (info: { projectName: string }) => void) => {
+      ipcRenderer.on('widget:alert', (_event, info) => callback(info))
+    },
+    onOpenStopDialog: (callback: (projectId: number) => void) => {
+      ipcRenderer.on('live:openStopDialog', (_event, projectId) => callback(projectId))
+    }
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    close: () => ipcRenderer.invoke('window:close'),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
+    onMaximizedChanged: (callback: (isMaximized: boolean) => void) => {
+      ipcRenderer.on('window:maximized-changed', (_event, val) => callback(val))
+    }
+  },
   projects: {
     getAll: (
       clientId?: number

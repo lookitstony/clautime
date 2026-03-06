@@ -1,4 +1,5 @@
 import { useCallback, type KeyboardEvent, type MouseEvent } from 'react'
+import { GitCommitHorizontal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatTimeRange, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -8,6 +9,7 @@ interface SessionRowProps {
   session: Session
   projectColor: string
   isSelected: boolean
+  hasCommits?: boolean
   onSelect: (e?: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => void
 }
 
@@ -15,6 +17,7 @@ export function SessionRow({
   session,
   projectColor,
   isSelected,
+  hasCommits,
   onSelect
 }: SessionRowProps): React.JSX.Element {
   const handleKeyDown = useCallback(
@@ -57,6 +60,13 @@ export function SessionRow({
       >
         {session.source === 'auto' ? 'Auto' : 'Manual'}
       </Badge>
+      {hasCommits && (
+        <GitCommitHorizontal
+          size={14}
+          className="shrink-0 text-[var(--accent)]"
+          aria-label="Has git commits"
+        />
+      )}
       <span className="min-w-0 flex-1" />
       <span className="w-[5.5rem] shrink-0" />
       <span className="w-[5.5rem] shrink-0 text-right text-[11px] text-[var(--text-muted)]">

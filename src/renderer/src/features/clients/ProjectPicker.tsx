@@ -126,13 +126,12 @@ export function ProjectPicker({ clientId, open, onClose }: ProjectPickerProps): 
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} className="border-[var(--surface-border)]">
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button
             onClick={handleAssign}
             disabled={selectedCount === 0 || assigning}
-            className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
           >
             {assigning
               ? 'Assigning...'

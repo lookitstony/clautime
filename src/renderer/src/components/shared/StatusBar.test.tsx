@@ -14,35 +14,24 @@ function createWrapper() {
 
 beforeEach(() => {
   vi.stubGlobal('api', {
-    sessions: {
-      getAll: vi.fn().mockResolvedValue({ success: true, data: [] }),
-      scan: vi.fn(),
-      getById: vi.fn()
-    },
-    clients: {
-      getAll: vi.fn().mockResolvedValue({ success: true, data: [] })
-    },
-    projects: {
-      getAll: vi.fn().mockResolvedValue({ success: true, data: [] }),
-      attributeSessions: vi.fn().mockResolvedValue({ success: true, data: 0 })
+    live: {
+      getTodayStats: vi.fn().mockResolvedValue({
+        success: true,
+        data: { humanHours: '2h 30m', agentHours: '1h', totalSessions: 5, totalPrompts: 42, totalTokens: 10000, totalCommits: 3 }
+      })
     }
   })
 })
 
 describe('StatusBar', () => {
-  it('renders with default values when no sessions', async () => {
+  it('renders today stats', async () => {
     render(<StatusBar />, { wrapper: createWrapper() })
-    expect(screen.getByText('0 sessions')).toBeInTheDocument()
-    expect(screen.getByText(/total/)).toBeInTheDocument()
+    expect(await screen.findByText('5 sessions today')).toBeInTheDocument()
+    expect(screen.getByText(/today/)).toBeInTheDocument()
   })
 
   it('has status role for accessibility', () => {
     render(<StatusBar />, { wrapper: createWrapper() })
     expect(screen.getByRole('status')).toBeInTheDocument()
-  })
-
-  it('renders total hours', () => {
-    render(<StatusBar />, { wrapper: createWrapper() })
-    expect(screen.getByText(/total/)).toBeInTheDocument()
   })
 })

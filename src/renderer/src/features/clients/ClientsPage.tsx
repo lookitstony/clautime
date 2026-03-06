@@ -80,10 +80,7 @@ export function ClientsPage(): React.JSX.Element {
             title="No clients configured"
             description="Add clients and projects to organize your sessions"
             action={
-              <Button
-                onClick={handleAddClient}
-                className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-              >
+              <Button onClick={handleAddClient}>
                 Add Client
               </Button>
             }

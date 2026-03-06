@@ -181,13 +181,12 @@ export function ProjectForm({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} className="border-[var(--surface-border)]">
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={!isValid || isPending}
-            className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
           >
             {isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Project'}
           </Button>

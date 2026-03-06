@@ -134,6 +134,10 @@ export function useScanSessions() {
     mutationFn: (projectFilter?: string[]) => scanSessions(projectFilter),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      // Git scan runs automatically after session scan; refresh after a short delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['git'] })
+      }, 3000)
       const parts: string[] = [`${result.newSessions} sessions found`]
       if (result.attributedCount > 0) {
         parts.push(`${result.attributedCount} attributed`)
@@ -150,6 +154,7 @@ export interface SessionStats {
   totalPrompts: number
   totalTokens: number
   clientCount: number
+  commitSessions: number
 }
 
 export interface ProjectGroup {
@@ -200,7 +205,8 @@ function computeHumanMinutes(sessions: Session[]): number {
 
 export function useSessionStats(
   sessions: Session[] | undefined,
-  clients?: Client[]
+  clients?: Client[],
+  sessionIdsWithCommits?: Set<number>
 ): SessionStats {
   if (!sessions || sessions.length === 0) {
     return {
@@ -209,7 +215,8 @@ export function useSessionStats(
       totalSessions: 0,
       totalPrompts: 0,
       totalTokens: 0,
-      clientCount: clients?.length ?? 0
+      clientCount: clients?.length ?? 0,
+      commitSessions: 0
     }
   }
 
@@ -218,13 +225,18 @@ export function useSessionStats(
   const totalTokens = sessions.reduce((sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0), 0)
   const humanMinutes = computeHumanMinutes(sessions)
 
+  const commitSessions = sessionIdsWithCommits
+    ? sessions.filter((s) => sessionIdsWithCommits.has(s.id)).length
+    : 0
+
   return {
     humanHours: formatDuration(humanMinutes),
     totalHours: formatDuration(totalMinutes),
     totalSessions: sessions.length,
     totalPrompts,
     totalTokens,
-    clientCount: clients?.length ?? 0
+    clientCount: clients?.length ?? 0,
+    commitSessions
   }
 }
 

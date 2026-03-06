@@ -93,12 +93,12 @@ export function ClientCard({
             {client.name}
           </span>
           {client.billableRate != null && (
-            <Badge
-              variant="secondary"
-              className="shrink-0 bg-[var(--background-elevated)] text-[10px] font-semibold text-[var(--text-secondary)]"
+            <span
+              className="shrink-0 text-[13px] font-bold text-[var(--accent)]"
+              title={`$${client.billableRate}/hr`}
             >
-              ${client.billableRate}/hr
-            </Badge>
+              $
+            </span>
           )}
           <Badge
             variant="secondary"

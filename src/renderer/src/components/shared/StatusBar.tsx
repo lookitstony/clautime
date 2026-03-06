@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
+import { WifiOff } from 'lucide-react'
+import { useTodayStats } from '@/features/live/use-live'
 import { useSessions, useSessionStats } from '@/features/sessions/use-sessions'
 import { useClients } from '@/features/clients/use-clients'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Wifi, WifiOff } from 'lucide-react'
 
 export function StatusBar(): React.JSX.Element {
-  const { data: sessions } = useSessions()
+  const { data: todayStats } = useTodayStats()
+  const { data: allSessions } = useSessions()
   const { data: clients } = useClients()
-  const stats = useSessionStats(sessions, clients)
-  const queryClient = useQueryClient()
+  const allStats = useSessionStats(allSessions, clients)
+  const [showAllTime, setShowAllTime] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {
@@ -22,20 +23,9 @@ export function StatusBar(): React.JSX.Element {
     }
   }, [])
 
-  const resetMutation = useMutation({
-    mutationFn: async () => {
-      await window.api.sessions.reset()
-      await window.api.settings.set('setup_complete', '')
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] })
-      queryClient.invalidateQueries({ queryKey: ['sessions'] })
-    }
-  })
-
-  const statusText = stats.clientCount > 0
-    ? `${stats.clientCount} client${stats.clientCount !== 1 ? 's' : ''} · ${stats.totalSessions} session${stats.totalSessions !== 1 ? 's' : ''}`
-    : `${stats.totalSessions} session${stats.totalSessions !== 1 ? 's' : ''}`
+  const statusText = todayStats
+    ? `${todayStats.totalSessions} session${todayStats.totalSessions !== 1 ? 's' : ''} today`
+    : ''
 
   return (
     <footer
@@ -52,18 +42,16 @@ export function StatusBar(): React.JSX.Element {
             Offline
           </span>
         )}
-        {import.meta.env.DEV && (
-          <button
-            onClick={() => resetMutation.mutate()}
-            className="rounded bg-red-900/50 px-1.5 text-red-300 hover:bg-red-900/80"
-          >
-            DEV: Reset Wizard
-          </button>
-        )}
       </div>
-      <div className="font-mono text-[var(--accent)]">
-        <span>{stats.humanHours} total</span>
-      </div>
+      <button
+        type="button"
+        onClick={() => setShowAllTime((v) => !v)}
+        className="font-mono text-[var(--accent)] hover:brightness-125 cursor-pointer"
+      >
+        {showAllTime
+          ? `${allStats.humanHours} all time`
+          : `${todayStats?.humanHours ?? '0h'} today`}
+      </button>
     </footer>
   )
 }

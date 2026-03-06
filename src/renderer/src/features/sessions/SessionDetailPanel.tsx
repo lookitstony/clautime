@@ -1,24 +1,12 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
-import { ChevronRight, Pencil, FolderSync, Scissors, Trash2, GitCommitHorizontal } from 'lucide-react'
+import { ChevronRight, Pencil, Trash2, GitCommitHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
 import { formatDuration, formatTimeRange, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { usePromptTimings, useUpdateSession, useSplitSession, useDeleteSession, useSessionSummary, useGenerateSummary } from './use-sessions'
-import { useGitCommitsForSession } from '../git/use-git'
-import { useClients } from '../clients/use-clients'
-import { useProjects } from '../clients/use-projects'
+import { usePromptTimings, useUpdateSession, useDeleteSession } from './use-sessions'
+import { useGitCommitsForSession, useGitRemoteUrl } from '../git/use-git'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
-import type { GitCommit } from '../../../../shared/types/git'
 
 interface SessionDetailPanelProps {
   session: Session
@@ -113,27 +101,16 @@ export function SessionDetailPanel({
     showTimings ? session.id : null
   )
 
-  // AI Summary (three-tier)
-  const { data: summaryData } = useSessionSummary(session.id)
-  const generateSummary = useGenerateSummary()
-
-  // Git commits
+  // Git commits - always load for description fallback
   const [showCommits, setShowCommits] = useState(false)
-  const { data: gitCommitsData } = useGitCommitsForSession(showCommits ? session.id : null)
+  const { data: gitCommitsData } = useGitCommitsForSession(session.id)
+  const { data: remoteUrl } = useGitRemoteUrl(showCommits ? session.projectId : null)
 
   // Edit time state
   const [isEditingTime, setIsEditingTime] = useState(false)
   const [editStart, setEditStart] = useState('')
   const [editEnd, setEditEnd] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
-
-  // Reassign project state
-  const [isReassigning, setIsReassigning] = useState(false)
-
-  // Split session state
-  const [isSplitting, setIsSplitting] = useState(false)
-  const [splitTime, setSplitTime] = useState('')
-  const [splitError, setSplitError] = useState<string | null>(null)
 
   // Edit description state (manual sessions)
   const [isEditingDesc, setIsEditingDesc] = useState(false)
@@ -143,10 +120,7 @@ export function SessionDetailPanel({
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
 
   const updateSession = useUpdateSession()
-  const splitSession = useSplitSession()
   const deleteSession = useDeleteSession()
-  const { data: clients } = useClients()
-  const { data: allProjects } = useProjects()
 
   useEffect(() => {
     panelRef.current?.focus()
@@ -162,22 +136,11 @@ export function SessionDetailPanel({
           e.stopPropagation()
           return
         }
-        if (isReassigning) {
-          setIsReassigning(false)
-          e.stopPropagation()
-          return
-        }
-        if (isSplitting) {
-          setIsSplitting(false)
-          setSplitError(null)
-          e.stopPropagation()
-          return
-        }
         e.stopPropagation()
         onClose()
       }
     },
-    [onClose, isEditingTime, isReassigning, isSplitting]
+    [onClose, isEditingTime]
   )
 
   // Edit time handlers
@@ -257,130 +220,6 @@ export function SessionDetailPanel({
     [saveTimeEdit]
   )
 
-  // Reassign project handler
-  const handleReassign = useCallback(
-    (value: string) => {
-      if (value === '__none__') {
-        const prev = { projectId: session.projectId, clientId: session.clientId }
-        updateSession.mutate(
-          { id: session.id, data: { projectId: null, clientId: null } },
-          {
-            onSuccess: () => {
-              setIsReassigning(false)
-              toast.success('Session unassigned', {
-                action: {
-                  label: 'Undo',
-                  onClick: () => {
-                    updateSession.mutate({ id: session.id, data: prev })
-                  }
-                },
-                duration: 5000
-              })
-            }
-          }
-        )
-        return
-      }
-
-      const projectId = parseInt(value, 10)
-      const project = allProjects?.find((p) => p.id === projectId)
-      if (!project) return
-
-      const prev = { projectId: session.projectId, clientId: session.clientId }
-
-      updateSession.mutate(
-        { id: session.id, data: { projectId: project.id, clientId: project.clientId } },
-        {
-          onSuccess: () => {
-            setIsReassigning(false)
-            toast.success('Session reassigned', {
-              action: {
-                label: 'Undo',
-                onClick: () => {
-                  updateSession.mutate({ id: session.id, data: prev })
-                }
-              },
-              duration: 5000
-            })
-          }
-        }
-      )
-    },
-    [session, allProjects, updateSession]
-  )
-
-  // Split session handlers
-  const startSplit = useCallback(() => {
-    // Default split point to midpoint
-    const startMs = new Date(session.startedAt).getTime()
-    const endMs = new Date(session.endedAt).getTime()
-    const midMs = startMs + (endMs - startMs) / 2
-    const mid = new Date(midMs)
-    setSplitTime(
-      [mid.getHours(), mid.getMinutes(), mid.getSeconds()]
-        .map((v) => String(v).padStart(2, '0'))
-        .join(':')
-    )
-    setSplitError(null)
-    setIsSplitting(true)
-  }, [session.startedAt, session.endedAt])
-
-  const computeSplitPreview = (): { dur1: number; dur2: number } | null => {
-    const splitIso = timeStringToIso(splitTime, session.startedAt)
-    if (!splitIso) return null
-    const startMs = new Date(session.startedAt).getTime()
-    const endMs = new Date(session.endedAt).getTime()
-    const splitMs = new Date(splitIso).getTime()
-    if (splitMs <= startMs || splitMs >= endMs) return null
-    return {
-      dur1: Math.round((splitMs - startMs) / 60_000),
-      dur2: Math.round((endMs - splitMs) / 60_000)
-    }
-  }
-
-  const executeSplit = useCallback(() => {
-    const splitIso = timeStringToIso(splitTime, session.startedAt)
-    if (!splitIso) {
-      setSplitError('Invalid time format (HH:MM:SS)')
-      return
-    }
-    const startMs = new Date(session.startedAt).getTime()
-    const endMs = new Date(session.endedAt).getTime()
-    const splitMs = new Date(splitIso).getTime()
-    if (splitMs <= startMs || splitMs >= endMs) {
-      setSplitError('Split point must be between start and end')
-      return
-    }
-
-    splitSession.mutate(
-      { id: session.id, splitAt: splitIso },
-      {
-        onSuccess: () => {
-          setIsSplitting(false)
-          setSplitError(null)
-          toast.success('Session split into two')
-        },
-        onError: (err) => {
-          setSplitError(err.message)
-        }
-      }
-    )
-  }, [splitTime, session, splitSession])
-
-  const handleSplitKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        executeSplit()
-      } else if (e.key === 'Escape') {
-        e.stopPropagation()
-        setIsSplitting(false)
-        setSplitError(null)
-      }
-    },
-    [executeSplit]
-  )
-
   // Edit description handlers
   const startEditDesc = useCallback(() => {
     setEditDesc(session.description ?? '')
@@ -433,19 +272,6 @@ export function SessionDetailPanel({
 
   const isAuto = session.source === 'auto'
   const editDuration = isEditingTime ? computeEditDuration() : null
-  const splitPreview = isSplitting ? computeSplitPreview() : null
-
-  // Group projects by client for the reassign dropdown
-  const projectsByClient = allProjects?.reduce(
-    (acc, p) => {
-      const client = clients?.find((c) => c.id === p.clientId)
-      const key = client?.name ?? 'Unknown'
-      if (!acc[key]) acc[key] = []
-      acc[key].push(p)
-      return acc
-    },
-    {} as Record<string, typeof allProjects>
-  )
 
   return (
     <div
@@ -498,10 +324,10 @@ export function SessionDetailPanel({
               )}
             </div>
             <div className="mt-2 flex gap-1">
-              <Button size="sm" variant="ghost" onClick={saveTimeEdit} className="h-6 px-2 text-[11px] text-[var(--accent)]">
+              <Button size="xs" onClick={saveTimeEdit}>
                 Save
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setIsEditingTime(false); setEditError(null) }} className="h-6 px-2 text-[11px]">
+              <Button size="xs" variant="ghost" onClick={() => { setIsEditingTime(false); setEditError(null) }}>
                 Cancel
               </Button>
             </div>
@@ -512,8 +338,8 @@ export function SessionDetailPanel({
             <StatCard label="Time Range" value={formatTimeRange(session.startedAt, session.endedAt)} />
           </>
         )}
-        <StatCard label="Prompts" value={String(session.promptCount)} />
-        {(session.inputTokens > 0 || session.outputTokens > 0) && (
+        {isAuto && <StatCard label="Prompts" value={String(session.promptCount)} />}
+        {isAuto && (session.inputTokens > 0 || session.outputTokens > 0) && (
           <StatCard
             label="Tokens"
             value={formatCompactNumber(session.inputTokens + session.outputTokens)}
@@ -526,68 +352,29 @@ export function SessionDetailPanel({
       </div>
 
       {/* Project / Client attribution */}
-      {isReassigning ? (
-        <div className="mb-3 flex items-center gap-2">
-          <Select
-            value={session.projectId?.toString() ?? '__none__'}
-            onValueChange={handleReassign}
-          >
-            <SelectTrigger size="sm" className="h-8 min-w-[200px] text-[13px]">
-              <SelectValue placeholder="Select project..." />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              <SelectItem value="__none__">
-                <span className="text-[var(--text-muted)]">Unassigned</span>
-              </SelectItem>
-              {projectsByClient &&
-                Object.entries(projectsByClient).map(([clientNameKey, projects]) => (
-                  <SelectGroup key={clientNameKey}>
-                    <SelectLabel>{clientNameKey}</SelectLabel>
-                    {projects!.map((p) => (
-                      <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-            </SelectContent>
-          </Select>
-          <Button size="sm" variant="ghost" onClick={() => setIsReassigning(false)} className="h-8 px-2 text-[11px]">
-            Cancel
-          </Button>
-        </div>
-      ) : (
-        (projectName || clientName) && (
-          <div className="mb-3 flex items-center gap-2 text-[13px]">
-            <span
-              className="h-2 w-2 shrink-0 rounded-full"
-              style={{ backgroundColor: projectColor }}
-            />
-            {clientName && (
-              <span className="text-[var(--text-muted)]">
-                {clientName}
-                <span className="mx-1.5">/</span>
-              </span>
-            )}
-            {projectName && (
-              <span className="font-semibold text-[var(--text-primary)]">{projectName}</span>
-            )}
-          </div>
-        )
-      )}
-
-      {/* Description / Summary (three-tier) */}
-      <div className="mb-4">
-        <div className="mb-1 flex items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Description
-          </span>
-          {summaryData?.tier && summaryData.tier !== 'none' && (
-            <span className="rounded bg-[var(--background-secondary)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
-              {summaryData.tier === 'ai' ? 'AI Summary' : 'Git Commits'}
+      {(projectName || clientName) && (
+        <div className="mb-3 flex items-center gap-2 text-[13px]">
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: projectColor }}
+          />
+          {clientName && (
+            <span className="text-[var(--text-muted)]">
+              {clientName}
+              <span className="mx-1.5">/</span>
             </span>
           )}
+          {projectName && (
+            <span className="font-semibold text-[var(--text-primary)]">{projectName}</span>
+          )}
         </div>
+      )}
+
+      {/* Description / Git commit summaries */}
+      <div className="mb-4">
+        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Description
+        </span>
         {isEditingDesc ? (
           <div>
             <textarea
@@ -599,10 +386,10 @@ export function SessionDetailPanel({
               autoFocus
             />
             <div className="mt-1 flex gap-1">
-              <Button size="sm" variant="ghost" onClick={saveDescEdit} className="h-6 px-2 text-[11px] text-[var(--accent)]">
+              <Button size="xs" onClick={saveDescEdit}>
                 Save
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsEditingDesc(false)} className="h-6 px-2 text-[11px]">
+              <Button size="xs" variant="ghost" onClick={() => setIsEditingDesc(false)}>
                 Cancel
               </Button>
             </div>
@@ -611,23 +398,17 @@ export function SessionDetailPanel({
           <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
             {session.description}
           </p>
-        ) : summaryData?.summary ? (
-          <p className="text-[13px] leading-relaxed text-[var(--text-secondary)]">
-            {summaryData.summary}
-          </p>
-        ) : (
-          <div className="flex items-center gap-2">
-            <p className="text-[13px] italic text-[var(--text-muted)]">No summary available</p>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => generateSummary.mutate(session.id)}
-              disabled={generateSummary.isPending}
-              className="h-6 px-2 text-[11px] text-[var(--accent)]"
-            >
-              {generateSummary.isPending ? 'Generating...' : 'Generate Summary'}
-            </Button>
+        ) : gitCommitsData && gitCommitsData.length > 0 ? (
+          <div className="space-y-0.5 text-[13px] leading-relaxed text-[var(--text-secondary)]">
+            {gitCommitsData.map((c) => (
+              <div key={c.id} className="flex items-start gap-1.5">
+                <span className="shrink-0 text-[var(--text-muted)]">{'\u2022'}</span>
+                <span>{c.message}</span>
+              </div>
+            ))}
           </div>
+        ) : (
+          <p className="text-[13px] italic text-[var(--text-muted)]">No description</p>
         )}
       </div>
 
@@ -665,7 +446,7 @@ export function SessionDetailPanel({
       )}
 
       {/* Git Commits (collapsible) */}
-      {session.projectId && (
+      {isAuto && session.projectId && (
         <div className="mb-4">
           <button
             type="button"
@@ -685,9 +466,20 @@ export function SessionDetailPanel({
                   {gitCommitsData.map((c) => (
                     <div key={c.id} className="flex items-start gap-2 text-[12px]">
                       <GitCommitHorizontal size={12} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
-                      <span className="font-mono text-[11px] text-[var(--text-muted)]">
-                        {c.hash.slice(0, 7)}
-                      </span>
+                      {remoteUrl ? (
+                        <a
+                          href={`${remoteUrl}/commit/${c.hash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-[11px] text-[var(--accent)] hover:underline"
+                        >
+                          {c.hash.slice(0, 7)}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-[11px] text-[var(--text-muted)]">
+                          {c.hash.slice(0, 7)}
+                        </span>
+                      )}
                       <span className="text-[var(--text-secondary)]">{c.message}</span>
                     </div>
                   ))}
@@ -702,84 +494,9 @@ export function SessionDetailPanel({
         </div>
       )}
 
-      {/* Split session inline panel */}
-      {isSplitting && (
-        <div className="mb-4 rounded-md bg-[var(--background-secondary)] px-3 py-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Split Session
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-[var(--text-secondary)]">Split at:</span>
-            <input
-              type="text"
-              value={splitTime}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                setSplitTime(e.target.value)
-                setSplitError(null)
-              }}
-              onKeyDown={handleSplitKeyDown}
-              placeholder="HH:MM:SS"
-              className="w-24 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-              autoFocus
-            />
-          </div>
-          {splitPreview && (
-            <div className="mt-2 flex gap-4 text-[12px]">
-              <span className="text-[var(--text-secondary)]">
-                Session 1: <span className="font-mono font-semibold text-[var(--text-primary)]">{formatDuration(splitPreview.dur1)}</span>
-              </span>
-              <span className="text-[var(--text-secondary)]">
-                Session 2: <span className="font-mono font-semibold text-[var(--text-primary)]">{formatDuration(splitPreview.dur2)}</span>
-              </span>
-            </div>
-          )}
-          {splitError && (
-            <div className="mt-1 text-[11px] text-[var(--destructive)]">{splitError}</div>
-          )}
-          <div className="mt-2 flex gap-1">
-            <Button size="sm" variant="ghost" onClick={executeSplit} className="h-6 px-2 text-[11px] text-[var(--accent)]">
-              Split Here
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setIsSplitting(false); setSplitError(null) }} className="h-6 px-2 text-[11px]">
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* Action buttons */}
       <div className="flex items-center gap-2">
-        {isAuto ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={startEditTime}
-              disabled={isEditingTime}
-            >
-              <Pencil className="mr-1 h-3 w-3" />
-              Edit Time
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsReassigning(true)}
-              disabled={isReassigning}
-            >
-              <FolderSync className="mr-1 h-3 w-3" />
-              Reassign Project
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={startSplit}
-              disabled={isSplitting || session.durationMinutes < 2}
-            >
-              <Scissors className="mr-1 h-3 w-3" />
-              Split Session
-            </Button>
-          </>
-        ) : (
+        {isAuto ? null : (
           <>
             <Button
               variant="ghost"
@@ -794,18 +511,16 @@ export function SessionDetailPanel({
               <div className="flex items-center gap-1">
                 <span className="text-[12px] text-[var(--text-muted)]">Delete this session?</span>
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  variant="destructive"
+                  size="xs"
                   onClick={handleDelete}
-                  className="h-6 px-2 text-[11px] text-[var(--destructive)]"
                 >
                   Confirm
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="xs"
                   onClick={() => setIsConfirmingDelete(false)}
-                  className="h-6 px-2 text-[11px]"
                 >
                   Cancel
                 </Button>

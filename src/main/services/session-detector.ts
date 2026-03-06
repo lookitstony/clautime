@@ -37,7 +37,8 @@ export function detectSessions(
     buildDetectedSession(parsed, messages, segmentStart, messages.length - 1, projectPath)
   )
 
-  return results
+  // Filter out noise: sessions with 0 human prompts and minimal tokens (< 50) are just init/system messages
+  return results.filter((s) => s.messageCount > 0 || (s.inputTokens + s.outputTokens) >= 50)
 }
 
 /**
@@ -121,7 +122,7 @@ function buildDetectedSession(
   return {
     startedAt,
     endedAt,
-    durationMinutes: Math.max(0, durationMinutes),
+    durationMinutes: Math.max(1, durationMinutes),
     projectPath,
     claudeSessionId: parsed.sessionId,
     sourceFile: parsed.sourceFile,
