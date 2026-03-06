@@ -250,6 +250,78 @@ describe('detectSessions', () => {
     expect(result).toHaveLength(2)
   })
 
+  it('should split long gaps even with progress events (2hr hard cap)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 3 hour gap — tail -f or npm run dev left running
+      makeMessage('2026-03-04T13:01:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T13:02:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages, {
+      // Progress events throughout — tool was outputting, but 3hrs is clearly not billable
+      progressTimestamps: [
+        '2026-03-04T10:05:00Z', '2026-03-04T10:30:00Z',
+        '2026-03-04T11:00:00Z', '2026-03-04T11:30:00Z',
+        '2026-03-04T12:00:00Z', '2026-03-04T12:55:00Z'
+      ]
+    })
+    const result = detectSessions(parsed, 10)
+
+    // Should split — exceeds 2-hour hard cap even though progress events exist
+    expect(result).toHaveLength(2)
+  })
+
+  it('should split long gap when progress events only exist at start (tool went idle)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 45 min gap — progress only at the start, then silence
+      makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages, {
+      // Progress events only in first 5 minutes — tool stopped producing output
+      progressTimestamps: ['2026-03-04T10:03:00Z', '2026-03-04T10:05:00Z']
+    })
+    const result = detectSessions(parsed, 10)
+
+    // Should split — last progress event is 41 min before gap end (> 15 min threshold)
+    expect(result).toHaveLength(2)
+  })
+
+  it('should NOT bridge gap when tool_use has no matching tool_result (interrupted tool)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Agent'] }),
+      // 25 min gap — but next message is a NEW user prompt, not a tool result
+      makeMessage('2026-03-04T10:26:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    // Should split — tool was interrupted, next message is not a tool_result
+    expect(result).toHaveLength(2)
+  })
+
+  it('should use exclusive boundaries for progress events (edge timestamps dont count)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 20 min gap
+      makeMessage('2026-03-04T10:21:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:22:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages, {
+      // Progress events AT the boundary timestamps only — not strictly between
+      progressTimestamps: ['2026-03-04T10:01:00Z', '2026-03-04T10:21:00Z']
+    })
+    const result = detectSessions(parsed, 10)
+
+    // Should split — boundary-only progress events are not evidence of activity during the gap
+    expect(result).toHaveLength(2)
+  })
+
   it('should include subagent tokens proportionally in segments', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', {

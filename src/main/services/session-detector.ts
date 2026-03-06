@@ -26,19 +26,20 @@ export function detectSessions(
 
     if (gapMinutes > idleTimeoutMinutes) {
       // Don't split at tool execution gaps when there's evidence of active
-      // processing. We check two things:
-      // 1. Progress events in the JSONL prove the tool was actively running
-      // 2. Tool-type heuristic caps as a fallback safety net
+      // processing. Requires BOTH sides of the gap to be a tool boundary
+      // (tool_use before, tool_result after) to avoid bridging interrupted tools.
       const prevIsToolCall = messages[i - 1].hasToolUse
       const currIsToolResult = messages[i].isToolResult
-      if (prevIsToolCall || currIsToolResult) {
+      if (prevIsToolCall && currIsToolResult) {
         const prevTs = messages[i - 1].timestamp
         const currTs = messages[i].timestamp
-        // If progress events exist during this gap, the tool was actively running
-        if (hasProgressDuring(parsed.progressTimestamps, prevTs, currTs)) {
+        // Hard cap: no single tool execution should bridge more than 2 hours,
+        // even with progress events (catches tail -f, npm run dev left overnight)
+        if (gapMinutes <= MAX_PROGRESS_GAP_MINUTES &&
+            hasProgressActivity(parsed.progressTimestamps, prevTs, currTs)) {
           continue
         }
-        // Otherwise fall back to tool-type heuristic limits
+        // Fall back to tool-type heuristic limits for short gaps without progress
         if (gapMinutes <= getMaxToolGap(messages[i - 1].toolNames)) {
           continue
         }
@@ -108,26 +109,51 @@ export function decodeProjectPath(encoded: string): string {
   return encoded.replace(/-/g, '/')
 }
 
+/** Hard cap: even with progress events, no tool gap bridges more than 2 hours */
+const MAX_PROGRESS_GAP_MINUTES = 120
+
 /**
- * Check if any progress events occurred during a time range.
- * Progress events (bash_progress, hook_progress, agent_progress) are written
- * to the JSONL while tools actively execute — their presence proves processing.
- * Uses binary search on the sorted progressTimestamps array.
+ * Check if progress events show active tool processing during a time range.
+ *
+ * For short gaps (< 30 min): any progress event strictly between the boundaries
+ * is sufficient evidence.
+ * For long gaps (>= 30 min): requires the last progress event to be within
+ * 15 minutes of the gap end, proving the tool was still actively running
+ * near the end (not just at the start before going idle).
+ *
+ * Uses exclusive boundaries — a progress event at exactly startTs or endTs
+ * is not evidence of activity *during* the gap.
  */
-function hasProgressDuring(progressTimestamps: string[], startTs: string, endTs: string): boolean {
+function hasProgressActivity(progressTimestamps: string[], startTs: string, endTs: string): boolean {
   if (progressTimestamps.length === 0) return false
 
-  // Binary search for first timestamp >= startTs
+  // Binary search for first timestamp > startTs (exclusive)
   let lo = 0
   let hi = progressTimestamps.length
   while (lo < hi) {
     const mid = (lo + hi) >>> 1
-    if (progressTimestamps[mid] < startTs) lo = mid + 1
+    if (progressTimestamps[mid] <= startTs) lo = mid + 1
     else hi = mid
   }
 
-  // Check if that timestamp is within the range
-  return lo < progressTimestamps.length && progressTimestamps[lo] <= endTs
+  // Check if any progress event falls strictly between start and end
+  if (lo >= progressTimestamps.length || progressTimestamps[lo] >= endTs) {
+    return false
+  }
+
+  // For short gaps, any progress event is sufficient
+  const gapMs = new Date(endTs).getTime() - new Date(startTs).getTime()
+  if (gapMs < 30 * 60_000) return true
+
+  // For long gaps, find the LAST progress event before endTs and check
+  // it's within 15 minutes of the gap end (tool was still running near the end)
+  let lastInRange = lo
+  while (lastInRange + 1 < progressTimestamps.length && progressTimestamps[lastInRange + 1] < endTs) {
+    lastInRange++
+  }
+  const lastProgressMs = new Date(progressTimestamps[lastInRange]).getTime()
+  const endMs = new Date(endTs).getTime()
+  return (endMs - lastProgressMs) < 15 * 60_000
 }
 
 /**
