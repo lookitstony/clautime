@@ -92,7 +92,7 @@ describe('detectSessions', () => {
     expect(result[0].startedAt).toBe('2026-03-04T10:00:00Z')
     expect(result[0].endedAt).toBe('2026-03-04T10:12:00Z')
     expect(result[0].durationMinutes).toBe(12)
-    expect(result[0].messageCount).toBe(4)
+    expect(result[0].promptCount).toBe(4)
     expect(result[0].projectPath).toBe('/projects/test')
     expect(result[0].claudeSessionId).toBe('test-session-id')
   })
@@ -112,12 +112,12 @@ describe('detectSessions', () => {
     expect(result[0].startedAt).toBe('2026-03-04T10:00:00Z')
     expect(result[0].endedAt).toBe('2026-03-04T10:05:00Z')
     expect(result[0].durationMinutes).toBe(5)
-    expect(result[0].messageCount).toBe(2)
+    expect(result[0].promptCount).toBe(2)
 
     expect(result[1].startedAt).toBe('2026-03-04T10:25:00Z')
     expect(result[1].endedAt).toBe('2026-03-04T10:30:00Z')
     expect(result[1].durationMinutes).toBe(5)
-    expect(result[1].messageCount).toBe(2)
+    expect(result[1].promptCount).toBe(2)
   })
 
   it('should NOT split at Agent subagent gaps under 30 minutes', () => {
@@ -374,7 +374,7 @@ describe('detectSessions', () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].durationMinutes).toBe(1) // Math.max(1, 0) enforces minimum 1 minute
-    expect(result[0].messageCount).toBe(1)
+    expect(result[0].promptCount).toBe(1)
   })
 
   it('should detect three sessions with multiple idle gaps', () => {
@@ -437,10 +437,10 @@ describe('detectSessions', () => {
     const result = detectSessions(parsed, 10)
 
     expect(result).toHaveLength(1)
-    expect(result[0].messageCount).toBe(2)
+    expect(result[0].promptCount).toBe(2)
   })
 
-  it('should count only human prompts in messageCount (excludes assistant and tool results)', () => {
+  it('should count only human prompts in promptCount (excludes assistant and tool results)', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
       makeMessage('2026-03-04T10:01:00Z', { type: 'assistant' }),
@@ -456,7 +456,7 @@ describe('detectSessions', () => {
 
     expect(result).toHaveLength(1)
     // Only 3 human prompts: messages at :00, :04, :07 (user + not tool result)
-    expect(result[0].messageCount).toBe(3)
+    expect(result[0].promptCount).toBe(3)
   })
 
   it('should include sourceFile from parsed data', () => {

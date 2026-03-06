@@ -111,7 +111,7 @@ export const sessionService = {
               source: 'auto' as const,
               status: 'completed' as const,
               claudeSessionId: d.claudeSessionId,
-              promptCount: d.messageCount,
+              promptCount: d.promptCount,
               inputTokens: d.inputTokens,
               outputTokens: d.outputTokens,
               sourceFile: d.sourceFile,

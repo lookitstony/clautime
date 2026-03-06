@@ -74,7 +74,7 @@ export interface DetectedSession {
   projectPath: string
   claudeSessionId: string
   sourceFile: string
-  messageCount: number
+  promptCount: number
   inputTokens: number
   outputTokens: number
 }

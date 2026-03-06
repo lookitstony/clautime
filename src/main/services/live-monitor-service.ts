@@ -73,6 +73,7 @@ export const liveMonitorService = {
   _promptTimestampCache: new Map<string, { mtime: number; lastPromptAt: string; awaitingResponse: boolean }>(),
   // Track when each file's mtime last changed — to detect active writing vs stale
   _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
+  _lastEvictionDate: '',  // ISO date string for cache eviction on date rollover
 
   _escapeXml(str: string): string {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -245,6 +246,14 @@ export const liveMonitorService = {
 
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const todayDate = now.toISOString().slice(0, 10)
+
+    // Evict stale caches on date rollover to prevent unbounded growth
+    if (this._lastEvictionDate !== todayDate) {
+      this._promptTimestampCache.clear()
+      this._lastMtimeChange.clear()
+      this._lastEvictionDate = todayDate
+    }
 
     for (const dir of projectDirs) {
       if (!dir.isDirectory()) continue
@@ -569,11 +578,6 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
           const hasToolUse = Array.isArray(obj.message?.content)
             && obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
           lastMessageState = hasToolUse ? 'tool-pending' : 'idle'
-        } else if (obj.type === 'progress') {
-          // Progress events prove active tool execution
-          if (lastMessageState === 'tool-pending') {
-            lastMessageState = 'tool-pending' // stays green
-          }
         }
       } catch {
         continue
