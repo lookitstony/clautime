@@ -13,7 +13,29 @@
       "Bash(npx tsc:*)",
       "Bash(npx eslint:*)",
       "Bash(head:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(npx shadcn@latest:*)",
+      "Bash(npm:*)",
+      "Bash(ls:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(npx drizzle-kit:*)",
+      "Bash(npx electron-rebuild:*)",
+      "Bash(taskkill:*)",
+      "Bash(tasklist:*)",
+      "Bash(sqlite3:*)",
+      "Bash(npx electron:*)",
+      "Bash(xargs grep:*)",
+      "Bash(npx:*)",
+      "Bash(mv:*)",
+      "Bash(grep:*)",
+      "Bash(rm:*)",
+      "Bash(xargs:*)",
+      "Bash(mkdir:*)"
     ]
   }
 }

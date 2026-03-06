@@ -50,7 +50,7 @@ export function useTodayStats() {
   return useQuery({
     queryKey: ['live', 'stats'],
     queryFn: fetchTodayStats,
-    refetchInterval: 30000
+    refetchInterval: 15000
   })
 }
 
@@ -58,7 +58,7 @@ export function useProjectStatuses() {
   return useQuery({
     queryKey: ['live', 'statuses'],
     queryFn: fetchProjectStatuses,
-    refetchInterval: 30000
+    refetchInterval: 15000
   })
 }
 

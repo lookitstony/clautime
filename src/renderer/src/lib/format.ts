@@ -136,3 +136,12 @@ export function formatShortDate(isoString: string): string {
   const d = new Date(isoString)
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
+
+/**
+ * Format a YYYY-MM-DD date key as a short display date (e.g., "Mar 5").
+ * Uses noon to avoid timezone-shift issues.
+ */
+export function formatDateKey(dateKey: string): string {
+  const d = new Date(dateKey + 'T12:00:00')
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}

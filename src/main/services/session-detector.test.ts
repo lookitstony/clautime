@@ -23,6 +23,7 @@ function makeMessage(
     uuid: null,
     parentUuid: null,
     isToolResult: false,
+    hasToolUse: false,
     ...overrides
   }
 }
@@ -110,13 +111,50 @@ describe('detectSessions', () => {
     expect(result[1].messageCount).toBe(2)
   })
 
+  it('should NOT split at tool execution gaps (e.g. Agent subagent)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true }),
+      // 20 min gap — Agent subagent running in a separate JSONL file
+      makeMessage('2026-03-04T10:21:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:22:00Z', { type: 'assistant' }),
+      makeMessage('2026-03-04T10:23:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    // Should be ONE session — the gap was tool execution, not idle time
+    expect(result).toHaveLength(1)
+    expect(result[0].startedAt).toBe('2026-03-04T10:00:00Z')
+    expect(result[0].endedAt).toBe('2026-03-04T10:23:00Z')
+    expect(result[0].durationMinutes).toBe(23)
+  })
+
+  it('should still split at genuine idle gaps after tool results', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true }),
+      makeMessage('2026-03-04T10:02:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:03:00Z', { type: 'assistant' }), // final response, no tool_use
+      // 20 min genuine idle gap
+      makeMessage('2026-03-04T10:23:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    // Should split — the gap is after a completed response, not during tool execution
+    expect(result).toHaveLength(2)
+    expect(result[0].endedAt).toBe('2026-03-04T10:03:00Z')
+    expect(result[1].startedAt).toBe('2026-03-04T10:23:00Z')
+  })
+
   it('should handle single-message session (duration = 0)', () => {
     const messages = [makeMessage('2026-03-04T10:00:00Z')]
     const parsed = makeParsedSession(messages)
     const result = detectSessions(parsed, 10)
 
     expect(result).toHaveLength(1)
-    expect(result[0].durationMinutes).toBe(0)
+    expect(result[0].durationMinutes).toBe(1) // Math.max(1, 0) enforces minimum 1 minute
     expect(result[0].messageCount).toBe(1)
   })
 

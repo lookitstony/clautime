@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Bell, BellOff, Play, Pause, Square, X } from 'lucide-react'
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryClient } from '@/lib/query-client'
-import { useProjectStatuses, useSetWatching, useLiveBroadcastSync } from './use-live'
+import { useSetWatching, useLiveBroadcastSync } from './use-live'
 import { useLiveStore } from '@/stores/use-live-store'
 
 function ElapsedTick(): React.JSX.Element {
@@ -45,16 +45,38 @@ function LiveRelative({ timestamp }: { timestamp: string }): React.JSX.Element {
   return <>{text}</>
 }
 
-type GlowState = 'processing' | 'active' | 'nudge' | 'warning' | 'urgent' | 'alert' | 'idle' | 'entrance'
+type GlowState = 'processing' | 'prompt-ready' | 'active' | 'nudge' | 'warning' | 'urgent' | 'alert' | 'idle' | 'entrance'
 
 function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warningMin: number, alertMin: number): GlowState {
   const [state, setState] = useState<GlowState>('entrance')
   const [pastEntrance, setPastEntrance] = useState(false)
+  const prevProcessing = useRef(false)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setPastEntrance(true), 1500)
     return () => clearTimeout(t)
   }, [])
+
+  // Detect processing → not-processing transition (Claude finished, waiting for user)
+  useEffect(() => {
+    if (!pastEntrance) {
+      prevProcessing.current = isProcessing
+      return
+    }
+
+    if (prevProcessing.current && !isProcessing) {
+      // Claude just finished — flash blue twice
+      setState('prompt-ready')
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => {
+        flashTimer.current = null
+        // Will be corrected to normal state on next update cycle
+        setState('active')
+      }, 1600) // 2 pulses at 0.8s each
+    }
+    prevProcessing.current = isProcessing
+  }, [isProcessing, pastEntrance])
 
   useEffect(() => {
     if (!pastEntrance) return
@@ -73,6 +95,9 @@ function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warnin
         setState('processing')
         return
       }
+
+      // Don't interrupt the blue flash
+      if (flashTimer.current) return
 
       const ageMin = (Date.now() - new Date(lastPromptAt).getTime()) / 60_000
 
@@ -98,19 +123,28 @@ function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warnin
 }
 
 const glowStyles: Record<GlowState, React.CSSProperties> = {
-  entrance:   { boxShadow: '0 0 12px 2px rgba(52, 211, 153, 0.5), inset 0 0 8px rgba(52, 211, 153, 0.1)' },
-  processing: { boxShadow: '0 0 16px 3px rgba(168, 85, 247, 0.5), inset 0 0 8px rgba(168, 85, 247, 0.1)', animation: 'glow-breathe 2s ease-in-out infinite' },
-  active:     { boxShadow: '0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08)' },
-  nudge:      { boxShadow: '0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08)', animation: 'glow-nudge 1.5s ease-in-out 3' },
-  warning:    { boxShadow: '0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08)' },
-  urgent:     { boxShadow: '0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08)', animation: 'glow-urgent-pulse 1s ease-in-out infinite' },
-  alert:      { boxShadow: '0 0 18px 4px rgba(248, 113, 113, 0.6), inset 0 0 8px rgba(248, 113, 113, 0.1)' },
-  idle:       { boxShadow: 'none' }
+  entrance:     { boxShadow: '0 0 12px 2px rgba(52, 211, 153, 0.5), inset 0 0 8px rgba(52, 211, 153, 0.1)' },
+  processing:   { boxShadow: '0 0 16px 3px rgba(168, 85, 247, 0.5), inset 0 0 8px rgba(168, 85, 247, 0.1)', animation: 'glow-breathe 2s ease-in-out infinite' },
+  'prompt-ready': { boxShadow: '0 0 18px 4px rgba(96, 165, 250, 0.6), inset 0 0 8px rgba(96, 165, 250, 0.1)', animation: 'glow-prompt-ready 0.8s ease-in-out 2' },
+  active:       { boxShadow: '0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08)' },
+  nudge:        { boxShadow: '0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08)', animation: 'glow-nudge 1.5s ease-in-out 3' },
+  warning:      { boxShadow: '0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08)' },
+  urgent:       { boxShadow: '0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08)', animation: 'glow-urgent-pulse 1s ease-in-out infinite' },
+  alert:        { boxShadow: '0 0 18px 4px rgba(248, 113, 113, 0.6), inset 0 0 8px rgba(248, 113, 113, 0.1)' },
+  idle:         { boxShadow: 'none' }
 }
 
 function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element {
   useLiveBroadcastSync()
-  const { data: projects } = useProjectStatuses()
+  const { data: projects } = useQuery({
+    queryKey: ['live', 'statuses'],
+    queryFn: async () => {
+      const result = await window.api.live.getProjectStatuses()
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    refetchInterval: 5000
+  })
   const activeTimer = useLiveStore((s) => s.activeTimer)
   const setWatching = useSetWatching()
   const qc = useQueryClient()
@@ -121,7 +155,8 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
       const r = await window.api.settings.getAll()
       return r.success ? r.data : {}
     },
-    staleTime: 60_000
+    staleTime: 5_000,
+    refetchInterval: 5_000
   })
   const idleTimeout = parseInt(settings?.['idle_timeout_minutes'] ?? '15', 10) || 15
   const alertMode = (settings?.['alert_threshold_mode'] ?? 'percent') as 'percent' | 'minutes'
@@ -137,7 +172,7 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
   const rawGlowState = useGlowState(project?.lastPromptAt ?? null, project?.isProcessing ?? false, alertThresholdMin, idleTimeout)
   const glowState = glowEnabled ? rawGlowState : 'idle' as GlowState
 
-  // Sync theme from main window
+  // Sync theme + accent from main window
   useEffect(() => {
     const applyTheme = (): void => {
       const theme = localStorage.getItem('theme') ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -148,6 +183,11 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
       if (e.key === 'theme') applyTheme()
     })
   }, [])
+
+  useEffect(() => {
+    const accent = settings?.['accent_theme'] ?? 'teal'
+    document.documentElement.setAttribute('data-accent', accent)
+  }, [settings])
 
   // Make body transparent, prevent scrollbars, inject glow pulse animation
   useEffect(() => {
@@ -170,6 +210,10 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
       @keyframes glow-urgent-pulse {
         0%, 100% { box-shadow: 0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08); }
         50% { box-shadow: 0 0 22px 6px rgba(250, 204, 21, 0.7), inset 0 0 10px rgba(250, 204, 21, 0.15); }
+      }
+      @keyframes glow-prompt-ready {
+        0%, 100% { box-shadow: 0 0 6px 1px rgba(96, 165, 250, 0.15), inset 0 0 2px rgba(96, 165, 250, 0.02); }
+        50% { box-shadow: 0 0 22px 5px rgba(96, 165, 250, 0.7), inset 0 0 10px rgba(96, 165, 250, 0.15); }
       }
     `
     document.head.appendChild(style)
@@ -255,6 +299,7 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
       {/* Row 2: stats + timer */}
       <div className="flex items-center justify-between gap-1 mt-0.5">
         <div className="flex items-center gap-1.5 font-mono text-[10px] text-[var(--text-secondary)]">
+          <span className="font-bold text-[var(--accent)]">{project.totalHours}</span>
           <span>{project.sessionCount}s</span>
           <span>{project.totalPrompts}p</span>
           {project.totalTokens > 0 && <span>{(project.totalTokens / 1000).toFixed(0)}K</span>}

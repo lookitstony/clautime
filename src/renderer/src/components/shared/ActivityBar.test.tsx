@@ -19,6 +19,7 @@ function renderWithRouter(initialPath = '/') {
           { index: true, element: <div>Live</div> },
           { path: 'sessions', element: <div>Sessions</div> },
           { path: 'reports', element: <div>Reports</div> },
+          { path: 'analytics', element: <div>Analytics</div> },
           { path: 'clients', element: <div>Clients</div> },
           { path: 'settings', element: <div>Settings</div> }
         ]
@@ -36,10 +37,10 @@ describe('ActivityBar', () => {
     expect(nav).toBeInTheDocument()
   })
 
-  it('renders all 5 navigation buttons', () => {
+  it('renders all 6 navigation buttons', () => {
     renderWithRouter()
     const buttons = screen.getAllByRole('button')
-    expect(buttons).toHaveLength(5)
+    expect(buttons).toHaveLength(6)
   })
 
   it('renders buttons with correct labels', () => {
@@ -47,6 +48,7 @@ describe('ActivityBar', () => {
     expect(screen.getByLabelText('Sessions')).toBeInTheDocument()
     expect(screen.getByLabelText('Live')).toBeInTheDocument()
     expect(screen.getByLabelText('Reports')).toBeInTheDocument()
+    expect(screen.getByLabelText('Analytics')).toBeInTheDocument()
     expect(screen.getByLabelText('Clients')).toBeInTheDocument()
     expect(screen.getByLabelText('Settings')).toBeInTheDocument()
   })
@@ -73,8 +75,10 @@ describe('ActivityBar', () => {
     expect(screen.getByLabelText('Live')).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByLabelText('Reports')).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByLabelText('Analytics')).toHaveFocus()
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByLabelText('Live')).toHaveFocus()
+    expect(screen.getByLabelText('Reports')).toHaveFocus()
   })
 
   it('wraps keyboard navigation at boundaries', async () => {

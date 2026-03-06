@@ -70,7 +70,9 @@ function computeHumanMinutes(
 export const liveMonitorService = {
   _monitorInterval: null as ReturnType<typeof setInterval> | null,
   _alertedGaps: new Map<number, string>(),
-  _promptTimestampCache: new Map<string, { mtime: number; lastPromptAt: string; isProcessing: boolean }>(),
+  _promptTimestampCache: new Map<string, { mtime: number; lastPromptAt: string; awaitingResponse: boolean }>(),
+  // Track when each file's mtime last changed — to detect active writing vs stale
+  _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
 
   _escapeXml(str: string): string {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -252,15 +254,32 @@ export const liveMonitorService = {
         const entries = await readdir(projectPath, { withFileTypes: true })
         const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
 
-        // Find most recently modified file
+        // Check ALL today's JSONL files for activity (not just the latest).
+        // When Agent subagents run, they write to separate JSONL files.
+        // We need to detect activity across ALL files in the project dir.
         let latestFile: string | null = null
         let latestMtime = 0
+        let anyRecentlyWritten = false
+
         for (const entry of jsonlFiles) {
           const fp = join(projectPath, entry.name)
           try {
             const s = await stat(fp)
-            if (s.mtime.getTime() >= todayStart && s.mtime.getTime() > latestMtime) {
-              latestMtime = s.mtime.getTime()
+            const mtime = s.mtime.getTime()
+            if (mtime < todayStart) continue
+
+            // Track mtime changes for EACH file to detect active writing
+            const prev = this._lastMtimeChange.get(fp)
+            if (!prev || prev.prevMtime !== mtime) {
+              this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
+            }
+            const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
+            if ((now.getTime() - lastChanged) < 15_000) {
+              anyRecentlyWritten = true
+            }
+
+            if (mtime > latestMtime) {
+              latestMtime = mtime
               latestFile = fp
             }
           } catch {
@@ -270,25 +289,26 @@ export const liveMonitorService = {
 
         if (!latestFile) continue
 
-        // Detect processing: file actively being written to (mtime within last 10s)
-        const fileIsActive = (now.getTime() - latestMtime) < 10_000
+        const recentlyModified = (now.getTime() - latestMtime) < 5 * 60_000
 
         // Check cache — only reuse if mtime unchanged
         const cacheKey = latestFile
         const cached = this._promptTimestampCache.get(cacheKey)
         if (cached && cached.mtime === latestMtime) {
+          const fileIsActive = anyRecentlyWritten || (recentlyModified && cached.awaitingResponse)
           result.set(dir.name, { lastPromptAt: cached.lastPromptAt, isProcessing: fileIsActive })
           continue
         }
 
         // Tail-read last chunk — use 64KB to handle large assistant responses
-        const { lastPromptAt } = await tailReadLastPrompt(latestFile)
+        const { lastPromptAt, awaitingResponse } = await tailReadLastPrompt(latestFile)
         if (lastPromptAt) {
           this._promptTimestampCache.set(cacheKey, {
             mtime: latestMtime,
             lastPromptAt,
-            isProcessing: fileIsActive
+            awaitingResponse
           })
+          const fileIsActive = anyRecentlyWritten || (recentlyModified && awaitingResponse)
           result.set(dir.name, { lastPromptAt, isProcessing: fileIsActive })
         }
       } catch (err) {
@@ -507,10 +527,11 @@ export const liveMonitorService = {
 }
 
 /**
- * Tail-read a JSONL file to find the last human prompt timestamp.
- * Only reads the last ~8KB to minimize I/O.
+ * Tail-read a JSONL file to find the last human prompt timestamp
+ * and whether the session is awaiting a response (no final assistant message).
+ * Only reads the last ~64KB to minimize I/O.
  */
-async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: string | null; isProcessing: boolean }> {
+async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: string | null; awaitingResponse: boolean }> {
   let fh: Awaited<ReturnType<typeof open>> | null = null
   try {
     fh = await open(filePath, 'r')
@@ -529,30 +550,38 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
     const lines = position > 0 ? allLines.slice(1) : allLines
 
     let lastPromptAt: string | null = null
-    let lastIsRealUserPrompt = false
+    // Track last message type to detect if Claude is mid-turn:
+    // 'user' prompt with no assistant response = waiting for Claude
+    // 'assistant' with tool_use = Claude spawned a tool/subagent, still working
+    // 'assistant' without tool_use = Claude finished responding
+    let lastMessageState: 'idle' | 'awaiting' | 'tool-pending' = 'idle'
     for (const line of lines) {
       try {
         const obj = JSON.parse(line)
         if (obj.type === 'user' && !obj.toolUseResult && obj.timestamp) {
           lastPromptAt = obj.timestamp
-          lastIsRealUserPrompt = true
-        } else if (obj.type && obj.timestamp) {
-          // Any non-user-prompt message (assistant, tool result) means AI is not waiting
-          lastIsRealUserPrompt = false
+          lastMessageState = 'awaiting'
+        } else if (obj.type === 'user' && obj.toolUseResult) {
+          // Tool result returned — Claude may still be working
+          lastMessageState = 'awaiting'
+        } else if (obj.type === 'assistant') {
+          // Check if assistant message contains tool_use (subagent/tool call)
+          const hasToolUse = Array.isArray(obj.message?.content)
+            && obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
+          lastMessageState = hasToolUse ? 'tool-pending' : 'idle'
         }
       } catch {
         continue
       }
     }
 
-    // Only consider processing if the last real message was a user prompt
-    // AND it happened recently (within last 5 minutes — stale sessions don't count)
-    const isProcessing = lastIsRealUserPrompt && lastPromptAt != null
-      && (Date.now() - new Date(lastPromptAt).getTime()) < 5 * 60_000
-    return { lastPromptAt, isProcessing }
+    // Session is awaiting response if last state is user prompt or active tool call
+    const awaitingResponse = lastMessageState === 'awaiting' || lastMessageState === 'tool-pending'
+
+    return { lastPromptAt, awaitingResponse }
   } catch (err) {
     log.debug(`tailReadLastPrompt error for ${filePath}:`, err)
-    return { lastPromptAt: null, isProcessing: false }
+    return { lastPromptAt: null, awaitingResponse: false }
   } finally {
     await fh?.close()
   }

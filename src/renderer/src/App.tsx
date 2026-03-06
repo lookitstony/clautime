@@ -12,6 +12,7 @@ import { ClientsPage } from '@/features/clients/ClientsPage'
 import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { ReportsPage } from '@/features/reports/ReportsPage'
+import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { LivePage } from '@/features/live/LivePage'
 import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
@@ -163,6 +164,10 @@ const router = createMemoryRouter([
       {
         path: 'reports',
         element: <ReportsPage />
+      },
+      {
+        path: 'analytics',
+        element: <AnalyticsPage />
       },
       {
         path: 'clients',

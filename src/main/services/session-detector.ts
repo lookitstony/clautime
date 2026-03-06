@@ -25,6 +25,15 @@ export function detectSessions(
     const gapMinutes = (currTime - prevTime) / (1000 * 60)
 
     if (gapMinutes > idleTimeoutMinutes) {
+      // Don't split at tool execution gaps — when an assistant spawned a tool
+      // (e.g. Agent subagent) and we're waiting for the result, the gap is
+      // active work time, not idle time.
+      const prevIsToolCall = messages[i - 1].hasToolUse
+      const currIsToolResult = messages[i].isToolResult
+      if (prevIsToolCall || currIsToolResult) {
+        continue
+      }
+
       results.push(
         buildDetectedSession(parsed, messages, segmentStart, i - 1, projectPath)
       )
@@ -122,7 +131,7 @@ function buildDetectedSession(
   return {
     startedAt,
     endedAt,
-    durationMinutes: Math.max(1, durationMinutes),
+    durationMinutes: Math.max(1, durationMinutes), // intentional: minimum 1 minute per session
     projectPath,
     claudeSessionId: parsed.sessionId,
     sourceFile: parsed.sourceFile,

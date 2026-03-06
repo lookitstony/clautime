@@ -4,6 +4,7 @@ import {
   LayoutList,
   Activity,
   FileBarChart,
+  BarChart3,
   Users,
   Settings,
   type LucideIcon
@@ -26,6 +27,7 @@ const navItems: NavItem[] = [
   { icon: LayoutList, label: 'Sessions', route: '/sessions' },
   { icon: Activity, label: 'Live', route: '/' },
   { icon: FileBarChart, label: 'Reports', route: '/reports' },
+  { icon: BarChart3, label: 'Analytics', route: '/analytics' },
   { icon: Users, label: 'Clients', route: '/clients' },
   { icon: Settings, label: 'Settings', route: '/settings' }
 ]
