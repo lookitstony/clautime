@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Minus, Square, X, Copy, Sun, Moon } from 'lucide-react'
+import { Minus, Square, X, Copy, Sun, Moon, ArrowDownToLine } from 'lucide-react'
 
 function getSystemTheme(): string {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -73,9 +73,18 @@ export function TitleBar(): React.JSX.Element {
         </button>
         <button
           type="button"
-          onClick={() => window.api.window.close()}
+          onClick={() => window.api.window.hide()}
+          className="flex h-full w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--background-elevated)] transition-colors"
+          aria-label="Minimize to tray"
+          title="Minimize to tray"
+        >
+          <ArrowDownToLine size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => window.api.window.quit()}
           className="flex h-full w-11 items-center justify-center text-[var(--text-muted)] hover:bg-red-500 hover:text-white transition-colors"
-          aria-label="Close"
+          aria-label="Quit"
         >
           <X size={14} />
         </button>

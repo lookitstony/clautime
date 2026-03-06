@@ -112,20 +112,44 @@ export function SettingsPage(): React.JSX.Element {
 
   // ============= Session Detection =============
   const [idleTimeout, setIdleTimeout] = useState(15)
+  const [savedIdleTimeout, setSavedIdleTimeout] = useState(15)
   const [claudeDir, setClaudeDir] = useState('')
   const [alertMode, setAlertMode] = useState<'percent' | 'minutes'>('percent')
   const [alertMinutes, setAlertMinutes] = useState(5)
+  const [isSavingIdle, setIsSavingIdle] = useState(false)
 
   useEffect(() => {
     if (settings) {
       const timeout = settings['idle_timeout_minutes']
-      if (timeout) setIdleTimeout(parseInt(timeout, 10) || 15)
+      const val = timeout ? parseInt(timeout, 10) || 15 : 15
+      setIdleTimeout(val)
+      setSavedIdleTimeout(val)
       setClaudeDir(settings['claude_dir'] ?? '')
       setAlertMode((settings['alert_threshold_mode'] as 'percent' | 'minutes') ?? 'percent')
       const am = settings['alert_threshold_minutes']
       if (am) setAlertMinutes(parseInt(am, 10) || 5)
     }
   }, [settings])
+
+  const idleTimeoutChanged = idleTimeout !== savedIdleTimeout
+
+  const saveIdleTimeoutAndRescan = useCallback(async () => {
+    setIsSavingIdle(true)
+    try {
+      await window.api.settings.set('idle_timeout_minutes', String(idleTimeout))
+      await window.api.sessions.reset()
+      await window.api.sessions.scan()
+      setSavedIdleTimeout(idleTimeout)
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['live'] })
+      toast.success('Idle timeout saved — sessions re-scanned')
+    } catch {
+      toast.error('Failed to save and rescan')
+    } finally {
+      setIsSavingIdle(false)
+    }
+  }, [idleTimeout, queryClient])
 
   const saveSetting = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
@@ -311,13 +335,22 @@ export function SettingsPage(): React.JSX.Element {
                 max={60}
                 value={idleTimeout}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setIdleTimeout(parseInt(e.target.value, 10))}
-                onMouseUp={() => saveSetting.mutate({ key: 'idle_timeout_minutes', value: String(idleTimeout) })}
-                onTouchEnd={() => saveSetting.mutate({ key: 'idle_timeout_minutes', value: String(idleTimeout) })}
                 className="flex-1"
               />
               <span className="w-12 text-right font-mono text-[13px] text-[var(--text-primary)]">
                 {idleTimeout}m
               </span>
+              {idleTimeoutChanged && (
+                <Button
+                  size="sm"
+                  disabled={isSavingIdle}
+                  className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                  onClick={saveIdleTimeoutAndRescan}
+                >
+                  {isSavingIdle && <LoaderCircle size={14} className="mr-1 animate-spin" />}
+                  {isSavingIdle ? 'Rescanning...' : 'Save & Rescan'}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -451,6 +484,23 @@ export function SettingsPage(): React.JSX.Element {
       <section>
         <SectionHeader title="Notifications" />
         <SectionCard>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <label className="block text-[12px] font-semibold text-[var(--text-muted)]">
+                Desktop Alerts
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Show desktop notifications when a watched project is idle.
+              </p>
+            </div>
+            <Switch
+              checked={settings?.['desktop_alerts_enabled'] !== 'false'}
+              onCheckedChange={(checked) =>
+                saveSetting.mutate({ key: 'desktop_alerts_enabled', value: checked ? 'true' : 'false' })
+              }
+            />
+          </div>
+
           <div>
             <label className="mb-1 block text-[12px] font-semibold text-[var(--text-muted)]">
               Alert Volume

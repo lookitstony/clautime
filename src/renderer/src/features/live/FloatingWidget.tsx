@@ -5,6 +5,15 @@ import { queryClient } from '@/lib/query-client'
 import { useSetWatching, useLiveBroadcastSync } from './use-live'
 import { useLiveStore } from '@/stores/use-live-store'
 
+/** Convert "2h 15m" / "45m" / "3h" to "HH:MM" */
+function formatHHMM(dur: string): string {
+  const hMatch = dur.match(/(\d+)h/)
+  const mMatch = dur.match(/(\d+)m/)
+  const h = hMatch ? parseInt(hMatch[1], 10) : 0
+  const m = mMatch ? parseInt(mMatch[1], 10) : 0
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 function ElapsedTick(): React.JSX.Element {
   const [text, setText] = useState('')
   const activeTimer = useLiveStore((s) => s.activeTimer)
@@ -25,59 +34,54 @@ function ElapsedTick(): React.JSX.Element {
   return <>{text}</>
 }
 
-function LiveRelative({ timestamp }: { timestamp: string }): React.JSX.Element {
+function LiveRelative({ epochMs, isProcessing }: { epochMs: number; isProcessing: boolean }): React.JSX.Element {
   const [text, setText] = useState('')
   useEffect(() => {
+    if (isProcessing) { setText('00:00'); return }
     const update = (): void => {
-      const diffMs = Date.now() - new Date(timestamp).getTime()
-      const diffSec = Math.floor(diffMs / 1000)
-      if (diffSec < 60) { setText('now'); return }
-      const diffMin = Math.floor(diffSec / 60)
-      if (diffMin < 60) { setText(`${diffMin}m`); return }
-      const h = Math.floor(diffMin / 60)
-      const rm = diffMin % 60
-      setText(rm > 0 ? `${h}h${rm}m` : `${h}h`)
+      const diffSec = Math.max(0, Math.floor((Date.now() - epochMs) / 1000))
+      if (diffSec >= 3600) { setText('idle'); return }
+      const m = Math.floor(diffSec / 60)
+      const s = diffSec % 60
+      setText(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
     }
     update()
-    const id = setInterval(update, 10_000)
+    const id = setInterval(update, 1000)
     return () => clearInterval(id)
-  }, [timestamp])
+  }, [epochMs, isProcessing])
   return <>{text}</>
 }
 
 type GlowState = 'processing' | 'prompt-ready' | 'active' | 'nudge' | 'warning' | 'urgent' | 'alert' | 'idle' | 'entrance'
 
-function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warningMin: number, alertMin: number): GlowState {
+function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warningMin: number, alertMin: number): { state: GlowState; idleSinceMs: number; isActive: boolean } {
   const [state, setState] = useState<GlowState>('entrance')
   const [pastEntrance, setPastEntrance] = useState(false)
-  const prevProcessing = useRef(false)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const idleSince = useRef<number>(Date.now())
+  // Minimum processing window: once processing is detected, stay purple for at least
+  // this long even if isProcessing blips false (covers polling gaps during subagent work)
+  const processingUntil = useRef<number>(0)
+  const wasProcessing = useRef(false)
 
   useEffect(() => {
     const t = setTimeout(() => setPastEntrance(true), 1500)
     return () => clearTimeout(t)
   }, [])
 
-  // Detect processing → not-processing transition (Claude finished, waiting for user)
+  // Extend processing window each time isProcessing is true
+  if (isProcessing) {
+    processingUntil.current = Date.now() + 10_000
+  }
+
+  // Reset idle clock when a new prompt arrives
   useEffect(() => {
-    if (!pastEntrance) {
-      prevProcessing.current = isProcessing
-      return
+    if (lastPromptAt) {
+      idleSince.current = Date.now()
     }
+  }, [lastPromptAt])
 
-    if (prevProcessing.current && !isProcessing) {
-      // Claude just finished — flash blue twice
-      setState('prompt-ready')
-      if (flashTimer.current) clearTimeout(flashTimer.current)
-      flashTimer.current = setTimeout(() => {
-        flashTimer.current = null
-        // Will be corrected to normal state on next update cycle
-        setState('active')
-      }, 1600) // 2 pulses at 0.8s each
-    }
-    prevProcessing.current = isProcessing
-  }, [isProcessing, pastEntrance])
-
+  // Single interval drives all state transitions
   useEffect(() => {
     if (!pastEntrance) return
 
@@ -87,11 +91,27 @@ function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warnin
     const update = (): void => {
       if (!lastPromptAt) {
         setState('idle')
+        wasProcessing.current = false
         return
       }
 
-      // Purple glow while AI is generating
-      if (isProcessing) {
+      const nowProcessing = isProcessing || Date.now() < processingUntil.current
+
+      // Detect processing → idle transition (blue flash)
+      if (wasProcessing.current && !nowProcessing) {
+        idleSince.current = Date.now()
+        setState('prompt-ready')
+        if (flashTimer.current) clearTimeout(flashTimer.current)
+        flashTimer.current = setTimeout(() => {
+          flashTimer.current = null
+        }, 1600)
+        wasProcessing.current = false
+        return
+      }
+
+      wasProcessing.current = nowProcessing
+
+      if (nowProcessing) {
         setState('processing')
         return
       }
@@ -99,27 +119,28 @@ function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warnin
       // Don't interrupt the blue flash
       if (flashTimer.current) return
 
-      const ageMin = (Date.now() - new Date(lastPromptAt).getTime()) / 60_000
+      const ageMin = (Date.now() - idleSince.current) / 60_000
 
       if (ageMin < nudgeMin) {
-        setState('active')   // green glow — just finished
+        setState('active')
       } else if (ageMin < warningMin) {
-        setState('nudge')    // green flicker — hey, prompt's done
+        setState('nudge')
       } else if (ageMin < urgentMin) {
-        setState('warning')  // yellow glow
+        setState('warning')
       } else if (ageMin < alertMin) {
-        setState('urgent')   // yellow pulsing
+        setState('urgent')
       } else {
-        setState('alert')    // red glow — stays until new prompt
+        setState('alert')
       }
     }
 
     update()
-    const id = setInterval(update, 3000)
+    const id = setInterval(update, 1000)
     return () => clearInterval(id)
   }, [lastPromptAt, isProcessing, warningMin, alertMin, pastEntrance])
 
-  return pastEntrance ? state : 'entrance'
+  const nowActive = isProcessing || Date.now() < processingUntil.current
+  return { state: pastEntrance ? state : 'entrance', idleSinceMs: idleSince.current, isActive: nowActive }
 }
 
 const glowStyles: Record<GlowState, React.CSSProperties> = {
@@ -169,7 +190,7 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
   const isTimerOnOther = activeTimer != null && !isTimerOnThis
 
   const glowEnabled = settings?.['widget_glow_enabled'] !== 'false'
-  const rawGlowState = useGlowState(project?.lastPromptAt ?? null, project?.isProcessing ?? false, alertThresholdMin, idleTimeout)
+  const { state: rawGlowState, idleSinceMs, isActive } = useGlowState(project?.lastPromptAt ?? null, project?.isProcessing ?? false, alertThresholdMin, idleTimeout)
   const glowState = glowEnabled ? rawGlowState : 'idle' as GlowState
 
   // Sync theme + accent from main window
@@ -268,38 +289,40 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
       className="h-full rounded-lg border border-[var(--surface-border)]/30 px-2.5 py-1.5 bg-[var(--background-primary)]/90"
       style={{ transition: 'box-shadow 0.6s ease', ...glowStyles[glowState] } as React.CSSProperties}
     >
-      {/* Row 1: project name + last prompt + bell */}
-      <div className="flex items-center justify-between gap-1">
+      {/* Row 1: project name + idle timer + bell + close */}
+      <div className="flex items-center gap-1">
         <span className="min-w-0 truncate text-[11px] font-semibold text-[var(--text-primary)]">
           {project.projectName}
         </span>
-        <span className="shrink-0 font-mono text-[10px] font-semibold text-[var(--accent)]">
-          {project.lastPromptAt ? <LiveRelative timestamp={project.lastPromptAt} /> : '—'}
-        </span>
-        <button
-          type="button"
-          onClick={() => setWatching.mutate({ projectId: project.projectId, enabled: !project.isWatching })}
-          className="shrink-0 p-0.5"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          {project.isWatching
-            ? <Bell size={11} className="text-yellow-400" />
-            : <BellOff size={11} className="text-[var(--text-muted)]/40" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => window.api.live.toggleWidget(projectId)}
-          className="shrink-0 p-0.5 rounded hover:bg-red-500/20"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <X size={11} className="text-[var(--text-muted)]" />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <span className="font-mono text-[10px] font-semibold text-[var(--accent)]">
+            {project.lastPromptAt ? <LiveRelative epochMs={idleSinceMs} isProcessing={isActive} /> : '—'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setWatching.mutate({ projectId: project.projectId, enabled: !project.isWatching })}
+            className="shrink-0 p-0.5"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            {project.isWatching
+              ? <Bell size={11} className="text-yellow-400" />
+              : <BellOff size={11} className="text-[var(--text-muted)]/40" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.api.live.toggleWidget(projectId)}
+            className="shrink-0 p-0.5 rounded hover:bg-red-500/20"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            <X size={11} className="text-[var(--text-muted)]" />
+          </button>
+        </div>
       </div>
 
       {/* Row 2: stats + timer */}
       <div className="flex items-center justify-between gap-1 mt-0.5">
         <div className="flex items-center gap-1.5 font-mono text-[10px] text-[var(--text-secondary)]">
-          <span className="font-bold text-[var(--accent)]">{project.totalHours}</span>
+          <span className="font-bold text-[var(--accent)]">{formatHHMM(project.totalHours)}</span>
           <span>{project.sessionCount}s</span>
           <span>{project.totalPrompts}p</span>
           {project.totalTokens > 0 && <span>{(project.totalTokens / 1000).toFixed(0)}K</span>}

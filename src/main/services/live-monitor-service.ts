@@ -74,6 +74,9 @@ export const liveMonitorService = {
   // Track when each file's mtime last changed — to detect active writing vs stale
   _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
   _lastEvictionDate: '',  // ISO date string for cache eviction on date rollover
+  // Track when each project stopped processing — idle time starts from here, not from lastPromptAt
+  _idleSince: new Map<number, number>(),
+  _wasProcessing: new Map<number, boolean>(),
 
   _escapeXml(str: string): string {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -252,6 +255,8 @@ export const liveMonitorService = {
     if (this._lastEvictionDate !== todayDate) {
       this._promptTimestampCache.clear()
       this._lastMtimeChange.clear()
+      this._idleSince.clear()
+      this._wasProcessing.clear()
       this._lastEvictionDate = todayDate
     }
 
@@ -263,15 +268,36 @@ export const liveMonitorService = {
         const entries = await readdir(projectPath, { withFileTypes: true })
         const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
 
+        // Also scan subagent JSONL files (in {conversation-id}/subagents/ dirs).
+        // These include Agent tool subagents AND compaction sidechains, which write
+        // to separate files while the main conversation JSONL stays idle.
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue
+          try {
+            const subagentsDir = join(projectPath, entry.name, 'subagents')
+            const subEntries = await readdir(subagentsDir, { withFileTypes: true })
+            for (const sub of subEntries) {
+              if (sub.isFile() && sub.name.endsWith('.jsonl')) {
+                // Push with adjusted path info for stat checking below
+                jsonlFiles.push({ ...sub, name: join(entry.name, 'subagents', sub.name) } as typeof sub)
+              }
+            }
+          } catch {
+            // No subagents dir — normal
+          }
+        }
+
         // Check ALL today's JSONL files for activity (not just the latest).
-        // When Agent subagents run, they write to separate JSONL files.
-        // We need to detect activity across ALL files in the project dir.
+        // When Agent subagents or compaction run, they write to separate JSONL files.
+        // We need to detect activity across ALL files in the project dir tree.
         let latestFile: string | null = null
         let latestMtime = 0
         let anyRecentlyWritten = false
+        let subagentRecentlyWritten = false
 
         for (const entry of jsonlFiles) {
           const fp = join(projectPath, entry.name)
+          const isSubagentFile = entry.name.includes('/') || entry.name.includes('\\')
           try {
             const s = await stat(fp)
             const mtime = s.mtime.getTime()
@@ -283,13 +309,18 @@ export const liveMonitorService = {
               this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
             }
             const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
-            if ((now.getTime() - lastChanged) < 15_000) {
+            if ((now.getTime() - lastChanged) < 30_000) {
               anyRecentlyWritten = true
+              if (isSubagentFile) subagentRecentlyWritten = true
             }
 
-            if (mtime > latestMtime) {
-              latestMtime = mtime
-              latestFile = fp
+            // Only track top-level JSONL files as "latest" for state machine reading.
+            // Subagent files contribute to anyRecentlyWritten but not awaitingResponse.
+            if (!isSubagentFile) {
+              if (mtime > latestMtime) {
+                latestMtime = mtime
+                latestFile = fp
+              }
             }
           } catch {
             continue
@@ -304,7 +335,13 @@ export const liveMonitorService = {
         const cacheKey = latestFile
         const cached = this._promptTimestampCache.get(cacheKey)
         if (cached && cached.mtime === latestMtime) {
-          const fileIsActive = anyRecentlyWritten || (recentlyModified && cached.awaitingResponse)
+          // Show processing if ANY of these are true:
+          // 1. Main JSONL was written to in the last 30s (active tool calls, even if
+          //    last message is end_turn — the AI is clearly still working)
+          // 2. State machine says awaiting AND file modified in last 5 min
+          // 3. A subagent file is actively being written (background agents/compaction)
+          const fileIsActive = anyRecentlyWritten || (cached.awaitingResponse && recentlyModified) || subagentRecentlyWritten
+          log.debug(`[live-glow] ${dir.name} CACHED: awaiting=${cached.awaitingResponse} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} → active=${fileIsActive}`)
           result.set(dir.name, { lastPromptAt: cached.lastPromptAt, isProcessing: fileIsActive })
           continue
         }
@@ -317,7 +354,8 @@ export const liveMonitorService = {
             lastPromptAt,
             awaitingResponse
           })
-          const fileIsActive = anyRecentlyWritten || (recentlyModified && awaitingResponse)
+          const fileIsActive = anyRecentlyWritten || (awaitingResponse && recentlyModified) || subagentRecentlyWritten
+          log.debug(`[live-glow] ${dir.name} FRESH: awaiting=${awaitingResponse} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} → active=${fileIsActive}`)
           result.set(dir.name, { lastPromptAt, isProcessing: fileIsActive })
         }
       } catch (err) {
@@ -342,6 +380,10 @@ export const liveMonitorService = {
         const idleTimeoutMinutes = Number.isNaN(parsed)
           ? DEFAULT_IDLE_TIMEOUT_MINUTES
           : parsed
+
+        // Check if desktop alerts are enabled globally
+        const alertsEnabled = settingsService.getSetting('desktop_alerts_enabled') !== 'false'
+        if (!alertsEnabled) return
 
         // Respect alert threshold mode setting
         const alertMode = settingsService.getSetting('alert_threshold_mode') ?? 'percent'
@@ -373,17 +415,42 @@ export const liveMonitorService = {
         for (const config of watchedConfigs) {
           // Match encoded .claude/projects/ dir name against project's directoryPath
           let lastPromptAt: string | null = null
+          let isProcessing = false
           for (const [key, value] of timestamps) {
             const decoded = decodeProjectPath(key)
             if (decoded === config.directoryPath || config.directoryPath.endsWith(decoded)) {
               lastPromptAt = value.lastPromptAt
+              isProcessing = value.isProcessing
               break
             }
           }
 
           if (!lastPromptAt) continue
 
-          const elapsed = now - new Date(lastPromptAt).getTime()
+          // Don't alert while AI is actively processing — it's not idle
+          if (isProcessing) {
+            this._wasProcessing.set(config.projectId, true)
+            continue
+          }
+
+          // Track processing → idle transition to get accurate idle start time
+          const prevWasProcessing = this._wasProcessing.get(config.projectId) ?? false
+          if (prevWasProcessing) {
+            this._wasProcessing.set(config.projectId, false)
+            this._idleSince.set(config.projectId, now)
+            this._alertedGaps.delete(config.projectId) // reset alert for new idle period
+          }
+          // New prompt resets idle tracking
+          const prevAlertPrompt = this._alertedGaps.get(config.projectId)
+          if (prevAlertPrompt && prevAlertPrompt !== lastPromptAt) {
+            this._idleSince.set(config.projectId, new Date(lastPromptAt).getTime())
+            this._alertedGaps.delete(config.projectId)
+          }
+          if (!this._idleSince.has(config.projectId)) {
+            this._idleSince.set(config.projectId, now)
+          }
+
+          const elapsed = now - this._idleSince.get(config.projectId)!
           if (elapsed >= thresholdMs) {
             const alreadyAlerted = this._alertedGaps.get(config.projectId)
             if (alreadyAlerted === lastPromptAt) continue
@@ -396,14 +463,17 @@ export const liveMonitorService = {
               .get()
 
             const projectName = projectRow?.name ?? 'Unknown project'
-            const minutesAgo = Math.round(elapsed / 60_000)
-            log.info(`Alert: ${projectName} idle ${minutesAgo}m (threshold ${Math.round(thresholdMs / 60_000)}m)`)
+            const elapsedSec = Math.round(elapsed / 1000)
+            const idleText = elapsedSec < 60
+              ? `${elapsedSec}s`
+              : `${Math.round(elapsedSec / 60)}m`
+            log.info(`Alert: ${projectName} idle ${idleText} (threshold ${Math.round(thresholdMs / 60_000)}m)`)
 
             if (Notification.isSupported()) {
               const useSystemSound = config.alertSound === 'system'
               const notification = new Notification({
                 title: `⏳ ${projectName}`,
-                body: `Prompt waiting for ${minutesAgo} min`,
+                body: `Prompt ready — idle ${idleText}`,
                 silent: !useSystemSound
               })
               notification.on('show', () => log.info(`Notification displayed for ${projectName}`))

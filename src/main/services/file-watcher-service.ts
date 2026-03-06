@@ -112,30 +112,30 @@ export const fileWatcherService = {
   },
 
   _debouncedScan(filePath: string): void {
-    const existing = this._debounceTimers.get(filePath)
+    // Debounce per project directory (not per file) since _runIncrementalScan
+    // scans the entire project dir anyway. Multiple file changes in the same
+    // project (main JSONL + subagent files) collapse into a single scan.
+    const parts = filePath.replace(/\\/g, '/').split('/')
+    const projectsIdx = parts.lastIndexOf('projects')
+    const projectDirName = projectsIdx >= 0 ? parts[projectsIdx + 1] : null
+    if (!projectDirName) return
+
+    const existing = this._debounceTimers.get(projectDirName)
     if (existing) clearTimeout(existing)
 
     this._debounceTimers.set(
-      filePath,
+      projectDirName,
       setTimeout(() => {
-        this._debounceTimers.delete(filePath)
-        this._runIncrementalScan(filePath)
+        this._debounceTimers.delete(projectDirName)
+        this._runIncrementalScan(projectDirName)
       }, DEBOUNCE_MS)
     )
   },
 
-  async _runIncrementalScan(filePath: string): Promise<void> {
+  async _runIncrementalScan(projectDirName: string): Promise<void> {
     try {
-      // Extract the project dir name from the file path to create a filter
-      // filePath = .../projects/C--apps-Foo/abc123.jsonl
-      const parts = filePath.replace(/\\/g, '/').split('/')
-      const projectsIdx = parts.lastIndexOf('projects')
-      const projectDirName = projectsIdx >= 0 ? parts[projectsIdx + 1] : null
-
-      if (!projectDirName) return
-
       const decodedPath = decodeProjectPath(projectDirName)
-      log.info(`File watcher: incremental scan for ${basename(filePath)} (${decodedPath})`)
+      log.info(`File watcher: incremental scan for project ${decodedPath}`)
 
       // Run incremental scan filtered to just this project's files
       await sessionService.scanSessions(undefined, [projectDirName])

@@ -73,11 +73,8 @@ function createWindow(): void {
     mainWindow!.show()
   })
 
-  mainWindow.on('close', (e) => {
-    if (!isQuitting && mainWindow) {
-      e.preventDefault()
-      mainWindow.webContents.send('window:close-requested')
-    }
+  mainWindow.on('close', () => {
+    isQuitting = true
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
