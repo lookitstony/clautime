@@ -24,6 +24,7 @@ function makeMessage(
     parentUuid: null,
     isToolResult: false,
     hasToolUse: false,
+    toolNames: [],
     ...overrides
   }
 }
@@ -111,23 +112,94 @@ describe('detectSessions', () => {
     expect(result[1].messageCount).toBe(2)
   })
 
-  it('should NOT split at tool execution gaps (e.g. Agent subagent)', () => {
+  it('should NOT split at Agent subagent gaps under 30 minutes', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true }),
-      // 20 min gap — Agent subagent running in a separate JSONL file
-      makeMessage('2026-03-04T10:21:00Z', { type: 'user', isToolResult: true }),
-      makeMessage('2026-03-04T10:22:00Z', { type: 'assistant' }),
-      makeMessage('2026-03-04T10:23:00Z', { type: 'user' })
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Agent'] }),
+      // 25 min gap — Agent subagent running (under 30 min limit)
+      makeMessage('2026-03-04T10:26:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:27:00Z', { type: 'assistant' }),
+      makeMessage('2026-03-04T10:28:00Z', { type: 'user' })
     ]
     const parsed = makeParsedSession(messages)
     const result = detectSessions(parsed, 10)
 
-    // Should be ONE session — the gap was tool execution, not idle time
     expect(result).toHaveLength(1)
-    expect(result[0].startedAt).toBe('2026-03-04T10:00:00Z')
-    expect(result[0].endedAt).toBe('2026-03-04T10:23:00Z')
-    expect(result[0].durationMinutes).toBe(23)
+    expect(result[0].durationMinutes).toBe(28)
+  })
+
+  it('should split at Agent subagent gaps exceeding 30 minutes', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Agent'] }),
+      // 45 min gap — too long even for an Agent
+      makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+  })
+
+  it('should split at Bash gaps exceeding 10 minutes', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 15 min gap — Bash shouldn't take this long
+      makeMessage('2026-03-04T10:16:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:17:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+  })
+
+  it('should split at fast tool (Read/Write) gaps exceeding 5 minutes', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Read'] }),
+      // 8 min gap — Read should complete in seconds
+      makeMessage('2026-03-04T10:09:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:10:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 4)
+
+    expect(result).toHaveLength(2)
+  })
+
+  it('should use the most generous limit when multiple tools called', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Read', 'Agent'] }),
+      // 25 min gap — Agent allows up to 30 min
+      makeMessage('2026-03-04T10:26:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:27:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    // Should NOT split — Agent's 30-min limit applies
+    expect(result).toHaveLength(1)
+  })
+
+  it('should split at massive gaps regardless of tool type (7 hours)', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 7 hour gap — user went to sleep
+      makeMessage('2026-03-04T17:01:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T17:02:00Z', { type: 'assistant' }),
+      makeMessage('2026-03-04T17:03:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].endedAt).toBe('2026-03-04T10:01:00Z')
+    expect(result[1].startedAt).toBe('2026-03-04T17:01:00Z')
   })
 
   it('should still split at genuine idle gaps after tool results', () => {

@@ -27,10 +27,12 @@ export function detectSessions(
     if (gapMinutes > idleTimeoutMinutes) {
       // Don't split at tool execution gaps — when an assistant spawned a tool
       // (e.g. Agent subagent) and we're waiting for the result, the gap is
-      // active work time, not idle time.
+      // active work time, not idle time. But cap this based on the tool type —
+      // fast tools (Read, Write, etc.) shouldn't bridge long gaps, while Agent
+      // subagents may legitimately run longer.
       const prevIsToolCall = messages[i - 1].hasToolUse
       const currIsToolResult = messages[i].isToolResult
-      if (prevIsToolCall || currIsToolResult) {
+      if ((prevIsToolCall || currIsToolResult) && gapMinutes <= getMaxToolGap(messages[i - 1].toolNames)) {
         continue
       }
 
@@ -96,6 +98,32 @@ export function decodeProjectPath(encoded: string): string {
   }
 
   return encoded.replace(/-/g, '/')
+}
+
+/**
+ * Maximum gap (in minutes) to tolerate for a tool execution before treating
+ * it as idle time. Based on realistic execution times per tool type.
+ */
+const TOOL_GAP_SLOW = 30  // Agent subagents, complex MCP tools
+const TOOL_GAP_MEDIUM = 10 // Bash (builds/tests can take a few minutes)
+const TOOL_GAP_FAST = 5    // Read, Write, Edit, Glob, Grep, etc.
+
+const SLOW_TOOLS = new Set(['Agent', 'TaskCreate', 'TaskUpdate', 'TaskGet'])
+const FAST_TOOLS = new Set([
+  'Read', 'Write', 'Edit', 'Glob', 'Grep', 'LSP',
+  'NotebookEdit', 'AskUserQuestion', 'TodoWrite',
+  'EnterPlanMode', 'ExitPlanMode'
+])
+
+function getMaxToolGap(toolNames: string[]): number {
+  if (toolNames.length === 0) return TOOL_GAP_MEDIUM
+  // Use the most generous limit among the tools called
+  let max = TOOL_GAP_FAST
+  for (const name of toolNames) {
+    if (SLOW_TOOLS.has(name)) return TOOL_GAP_SLOW
+    if (!FAST_TOOLS.has(name)) max = Math.max(max, TOOL_GAP_MEDIUM)
+  }
+  return max
 }
 
 function buildDetectedSession(

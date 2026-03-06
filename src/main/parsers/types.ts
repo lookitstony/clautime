@@ -23,6 +23,7 @@ export interface ParsedMessage {
   parentUuid: string | null
   isToolResult: boolean
   hasToolUse: boolean
+  toolNames: string[]
 }
 
 /** Aggregated data from one session JSONL file. */

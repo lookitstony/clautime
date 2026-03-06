@@ -34,8 +34,10 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
   const usage = message?.usage as Record<string, number> | undefined
 
   // Detect assistant messages that contain tool_use blocks (Agent, Read, etc.)
-  const content = message?.content as Array<{ type?: string }> | undefined
-  const hasToolUse = Array.isArray(content) && content.some((b) => b.type === 'tool_use')
+  const content = message?.content as Array<{ type?: string; name?: string }> | undefined
+  const toolUseBlocks = Array.isArray(content) ? content.filter((b) => b.type === 'tool_use') : []
+  const hasToolUse = toolUseBlocks.length > 0
+  const toolNames = toolUseBlocks.map((b) => b.name || 'unknown')
 
   return {
     type: (raw.type as string) || 'unknown',
@@ -55,7 +57,8 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
     uuid: (raw.uuid as string) || null,
     parentUuid: (raw.parentUuid as string) || null,
     isToolResult: !!(raw.toolUseResult),
-    hasToolUse
+    hasToolUse,
+    toolNames
   }
 }
 
