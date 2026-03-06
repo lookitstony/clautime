@@ -25,15 +25,23 @@ export function detectSessions(
     const gapMinutes = (currTime - prevTime) / (1000 * 60)
 
     if (gapMinutes > idleTimeoutMinutes) {
-      // Don't split at tool execution gaps — when an assistant spawned a tool
-      // (e.g. Agent subagent) and we're waiting for the result, the gap is
-      // active work time, not idle time. But cap this based on the tool type —
-      // fast tools (Read, Write, etc.) shouldn't bridge long gaps, while Agent
-      // subagents may legitimately run longer.
+      // Don't split at tool execution gaps when there's evidence of active
+      // processing. We check two things:
+      // 1. Progress events in the JSONL prove the tool was actively running
+      // 2. Tool-type heuristic caps as a fallback safety net
       const prevIsToolCall = messages[i - 1].hasToolUse
       const currIsToolResult = messages[i].isToolResult
-      if ((prevIsToolCall || currIsToolResult) && gapMinutes <= getMaxToolGap(messages[i - 1].toolNames)) {
-        continue
+      if (prevIsToolCall || currIsToolResult) {
+        const prevTs = messages[i - 1].timestamp
+        const currTs = messages[i].timestamp
+        // If progress events exist during this gap, the tool was actively running
+        if (hasProgressDuring(parsed.progressTimestamps, prevTs, currTs)) {
+          continue
+        }
+        // Otherwise fall back to tool-type heuristic limits
+        if (gapMinutes <= getMaxToolGap(messages[i - 1].toolNames)) {
+          continue
+        }
       }
 
       results.push(
@@ -101,6 +109,28 @@ export function decodeProjectPath(encoded: string): string {
 }
 
 /**
+ * Check if any progress events occurred during a time range.
+ * Progress events (bash_progress, hook_progress, agent_progress) are written
+ * to the JSONL while tools actively execute — their presence proves processing.
+ * Uses binary search on the sorted progressTimestamps array.
+ */
+function hasProgressDuring(progressTimestamps: string[], startTs: string, endTs: string): boolean {
+  if (progressTimestamps.length === 0) return false
+
+  // Binary search for first timestamp >= startTs
+  let lo = 0
+  let hi = progressTimestamps.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (progressTimestamps[mid] < startTs) lo = mid + 1
+    else hi = mid
+  }
+
+  // Check if that timestamp is within the range
+  return lo < progressTimestamps.length && progressTimestamps[lo] <= endTs
+}
+
+/**
  * Maximum gap (in minutes) to tolerate for a tool execution before treating
  * it as idle time. Based on realistic execution times per tool type.
  */
@@ -154,6 +184,16 @@ function buildDetectedSession(
       inputTokens += m.usage.inputTokens
       outputTokens += m.usage.outputTokens
     }
+  }
+
+  // Distribute subagent tokens proportionally across segments by token share.
+  // Subagents run within the session but their tokens are in separate files.
+  const totalMainTokens = parsed.totalTokenUsage.inputTokens + parsed.totalTokenUsage.outputTokens
+  const segmentTokens = inputTokens + outputTokens
+  if (totalMainTokens > 0 && segmentTokens > 0) {
+    const proportion = segmentTokens / totalMainTokens
+    inputTokens += Math.round(parsed.subagentTokenUsage.inputTokens * proportion)
+    outputTokens += Math.round(parsed.subagentTokenUsage.outputTokens * proportion)
   }
 
   return {

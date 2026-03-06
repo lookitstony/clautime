@@ -550,11 +550,12 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
     const lines = position > 0 ? allLines.slice(1) : allLines
 
     let lastPromptAt: string | null = null
-    // Track last message type to detect if Claude is mid-turn:
-    // 'user' prompt with no assistant response = waiting for Claude
-    // 'assistant' with tool_use = Claude spawned a tool/subagent, still working
-    // 'assistant' without tool_use = Claude finished responding
-    let lastMessageState: 'idle' | 'awaiting' | 'tool-pending' = 'idle'
+    // Track session state to detect if Claude is actively working:
+    // 'idle'         = Claude gave a final response, waiting for user (purple)
+    // 'awaiting'     = User sent a prompt, waiting for Claude to respond (green)
+    // 'tool-pending' = Claude called a tool, waiting for result (green)
+    // 'processing'   = Tool result returned, Claude is generating next response (green)
+    let lastMessageState: 'idle' | 'awaiting' | 'tool-pending' | 'processing' = 'idle'
     for (const line of lines) {
       try {
         const obj = JSON.parse(line)
@@ -562,21 +563,25 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
           lastPromptAt = obj.timestamp
           lastMessageState = 'awaiting'
         } else if (obj.type === 'user' && obj.toolUseResult) {
-          // Tool result returned — Claude may still be working
-          lastMessageState = 'awaiting'
+          // Tool result returned — Claude is about to generate next response
+          lastMessageState = 'processing'
         } else if (obj.type === 'assistant') {
-          // Check if assistant message contains tool_use (subagent/tool call)
           const hasToolUse = Array.isArray(obj.message?.content)
             && obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
           lastMessageState = hasToolUse ? 'tool-pending' : 'idle'
+        } else if (obj.type === 'progress') {
+          // Progress events prove active tool execution
+          if (lastMessageState === 'tool-pending') {
+            lastMessageState = 'tool-pending' // stays green
+          }
         }
       } catch {
         continue
       }
     }
 
-    // Session is awaiting response if last state is user prompt or active tool call
-    const awaitingResponse = lastMessageState === 'awaiting' || lastMessageState === 'tool-pending'
+    // Session is active if Claude is processing, awaiting, or has a pending tool
+    const awaitingResponse = lastMessageState !== 'idle'
 
     return { lastPromptAt, awaitingResponse }
   } catch (err) {

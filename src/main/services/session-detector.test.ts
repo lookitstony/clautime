@@ -42,7 +42,14 @@ function makeParsedSession(
     messages,
     firstTimestamp: timestamps[0] ?? null,
     lastTimestamp: timestamps[timestamps.length - 1] ?? null,
+    progressTimestamps: [],
     totalTokenUsage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0
+    },
+    subagentTokenUsage: {
       inputTokens: 0,
       outputTokens: 0,
       cacheCreationInputTokens: 0,
@@ -50,6 +57,7 @@ function makeParsedSession(
     },
     models: [],
     messageCount: messages.length,
+    summary: null,
     ...overrides
   }
 }
@@ -200,6 +208,73 @@ describe('detectSessions', () => {
     expect(result).toHaveLength(2)
     expect(result[0].endedAt).toBe('2026-03-04T10:01:00Z')
     expect(result[1].startedAt).toBe('2026-03-04T17:01:00Z')
+  })
+
+  it('should NOT split when progress events prove active processing during gap', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 45 min gap — exceeds Bash 10-min heuristic, but progress events prove it was running
+      makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages, {
+      progressTimestamps: [
+        '2026-03-04T10:05:00Z',
+        '2026-03-04T10:15:00Z',
+        '2026-03-04T10:30:00Z',
+        '2026-03-04T10:44:00Z'
+      ]
+    })
+    const result = detectSessions(parsed, 10)
+
+    // Should NOT split — progress events prove the Bash command was actively running
+    expect(result).toHaveLength(1)
+  })
+
+  it('should split when no progress events exist during tool gap', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
+      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      // 45 min gap — no progress events during this gap
+      makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
+      makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
+    ]
+    const parsed = makeParsedSession(messages, {
+      // Progress events exist but BEFORE the gap
+      progressTimestamps: ['2026-03-04T09:50:00Z', '2026-03-04T09:55:00Z']
+    })
+    const result = detectSessions(parsed, 10)
+
+    // Should split — no progress evidence during the gap, and exceeds Bash 10-min limit
+    expect(result).toHaveLength(2)
+  })
+
+  it('should include subagent tokens proportionally in segments', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', {
+        type: 'assistant',
+        usage: { inputTokens: 100, outputTokens: 200, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+      }),
+      // 20 min gap
+      makeMessage('2026-03-04T10:20:00Z', {
+        type: 'assistant',
+        usage: { inputTokens: 300, outputTokens: 600, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+      })
+    ]
+    const parsed = makeParsedSession(messages, {
+      totalTokenUsage: { inputTokens: 400, outputTokens: 800, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
+      subagentTokenUsage: { inputTokens: 1000, outputTokens: 2000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+    })
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+    // First segment: 300 main tokens / 1200 total main = 25% → gets 25% of 3000 subagent = 750
+    expect(result[0].inputTokens).toBe(100 + 250)  // 100 main + 250 subagent input
+    expect(result[0].outputTokens).toBe(200 + 500)  // 200 main + 500 subagent output
+    // Second segment: 900 main tokens / 1200 total main = 75% → gets 75% of 3000 subagent = 2250
+    expect(result[1].inputTokens).toBe(300 + 750)
+    expect(result[1].outputTokens).toBe(600 + 1500)
   })
 
   it('should still split at genuine idle gaps after tool results', () => {

@@ -9,8 +9,11 @@ import type {
   SessionParserOptions
 } from './types'
 
-/** Message types we extract metadata from (skip file-history-snapshot, etc.) */
+/** Message types we extract full metadata from */
 const RELEVANT_TYPES = new Set(['user', 'assistant', 'system'])
+/** Additional types we extract lightweight data from */
+const PROGRESS_TYPE = 'progress'
+const SUMMARY_TYPE = 'summary'
 
 function emptyTokenUsage(): TokenUsage {
   return {
@@ -125,10 +128,12 @@ export async function parseSessionFile(
   }
 
   const messages: ParsedMessage[] = []
+  const progressTimestamps: string[] = []
   const totalUsage = emptyTokenUsage()
   const modelsSet = new Set<string>()
   let sessionId = ''
   let projectDirectory: string | null = null
+  let summary: string | null = null
 
   for (const line of lines) {
     const raw = parseJsonlLine(line)
@@ -138,6 +143,21 @@ export async function parseSessionFile(
     }
 
     const type = raw.type as string
+
+    // Collect progress event timestamps (lightweight — just the timestamp string)
+    if (type === PROGRESS_TYPE) {
+      const ts = raw.timestamp as string
+      if (ts) progressTimestamps.push(ts)
+      continue
+    }
+
+    // Extract session summary
+    if (type === SUMMARY_TYPE) {
+      const s = raw.summary as string
+      if (s) summary = s
+      continue
+    }
+
     if (!RELEVANT_TYPES.has(type)) continue
 
     const msg = extractMessage(raw)
@@ -165,12 +185,16 @@ export async function parseSessionFile(
 
   // Sort by timestamp
   messages.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  progressTimestamps.sort()
 
   // Derive identifiers
   const projectPathEncoded = basename(dirname(filePath))
   if (!sessionId) {
     sessionId = basename(filePath, '.jsonl')
   }
+
+  // Collect subagent token usage
+  const subagentTokenUsage = await collectSubagentTokens(filePath, sessionId)
 
   const timestamps = messages.filter((m) => m.timestamp).map((m) => m.timestamp)
 
@@ -180,12 +204,55 @@ export async function parseSessionFile(
     projectPathEncoded,
     projectDirectory,
     messages,
+    progressTimestamps,
     firstTimestamp: timestamps[0] ?? null,
     lastTimestamp: timestamps[timestamps.length - 1] ?? null,
     totalTokenUsage: totalUsage,
+    subagentTokenUsage,
     models: Array.from(modelsSet),
-    messageCount: messages.length
+    messageCount: messages.length,
+    summary
   }
+}
+
+/**
+ * Collect token usage from subagent JSONL files for a given session.
+ * Subagents are stored in {session-id}/subagents/*.jsonl alongside the main file.
+ */
+async function collectSubagentTokens(mainFilePath: string, sessionId: string): Promise<TokenUsage> {
+  const usage = emptyTokenUsage()
+  const sessionDir = join(dirname(mainFilePath), sessionId, 'subagents')
+
+  let entries: Awaited<ReturnType<typeof readdir>>
+  try {
+    entries = await readdir(sessionDir, { withFileTypes: true })
+  } catch {
+    return usage // No subagent directory — common case
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+    try {
+      const content = await readFile(join(sessionDir, entry.name), 'utf-8')
+      for (const line of content.split('\n')) {
+        if (!line.trim()) continue
+        const raw = parseJsonlLine(line)
+        if (!raw || raw.type !== 'assistant') continue
+        const message = raw.message as Record<string, unknown> | undefined
+        const u = message?.usage as Record<string, number> | undefined
+        if (u) {
+          usage.inputTokens += u.input_tokens || 0
+          usage.outputTokens += u.output_tokens || 0
+          usage.cacheCreationInputTokens += u.cache_creation_input_tokens || 0
+          usage.cacheReadInputTokens += u.cache_read_input_tokens || 0
+        }
+      }
+    } catch (err) {
+      log.debug(`Failed to read subagent file: ${entry.name}`, err)
+    }
+  }
+
+  return usage
 }
 
 /**

@@ -81,7 +81,10 @@ function makeMessage(timestamp: string): ParsedMessage {
     model: null,
     usage: null,
     uuid: null,
-    parentUuid: null
+    parentUuid: null,
+    isToolResult: false,
+    hasToolUse: false,
+    toolNames: []
   }
 }
 
@@ -96,6 +99,7 @@ function makeParsedSession(
     projectPathEncoded: 'test-project',
     projectDirectory: '/projects/test',
     messages,
+    progressTimestamps: [],
     firstTimestamp: ts[0] ?? null,
     lastTimestamp: ts[ts.length - 1] ?? null,
     totalTokenUsage: {
@@ -104,8 +108,15 @@ function makeParsedSession(
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 0
     },
+    subagentTokenUsage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0
+    },
     models: [],
-    messageCount: messages.length
+    messageCount: messages.length,
+    summary: null
   }
 }
 

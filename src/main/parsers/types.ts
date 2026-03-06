@@ -33,11 +33,18 @@ export interface ParsedSessionData {
   projectPathEncoded: string
   projectDirectory: string | null
   messages: ParsedMessage[]
+  /** Timestamps of progress events (bash_progress, hook_progress, agent_progress).
+   *  Used to prove active tool processing during gaps between messages. */
+  progressTimestamps: string[]
   firstTimestamp: string | null
   lastTimestamp: string | null
   totalTokenUsage: TokenUsage
+  /** Token usage from subagent JSONL files (not included in totalTokenUsage) */
+  subagentTokenUsage: TokenUsage
   models: string[]
   messageCount: number
+  /** Session summary from JSONL `summary` record, if present */
+  summary: string | null
 }
 
 export interface SessionParserOptions {
