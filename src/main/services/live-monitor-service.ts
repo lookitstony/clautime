@@ -551,10 +551,10 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
 
     let lastPromptAt: string | null = null
     // Track session state to detect if Claude is actively working:
-    // 'idle'         = Claude gave a final response, waiting for user (purple)
-    // 'awaiting'     = User sent a prompt, waiting for Claude to respond (green)
-    // 'tool-pending' = Claude called a tool, waiting for result (green)
-    // 'processing'   = Tool result returned, Claude is generating next response (green)
+    // 'idle'         = Claude gave a final response, ball is in user's court → isProcessing=false (green/yellow/red glow)
+    // 'awaiting'     = User sent a prompt, Claude hasn't responded yet → isProcessing=true (purple glow)
+    // 'tool-pending' = Claude called a tool, waiting for result → isProcessing=true (purple glow)
+    // 'processing'   = Tool result returned, Claude generating next response → isProcessing=true (purple glow)
     let lastMessageState: 'idle' | 'awaiting' | 'tool-pending' | 'processing' = 'idle'
     for (const line of lines) {
       try {
