@@ -35,7 +35,13 @@
       "Bash(grep:*)",
       "Bash(rm:*)",
       "Bash(xargs:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Read(//c/apps/ClawdTime/$USERPROFILE/.ClawdTime/**)",
+      "Read(//c/apps/ClawdTime/$APPDATA/ClawdTime/**)",
+      "Read(//c/apps/ClawdTime/$APPDATA/clawd-time/**)",
+      "Bash(python:*)"
     ]
   }
 }
