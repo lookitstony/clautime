@@ -90,6 +90,25 @@ export function resolveProjectPath(parsed: ParsedSessionData): string {
  * Best-effort decode of the encoded project path from .claude folder structure.
  * e.g. "C--apps-ClawdTime" -> "C:\apps\ClawdTime" (Windows)
  */
+/**
+ * Encode a filesystem path to the .claude/projects/ directory name format.
+ * e.g. "C:\research\ai bots" → "C--research-ai-bots"
+ * Used for matching DB paths against encoded directory names.
+ */
+export function encodeProjectPath(fsPath: string): string {
+  if (!fsPath) return ''
+  // Windows: C:\foo\bar → C--foo-bar
+  const winMatch = fsPath.match(/^([A-Za-z]):[\\\/](.*)$/)
+  if (winMatch) {
+    return `${winMatch[1]}--${winMatch[2].replace(/[\\\/\s]/g, '-')}`
+  }
+  // Unix: /home/user/foo → -home-user-foo
+  if (fsPath.startsWith('/')) {
+    return fsPath.replace(/[\/\s]/g, '-')
+  }
+  return fsPath.replace(/[\/\\\s]/g, '-')
+}
+
 export function decodeProjectPath(encoded: string): string {
   if (!encoded) return 'unknown'
 

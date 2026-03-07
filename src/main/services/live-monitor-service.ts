@@ -12,7 +12,7 @@ import { clients } from '../db/schema/clients'
 import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
-import { decodeProjectPath } from './session-detector'
+import { decodeProjectPath, encodeProjectPath } from './session-detector'
 import { widgetService } from './widget-service'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../shared/types/live'
 
@@ -70,13 +70,15 @@ function computeHumanMinutes(
 export const liveMonitorService = {
   _monitorInterval: null as ReturnType<typeof setInterval> | null,
   _alertedGaps: new Map<number, string>(),
-  _promptTimestampCache: new Map<string, { mtime: number; lastPromptAt: string; awaitingResponse: boolean }>(),
+  _promptTimestampCache: new Map<string, { mtime: number; lastPromptAt: string; awaitingResponse: boolean; state: 'idle' | 'awaiting' | 'tool-pending' | 'processing' }>(),
   // Track when each file's mtime last changed — to detect active writing vs stale
   _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
   _lastEvictionDate: '',  // ISO date string for cache eviction on date rollover
   // Track when each project stopped processing — idle time starts from here, not from lastPromptAt
   _idleSince: new Map<number, number>(),
   _wasProcessing: new Map<number, boolean>(),
+  // Processing holdover: bridges brief gaps (e.g. during compaction) where no files are written
+  _lastActiveAt: new Map<string, number>(),
 
   _escapeXml(str: string): string {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -183,9 +185,9 @@ export const liveMonitorService = {
       // Match JSONL timestamp data by encoded project path
       let lastPromptAt: string | null = null
       let isProcessing = false
+      const encodedProjectPath = encodeProjectPath(p.projectPath)
       for (const [key, value] of timestamps) {
-        const decoded = decodeProjectPath(key)
-        if (decoded === p.projectPath || p.projectPath.endsWith(decoded)) {
+        if (key === encodedProjectPath) {
           lastPromptAt = value.lastPromptAt
           isProcessing = value.isProcessing
           break
@@ -257,6 +259,7 @@ export const liveMonitorService = {
       this._lastMtimeChange.clear()
       this._idleSince.clear()
       this._wasProcessing.clear()
+      this._lastActiveAt.clear()
       this._lastEvictionDate = todayDate
     }
 
@@ -267,10 +270,15 @@ export const liveMonitorService = {
       try {
         const entries = await readdir(projectPath, { withFileTypes: true })
         const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+        const subdirs = entries.filter((e) => e.isDirectory())
+
+        // [DIAG] Log directory contents for this project
+        log.info(`[DIAG] ${dir.name}: ${jsonlFiles.length} top-level JSONL, ${subdirs.length} subdirs (${subdirs.map(d => d.name).join(', ')})`)
 
         // Also scan subagent JSONL files (in {conversation-id}/subagents/ dirs).
         // These include Agent tool subagents AND compaction sidechains, which write
         // to separate files while the main conversation JSONL stays idle.
+        let subagentFilesFound = 0 // [DIAG]
         for (const entry of entries) {
           if (!entry.isDirectory()) continue
           try {
@@ -278,20 +286,24 @@ export const liveMonitorService = {
             const subEntries = await readdir(subagentsDir, { withFileTypes: true })
             for (const sub of subEntries) {
               if (sub.isFile() && sub.name.endsWith('.jsonl')) {
+                const composedName = join(entry.name, 'subagents', sub.name)
                 // Push with adjusted path info for stat checking below
-                jsonlFiles.push({ ...sub, name: join(entry.name, 'subagents', sub.name) } as typeof sub)
+                jsonlFiles.push({ ...sub, name: composedName } as typeof sub)
+                subagentFilesFound++ // [DIAG]
               }
             }
           } catch {
             // No subagents dir — normal
           }
         }
+        if (subagentFilesFound > 0) log.info(`[DIAG] ${dir.name}: found ${subagentFilesFound} subagent JSONL files`) // [DIAG]
 
         // Check ALL today's JSONL files for activity (not just the latest).
         // When Agent subagents or compaction run, they write to separate JSONL files.
         // We need to detect activity across ALL files in the project dir tree.
         let latestFile: string | null = null
         let latestMtime = 0
+        let latestAnyMtime = 0  // Across ALL files including subagents
         let anyRecentlyWritten = false
         let subagentRecentlyWritten = false
 
@@ -303,16 +315,28 @@ export const liveMonitorService = {
             const mtime = s.mtime.getTime()
             if (mtime < todayStart) continue
 
+            const ageSeconds = Math.round((now.getTime() - mtime) / 1000) // [DIAG]
+
             // Track mtime changes for EACH file to detect active writing
             const prev = this._lastMtimeChange.get(fp)
+            const mtimeChanged = !prev || prev.prevMtime !== mtime // [DIAG]
             if (!prev || prev.prevMtime !== mtime) {
               this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
             }
             const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
+            const changeStaleness = Math.round((now.getTime() - lastChanged) / 1000) // [DIAG]
             if ((now.getTime() - lastChanged) < 30_000) {
               anyRecentlyWritten = true
               if (isSubagentFile) subagentRecentlyWritten = true
             }
+
+            // [DIAG] Log each file's status
+            if (isSubagentFile || ageSeconds < 120) {
+              log.info(`[DIAG] ${dir.name} file: ${entry.name} | sub=${isSubagentFile} age=${ageSeconds}s mtimeChanged=${mtimeChanged} changeStaleness=${changeStaleness}s`)
+            }
+
+            // Track most recent mtime across ALL files (including subagents)
+            if (mtime > latestAnyMtime) latestAnyMtime = mtime
 
             // Only track top-level JSONL files as "latest" for state machine reading.
             // Subagent files contribute to anyRecentlyWritten but not awaitingResponse.
@@ -329,34 +353,71 @@ export const liveMonitorService = {
 
         if (!latestFile) continue
 
-        const recentlyModified = (now.getTime() - latestMtime) < 5 * 60_000
+        // Use latestAnyMtime (includes subagent files) for staleness — covers gaps
+        // where main JSONL is old but subagent files were written recently.
+        // 3min window bridges compaction gaps (sidechain finishes before main JSONL rewrite).
+        // Post-compaction false positives handled by consecutive user-prompt detection in tailRead.
+        const recentlyModifiedAny = (now.getTime() - latestAnyMtime) < 3 * 60_000
 
         // Check cache — only reuse if mtime unchanged
         const cacheKey = latestFile
         const cached = this._promptTimestampCache.get(cacheKey)
         if (cached && cached.mtime === latestMtime) {
           // Show processing if ANY of these are true:
-          // 1. Main JSONL was written to in the last 30s (active tool calls, even if
-          //    last message is end_turn — the AI is clearly still working)
-          // 2. State machine says awaiting AND file modified in last 5 min
+          // 1. Main JSONL was written to in the last 30s (active tool calls)
+          // 2. State machine says awaiting/processing AND file modified recently
+          //    - tool-pending uses 30s window (permission prompts should go green quickly)
+          //    - awaiting/processing uses 3min window (bridges compaction gaps)
           // 3. A subagent file is actively being written (background agents/compaction)
-          const fileIsActive = anyRecentlyWritten || (cached.awaitingResponse && recentlyModified) || subagentRecentlyWritten
-          log.debug(`[live-glow] ${dir.name} CACHED: awaiting=${cached.awaitingResponse} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} → active=${fileIsActive}`)
+          const awaitingWindow = cached.state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
+          let fileIsActive = anyRecentlyWritten || (cached.awaitingResponse && awaitingWindow) || subagentRecentlyWritten
+          // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
+          if (fileIsActive) {
+            this._lastActiveAt.set(dir.name, now.getTime())
+          } else {
+            const lastActive = this._lastActiveAt.get(dir.name)
+            if (lastActive && (now.getTime() - lastActive) < 15_000) {
+              fileIsActive = true
+            }
+          }
+          // [DIAG] Elevated to info + added main file age
+          const mainAge = Math.round((now.getTime() - latestMtime) / 1000)
+          const anyAge = Math.round((now.getTime() - latestAnyMtime) / 1000)
+          log.info(`[DIAG] ${dir.name} CACHED: awaiting=${cached.awaitingResponse} state=${cached.state} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} recentAny=${recentlyModifiedAny} mainAge=${mainAge}s anyAge=${anyAge}s → active=${fileIsActive}`)
           result.set(dir.name, { lastPromptAt: cached.lastPromptAt, isProcessing: fileIsActive })
           continue
         }
 
         // Tail-read last chunk — use 64KB to handle large assistant responses
-        const { lastPromptAt, awaitingResponse } = await tailReadLastPrompt(latestFile)
-        if (lastPromptAt) {
+        const { lastPromptAt, awaitingResponse, state } = await tailReadLastPrompt(latestFile)
+        // Fall back to file mtime if user-prompt not found in tail chunk
+        // (happens when assistant/tool messages are so large they fill the 512KB window)
+        const effectivePromptAt = lastPromptAt ?? new Date(latestMtime).toISOString()
+        if (lastPromptAt || awaitingResponse || anyRecentlyWritten || subagentRecentlyWritten) {
           this._promptTimestampCache.set(cacheKey, {
             mtime: latestMtime,
-            lastPromptAt,
-            awaitingResponse
+            lastPromptAt: effectivePromptAt,
+            awaitingResponse,
+            state
           })
-          const fileIsActive = anyRecentlyWritten || (awaitingResponse && recentlyModified) || subagentRecentlyWritten
-          log.debug(`[live-glow] ${dir.name} FRESH: awaiting=${awaitingResponse} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} → active=${fileIsActive}`)
-          result.set(dir.name, { lastPromptAt, isProcessing: fileIsActive })
+          // tool-pending with no recent writes = permission prompt (use 30s window)
+          // awaiting/processing = Claude actively working (use 3min window for compaction gaps)
+          const awaitingWindow = state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
+          let fileIsActive = anyRecentlyWritten || (awaitingResponse && awaitingWindow) || subagentRecentlyWritten
+          // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
+          if (fileIsActive) {
+            this._lastActiveAt.set(dir.name, now.getTime())
+          } else {
+            const lastActive = this._lastActiveAt.get(dir.name)
+            if (lastActive && (now.getTime() - lastActive) < 15_000) {
+              fileIsActive = true
+            }
+          }
+          // [DIAG] Elevated to info + added main file age
+          const mainAge = Math.round((now.getTime() - latestMtime) / 1000)
+          const anyAge = Math.round((now.getTime() - latestAnyMtime) / 1000)
+          log.info(`[DIAG] ${dir.name} FRESH: awaiting=${awaitingResponse} state=${state} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} recentAny=${recentlyModifiedAny} mainAge=${mainAge}s anyAge=${anyAge}s promptFallback=${!lastPromptAt} → active=${fileIsActive}`)
+          result.set(dir.name, { lastPromptAt: effectivePromptAt, isProcessing: fileIsActive })
         }
       } catch (err) {
         log.debug(`getLatestPromptTimestamps: error scanning ${dir.name}:`, err)
@@ -416,9 +477,9 @@ export const liveMonitorService = {
           // Match encoded .claude/projects/ dir name against project's directoryPath
           let lastPromptAt: string | null = null
           let isProcessing = false
+          const encodedConfigPath = encodeProjectPath(config.directoryPath)
           for (const [key, value] of timestamps) {
-            const decoded = decodeProjectPath(key)
-            if (decoded === config.directoryPath || config.directoryPath.endsWith(decoded)) {
+            if (key === encodedConfigPath) {
               lastPromptAt = value.lastPromptAt
               isProcessing = value.isProcessing
               break
@@ -610,57 +671,103 @@ export const liveMonitorService = {
  * and whether the session is awaiting a response (no final assistant message).
  * Only reads the last ~64KB to minimize I/O.
  */
-async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: string | null; awaitingResponse: boolean }> {
+async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: string | null; awaitingResponse: boolean; state: 'idle' | 'awaiting' | 'tool-pending' | 'processing' }> {
   let fh: Awaited<ReturnType<typeof open>> | null = null
   try {
     fh = await open(filePath, 'r')
     const fileStat = await fh.stat()
     const fileSize = fileStat.size
 
-    const readSize = Math.min(65536, fileSize)
-    const position = Math.max(0, fileSize - readSize)
-    const buffer = Buffer.alloc(readSize)
-
-    await fh.read(buffer, 0, readSize, position)
-    const content = buffer.toString('utf-8')
-
-    const allLines = content.split('\n').filter((l) => l.trim())
-    // Skip the first line if we didn't read from the start — it's likely truncated
-    const lines = position > 0 ? allLines.slice(1) : allLines
-
+    // Read backwards in chunks to find the last user prompt.
+    // Start with 64KB, double if no user prompt found (up to 512KB).
     let lastPromptAt: string | null = null
+    let lines: string[] = []
+    for (let chunkSize = 65536; chunkSize <= 524288; chunkSize *= 2) {
+      const readSize = Math.min(chunkSize, fileSize)
+      const position = Math.max(0, fileSize - readSize)
+      const buffer = Buffer.alloc(readSize)
+
+      await fh.read(buffer, 0, readSize, position)
+      const content = buffer.toString('utf-8')
+
+      const allLines = content.split('\n').filter((l) => l.trim())
+      // Skip the first line if we didn't read from the start — it's likely truncated
+      lines = position > 0 ? allLines.slice(1) : allLines
+
+      // Check if we found a user prompt in this chunk
+      const hasUserPrompt = lines.some((l) => {
+        try {
+          const obj = JSON.parse(l)
+          return obj.type === 'user' && !obj.toolUseResult && obj.timestamp
+        } catch { return false }
+      })
+      if (hasUserPrompt || readSize >= fileSize) break
+      log.info(`[DIAG] tailRead expanding chunk: ${chunkSize} → ${chunkSize * 2} (no user prompt in ${lines.length} lines)`) // [DIAG]
+    }
     // Track session state to detect if Claude is actively working:
     // 'idle'         = Claude gave a final response, ball is in user's court → isProcessing=false (green/yellow/red glow)
     // 'awaiting'     = User sent a prompt, Claude hasn't responded yet → isProcessing=true (purple glow)
     // 'tool-pending' = Claude called a tool, waiting for result → isProcessing=true (purple glow)
     // 'processing'   = Tool result returned, Claude generating next response → isProcessing=true (purple glow)
     let lastMessageState: 'idle' | 'awaiting' | 'tool-pending' | 'processing' = 'idle'
+    // [DIAG] Track last few state transitions
+    const recentTransitions: string[] = []
     for (const line of lines) {
       try {
         const obj = JSON.parse(line)
         if (obj.type === 'user' && !obj.toolUseResult && obj.timestamp) {
           lastPromptAt = obj.timestamp
           lastMessageState = 'awaiting'
+          recentTransitions.push(`user-prompt(${obj.timestamp})`) // [DIAG]
         } else if (obj.type === 'user' && obj.toolUseResult) {
           // Tool result returned — Claude is about to generate next response
           lastMessageState = 'processing'
+          recentTransitions.push('tool-result') // [DIAG]
         } else if (obj.type === 'assistant') {
           const hasToolUse = Array.isArray(obj.message?.content)
             && obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
+          const toolNames = hasToolUse // [DIAG]
+            ? obj.message.content.filter((b: { type?: string; name?: string }) => b.type === 'tool_use').map((b: { name?: string }) => b.name).join(',')
+            : ''
           lastMessageState = hasToolUse ? 'tool-pending' : 'idle'
+          recentTransitions.push(hasToolUse ? `assistant-tools(${toolNames})` : 'assistant-idle') // [DIAG]
         }
       } catch {
         continue
       }
     }
 
+    // [DIAG] Log the last 5 state transitions and final state
+    const lastTransitions = recentTransitions.slice(-5).join(' → ')
+    log.info(`[DIAG] tailRead ${filePath.split(/[/\\]/).slice(-2).join('/')}: ${lines.length} lines, state=${lastMessageState}, transitions: ${lastTransitions}`)
+
+    // Detect post-compaction state: after /compact rewrites the JSONL, the tail
+    // contains multiple consecutive user-prompt entries (compacted context chunks)
+    // with no assistant messages between them. This makes the state machine report
+    // 'awaiting' even though Claude already responded. Detect 3+ consecutive
+    // user-prompts at the end and treat as idle.
+    if (lastMessageState === 'awaiting') {
+      let consecutiveUserPrompts = 0
+      for (let i = recentTransitions.length - 1; i >= 0; i--) {
+        if (recentTransitions[i].startsWith('user-prompt')) {
+          consecutiveUserPrompts++
+        } else {
+          break
+        }
+      }
+      if (consecutiveUserPrompts >= 3) {
+        lastMessageState = 'idle'
+        recentTransitions.push('→compaction-detected-idle')
+      }
+    }
+
     // Session is active if Claude is processing, awaiting, or has a pending tool
     const awaitingResponse = lastMessageState !== 'idle'
 
-    return { lastPromptAt, awaitingResponse }
+    return { lastPromptAt, awaitingResponse, state: lastMessageState }
   } catch (err) {
     log.debug(`tailReadLastPrompt error for ${filePath}:`, err)
-    return { lastPromptAt: null, awaitingResponse: false }
+    return { lastPromptAt: null, awaitingResponse: false, state: 'idle' }
   } finally {
     await fh?.close()
   }
