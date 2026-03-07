@@ -156,8 +156,12 @@ const api = {
       format: import('../shared/types/report').ReportFormat
     ): Promise<import('../shared/types/ipc').IpcResult<import('../shared/types/report').ReportResult>> =>
       ipcRenderer.invoke('report:generate', filters, format),
-    exportPdf: (html: string, filename?: string): Promise<import('../shared/types/ipc').IpcResult<boolean>> =>
-      ipcRenderer.invoke('report:exportPdf', html, filename)
+    exportPdf: (html: string, filename?: string): Promise<import('../shared/types/ipc').IpcResult<string | null>> =>
+      ipcRenderer.invoke('report:exportPdf', html, filename),
+    exportFile: (content: string, defaultFilename: string, filterName: string, extension: string): Promise<import('../shared/types/ipc').IpcResult<string | null>> =>
+      ipcRenderer.invoke('report:exportFile', content, defaultFilename, filterName, extension),
+    openFile: (filePath: string): Promise<import('../shared/types/ipc').IpcResult<boolean>> =>
+      ipcRenderer.invoke('report:openFile', filePath)
   },
   live: {
     getTodayStats: () => ipcRenderer.invoke('live:getTodayStats'),

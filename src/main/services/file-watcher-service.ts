@@ -1,11 +1,9 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { readdir } from 'node:fs/promises'
-import { join, basename, extname } from 'node:path'
+import { join, extname } from 'node:path'
 import { homedir } from 'node:os'
 import log from 'electron-log/main.js'
 import { BrowserWindow } from 'electron'
-import { getDb } from '../db'
-import { projects } from '../db/schema/projects'
 import { settingsService } from './settings-service'
 import { sessionService } from './session-service'
 import { clientProjectService } from './client-project-service'
@@ -43,7 +41,7 @@ export const fileWatcherService = {
     }
 
     try {
-      this._watcher = watch(projectsDir, { recursive: true }, (eventType, filename) => {
+      this._watcher = watch(projectsDir, { recursive: true }, (_eventType, filename) => {
         if (!filename) return
         this._handleChange(projectsDir, filename)
       })
@@ -77,6 +75,18 @@ export const fileWatcherService = {
     try {
       log.info('File watcher: running startup scan to catch missed changes')
       await sessionService.scanSessions()
+
+      // Auto-create projects for all unregistered directories
+      let autoCreated = 0
+      for (const dirName of this._knownDirs) {
+        const decodedPath = decodeProjectPath(dirName)
+        const created = clientProjectService.autoCreateProject(decodedPath)
+        if (created) autoCreated++
+      }
+      if (autoCreated > 0) {
+        log.info(`File watcher: auto-created ${autoCreated} project(s) under Unassigned`)
+      }
+
       clientProjectService.attributeSessions()
       gitService.scanCommits().then((r) => {
         const correlated = gitService.correlateCommitsWithSessions()
@@ -152,19 +162,13 @@ export const fileWatcherService = {
     const decodedPath = decodeProjectPath(dirName)
     log.info(`File watcher: new project directory detected: ${decodedPath}`)
 
-    // Check if this project path already exists in DB
-    const db = getDb()
-    const existing = db
-      .select()
-      .from(projects)
-      .all()
-      .find((p) => p.directoryPath.toLowerCase() === decodedPath.toLowerCase())
+    // Auto-create the project under "Unassigned" if not already registered
+    const created = clientProjectService.autoCreateProject(decodedPath)
 
-    if (!existing) {
-      // Notify renderer about new project
-      const projectName = basename(decodedPath) || dirName
+    if (created) {
+      const projectName = created.name
       this._sendToRenderer('watcher:newProject', { dirName, decodedPath, projectName })
-      log.info(`File watcher: notified renderer about new project: ${projectName}`)
+      log.info(`File watcher: auto-created and notified renderer about new project: ${projectName}`)
     }
   },
 

@@ -6,7 +6,7 @@ import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
 import { AppError } from '../../shared/types/ipc'
 import { CLIENT_COLORS } from '../../shared/types/client-project'
-import { normalizePath } from '../../shared/paths'
+import { normalizePath, getProjectName } from '../../shared/paths'
 import type {
   Client,
   NewClient,
@@ -238,6 +238,78 @@ export const clientProjectService = {
     })
 
     log.info(`Deleted project id=${id}`)
+  },
+
+  // ── Auto-Detection ──
+
+  getOrCreateUnassignedClient(): Client {
+    const db = getDb()
+    const existing = db
+      .select()
+      .from(clients)
+      .where(eq(clients.name, 'Unassigned'))
+      .get()
+    if (existing) return toClient(existing)
+
+    const now = new Date().toISOString()
+    try {
+      const result = db
+        .insert(clients)
+        .values({
+          name: 'Unassigned',
+          color: '#6b7280',
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning()
+        .get()
+
+      log.info(`Created "Unassigned" client (id=${result.id})`)
+      return toClient(result)
+    } catch (err: unknown) {
+      // UNIQUE constraint race — re-query
+      if (err instanceof Error && err.message.includes('UNIQUE')) {
+        const row = db.select().from(clients).where(eq(clients.name, 'Unassigned')).get()
+        if (row) return toClient(row)
+      }
+      throw err
+    }
+  },
+
+  autoCreateProject(directoryPath: string): Project | null {
+    const existing = this.findProjectByDirectory(directoryPath)
+    if (existing) return null
+
+    const unassigned = this.getOrCreateUnassignedClient()
+    const name = getProjectName(directoryPath)
+    const normalized = normalizePath(directoryPath)
+    const now = new Date().toISOString()
+
+    try {
+      const db = getDb()
+      const result = db
+        .insert(projects)
+        .values({
+          clientId: unassigned.id,
+          name,
+          directoryPath: normalized,
+          isBillable: false,
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning()
+        .get()
+
+      log.info(`Auto-created project: ${name} (id=${result.id}) under Unassigned`)
+      return toProject(result)
+    } catch (err: unknown) {
+      // UNIQUE constraint race condition — project was created between check and insert
+      if (err instanceof Error && err.message.includes('UNIQUE')) {
+        log.debug(`autoCreateProject: UNIQUE conflict for ${normalized}, already exists`)
+        return null
+      }
+      throw err
+    }
   },
 
   // ── Directory Mapping ──

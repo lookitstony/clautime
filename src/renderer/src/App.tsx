@@ -34,16 +34,10 @@ function useFileWatcherEvents(): void {
     window.api.live.onNewProject((info) => {
       toast.info(`New project detected: ${info.projectName}`, {
         description: info.decodedPath,
-        duration: 10000,
-        action: {
-          label: 'Add',
-          onClick: () => {
-            // Navigate to clients page where they can add it
-            window.dispatchEvent(new CustomEvent('navigate', { detail: '/clients' }))
-          }
-        }
+        duration: 5000
       })
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['live'] })
     })
   }, [qc])
 }

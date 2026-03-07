@@ -745,50 +745,55 @@ function ExportModal({
         if (!summary) toast.error('No git commits found for summary.')
       }
 
-      const doExport = (content: string, type: string, ext: string) => {
-        const blob = new Blob([content], { type })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${reportFilename}.${ext}`
-        a.click()
-        URL.revokeObjectURL(url)
+      const showExportToast = (filePath: string) => {
+        toast.success('Report exported', {
+          action: {
+            label: 'Open Report',
+            onClick: () => window.api.reports.openFile(filePath)
+          }
+        })
       }
+
+      const doExport = async (content: string, filterName: string, ext: string): Promise<string | null> => {
+        const result = await window.api.reports.exportFile(content, reportFilename, filterName, ext)
+        if (!result.success) throw new Error(result.error.message)
+        return result.data
+      }
+
+      let savedPath: string | null = null
 
       if (contentType === 'timesheet') {
         const rows = buildTimesheetRows(report)
         switch (exportFormat) {
           case 'csv':
-            doExport(timesheetToCsv(rows), 'text/csv', 'csv')
-            toast.success('CSV exported')
+            savedPath = await doExport(timesheetToCsv(rows), 'CSV', 'csv')
             break
           case 'markdown':
-            doExport(timesheetToMarkdown(rows, report, summary), 'text/markdown', 'md')
-            toast.success('Markdown exported')
+            savedPath = await doExport(timesheetToMarkdown(rows, report, summary), 'Markdown', 'md')
             break
           case 'pdf': {
             const result = await window.api.reports.exportPdf(timesheetToHtml(rows, report, summary), reportFilename)
-            if (result.success && result.data) toast.success('PDF exported')
+            if (result.success) savedPath = result.data
             break
           }
         }
       } else {
         switch (exportFormat) {
           case 'csv':
-            doExport(reportToCsv(report), 'text/csv', 'csv')
-            toast.success('CSV exported')
+            savedPath = await doExport(reportToCsv(report), 'CSV', 'csv')
             break
           case 'markdown':
-            doExport(reportToMarkdown(report, summary), 'text/markdown', 'md')
-            toast.success('Markdown exported')
+            savedPath = await doExport(reportToMarkdown(report, summary), 'Markdown', 'md')
             break
           case 'pdf': {
             const result = await window.api.reports.exportPdf(reportToHtml(report, summary), reportFilename)
-            if (result.success && result.data) toast.success('PDF exported')
+            if (result.success) savedPath = result.data
             break
           }
         }
       }
+
+      if (savedPath) showExportToast(savedPath)
       onOpenChange(false)
     } catch {
       toast.error('Export failed')

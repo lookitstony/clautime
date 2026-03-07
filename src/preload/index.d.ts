@@ -93,7 +93,9 @@ interface UpdaterApi {
 
 interface ReportsApi {
   generate(filters: ReportFilters, format: ReportFormat): Promise<IpcResult<ReportResult>>
-  exportPdf(html: string, filename?: string): Promise<IpcResult<boolean>>
+  exportPdf(html: string, filename?: string): Promise<IpcResult<string | null>>
+  exportFile(content: string, defaultFilename: string, filterName: string, extension: string): Promise<IpcResult<string | null>>
+  openFile(filePath: string): Promise<IpcResult<boolean>>
 }
 
 interface LiveApi {

@@ -394,6 +394,53 @@ describe('ClientProjectService — Session Attribution', () => {
   })
 })
 
+describe('ClientProjectService — Auto-Detection', () => {
+  it('getOrCreateUnassignedClient creates client on first call', () => {
+    const client = clientProjectService.getOrCreateUnassignedClient()
+    expect(client.name).toBe('Unassigned')
+    expect(client.color).toBe('#6b7280')
+    expect(client.isActive).toBe(true)
+  })
+
+  it('getOrCreateUnassignedClient returns existing on second call', () => {
+    const first = clientProjectService.getOrCreateUnassignedClient()
+    const second = clientProjectService.getOrCreateUnassignedClient()
+    expect(second.id).toBe(first.id)
+  })
+
+  it('autoCreateProject creates project with correct fields', () => {
+    const project = clientProjectService.autoCreateProject('C:\\apps\\NewAutoProject')
+    expect(project).not.toBeNull()
+    expect(project!.name).toBe('NewAutoProject')
+    expect(project!.isBillable).toBe(false)
+    expect(project!.directoryPath).toBe('C:\\apps\\NewAutoProject')
+
+    // Should be under Unassigned client
+    const unassigned = clientProjectService.getOrCreateUnassignedClient()
+    expect(project!.clientId).toBe(unassigned.id)
+  })
+
+  it('autoCreateProject returns null when project already exists', () => {
+    const client = clientProjectService.createClient({ name: 'ExistingClient' })
+    clientProjectService.createProject({
+      clientId: client.id,
+      name: 'ExistingProj',
+      directoryPath: 'C:\\apps\\ExistingProj'
+    })
+
+    const result = clientProjectService.autoCreateProject('C:\\apps\\ExistingProj')
+    expect(result).toBeNull()
+  })
+
+  it('autoCreateProject handles concurrent calls gracefully', () => {
+    const first = clientProjectService.autoCreateProject('C:\\apps\\ConcurrentProj')
+    expect(first).not.toBeNull()
+    // Second call for same path should return null (already exists)
+    const second = clientProjectService.autoCreateProject('C:\\apps\\ConcurrentProj')
+    expect(second).toBeNull()
+  })
+})
+
 describe('ClientProjectService — Cascade Behavior', () => {
   it('nullifies session references when deleting a client', () => {
     const client = clientProjectService.createClient({ name: 'CascadeClient' })

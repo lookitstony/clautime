@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { DiscoveredProject } from '../../../../shared/types/session'
 
 export function useIsFirstLaunch() {
   const { data, isLoading } = useQuery({
@@ -11,26 +10,6 @@ export function useIsFirstLaunch() {
     }
   })
   return { isFirstLaunch: !isLoading && data !== 'true', isLoading }
-}
-
-export function useOpenFolderPicker() {
-  return useMutation({
-    mutationFn: async (): Promise<string | null> => {
-      const result = await window.api.dialog.openFolder()
-      if (!result.success) throw new Error(result.error.message)
-      return result.data
-    }
-  })
-}
-
-export function useDiscoverProjects() {
-  return useMutation({
-    mutationFn: async (folderPath?: string): Promise<DiscoveredProject[]> => {
-      const result = await window.api.dialog.discoverProjects(folderPath)
-      if (!result.success) throw new Error(result.error.message)
-      return result.data
-    }
-  })
 }
 
 export function useCompleteSetup() {
