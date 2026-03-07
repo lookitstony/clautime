@@ -207,21 +207,7 @@ export const aiService = {
       return null
     }
 
-    // Deduplicate commit messages
-    const messages = [...new Set(commits.map((c) => c.message))].slice(0, 50)
-
-    // Try AI summarization if requested and API key is available
-    if (useAi) {
-      const apiKey = credentialService.getApiKey()
-      if (apiKey) {
-        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, messages)
-        if (aiSummary) return aiSummary
-      }
-    }
-
-    // Fallback: format git commits directly
-    log.info(`Building git-only report summary from ${commits.length} commits`)
-    // Group by project
+    // Group commits by project
     const projectIds = [...new Set(commits.filter((c) => c.projectId != null).map((c) => c.projectId!))]
     const projectMap = new Map<number, string>()
     if (projectIds.length > 0) {
@@ -237,6 +223,18 @@ export const aiService = {
       grouped.set(projName, existing)
     }
 
+    // Try AI summarization if requested and API key is available
+    if (useAi) {
+      const apiKey = credentialService.getApiKey()
+      if (apiKey) {
+        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, grouped)
+        if (aiSummary) return aiSummary
+      }
+    }
+
+    // Fallback: format git commits directly grouped by project
+    log.info(`Building git-only report summary from ${commits.length} commits`)
+
     const lines: string[] = []
     for (const [projName, msgs] of grouped) {
       lines.push(`**${projName}**`)
@@ -249,26 +247,35 @@ export const aiService = {
     return lines.join('\n').trim()
   },
 
-  /** @internal Call Claude API to summarize commit messages */
+  /** @internal Call Claude API to summarize commit messages grouped by project */
   async _aiSummarizeCommits(
     apiKey: string,
     filters: { startDate: string; endDate: string },
     totalCount: number,
-    messages: string[]
+    grouped: Map<string, string[]>
   ): Promise<string | null> {
     const startLabel = new Date(filters.startDate).toLocaleDateString()
     const endLabel = new Date(filters.endDate).toLocaleDateString()
 
+    const commitLines: string[] = []
+    for (const [projName, msgs] of grouped) {
+      commitLines.push(`Project: ${projName}`)
+      for (const msg of msgs) {
+        commitLines.push(`  - ${msg}`)
+      }
+      commitLines.push('')
+    }
+
     const prompt = [
       `Summarize the following work done during ${startLabel} to ${endLabel}.`,
-      `There were ${totalCount} commits total.`,
+      `There were ${totalCount} commits total across ${grouped.size} project${grouped.size !== 1 ? 's' : ''}.`,
       '',
-      'Commit messages:',
-      ...messages.map((m) => `- ${m}`),
-      '',
+      'Commits by project:',
+      ...commitLines,
       'Write a professional summary of the work accomplished in this format:',
       '1. Start with a 1-2 sentence high-level overview of the work done.',
-      '2. Then list specific accomplishments as bullet points (use "- " prefix), grouping related work.',
+      '2. Then break down accomplishments by project, using **Project Name** as headers.',
+      '3. Under each project, list specific accomplishments as bullet points (use "- " prefix).',
       'Focus on what was built, fixed, or improved.',
       'Do not include commit hashes, timestamps, or technical jargon unless relevant.',
       'Do not include a title or header line — start directly with the overview sentence.'

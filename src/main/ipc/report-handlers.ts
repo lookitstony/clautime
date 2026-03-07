@@ -32,7 +32,11 @@ export function registerReportHandlers(): void {
     'report:openFile',
     async (_event, filePath: string): Promise<IpcResult<boolean>> => {
       try {
-        await shell.openPath(filePath)
+        const errorMsg = await shell.openPath(filePath)
+        if (errorMsg) {
+          log.error('IPC report:openFile failed:', errorMsg)
+          return ipcError('REPORT_OPEN_FILE_ERROR', errorMsg)
+        }
         return ipcSuccess(true)
       } catch (error) {
         log.error('IPC report:openFile failed:', error)

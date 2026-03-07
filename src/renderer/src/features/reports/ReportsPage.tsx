@@ -747,9 +747,10 @@ function ExportModal({
 
       const showExportToast = (filePath: string) => {
         toast.success('Report exported', {
+          duration: 10000,
           action: {
             label: 'Open Report',
-            onClick: () => window.api.reports.openFile(filePath)
+            onClick: () => { window.api.reports.openFile(filePath) }
           }
         })
       }
