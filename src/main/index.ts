@@ -108,10 +108,11 @@ app.whenReady().then(() => {
 
   createWindow()
 
-  // Initialize tray, live monitor, and file watcher
+  // Initialize tray, live monitor, file watcher, and restore widgets
   trayService.initialize(mainWindow!)
   liveMonitorService.startMonitoring(5000)
   fileWatcherService.start(mainWindow!)
+  widgetService.restoreAll()
 
   // Initialize auto-updater (only in production)
   if (!is.dev) {

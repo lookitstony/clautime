@@ -5,30 +5,40 @@ import { is } from '@electron-toolkit/utils'
 import log from 'electron-log/main.js'
 
 const widgets = new Map<number, BrowserWindow>()
+let isDestroying = false
 
 interface WidgetBounds { x: number; y: number; width: number; height: number }
-let savedPositions: Record<string, WidgetBounds> = {}
-const positionsFile = join(app.getPath('userData'), 'widget-positions.json')
+interface WidgetState { positions: Record<string, WidgetBounds>; openIds: number[] }
+let savedState: WidgetState = { positions: {}, openIds: [] }
+const stateFile = join(app.getPath('userData'), 'widget-positions.json')
 
-function loadPositions(): void {
+function loadState(): void {
   try {
-    savedPositions = JSON.parse(readFileSync(positionsFile, 'utf-8'))
+    const raw = JSON.parse(readFileSync(stateFile, 'utf-8'))
+    // Support old format (just positions) and new format (positions + openIds)
+    if (raw.positions) {
+      savedState = { positions: raw.positions, openIds: raw.openIds ?? [] }
+    } else {
+      // Old format: the whole object is positions
+      savedState = { positions: raw, openIds: [] }
+    }
   } catch {
-    savedPositions = {}
+    savedState = { positions: {}, openIds: [] }
   }
 }
 
-function savePositions(): void {
+function saveState(): void {
   try {
-    mkdirSync(join(positionsFile, '..'), { recursive: true })
-    writeFileSync(positionsFile, JSON.stringify(savedPositions, null, 2))
+    mkdirSync(join(stateFile, '..'), { recursive: true })
+    savedState.openIds = [...widgets.keys()]
+    writeFileSync(stateFile, JSON.stringify(savedState, null, 2))
   } catch {
     // Best effort
   }
 }
 
 // Load once at import time
-loadPositions()
+loadState()
 
 export const widgetService = {
   isOpen(projectId: number): boolean {
@@ -51,7 +61,7 @@ export const widgetService = {
     }
 
     // Restore saved position or place near cursor
-    const saved = savedPositions[String(projectId)]
+    const saved = savedState.positions[String(projectId)]
     let x: number, y: number, width: number, height: number
 
     if (saved) {
@@ -119,9 +129,9 @@ export const widgetService = {
     const persistBounds = (): void => {
       if (win.isDestroyed()) return
       const bounds = win.getBounds()
-      savedPositions[String(projectId)] = bounds
+      savedState.positions[String(projectId)] = bounds
       if (saveTimeout) clearTimeout(saveTimeout)
-      saveTimeout = setTimeout(savePositions, 500)
+      saveTimeout = setTimeout(saveState, 500)
     }
     win.on('move', persistBounds)
     win.on('resize', persistBounds)
@@ -131,12 +141,14 @@ export const widgetService = {
     })
 
     widgets.set(projectId, win)
+    saveState()
     log.info(`Widget opened for project ${projectId}`)
   },
 
   close(projectId: number): void {
     const w = widgets.get(projectId)
     widgets.delete(projectId)
+    if (!isDestroying) saveState()
     if (w && !w.isDestroyed()) {
       w.destroy()
     }
@@ -154,7 +166,17 @@ export const widgetService = {
     }
   },
 
+  restoreAll(): void {
+    const ids = savedState.openIds
+    if (ids.length === 0) return
+    log.info(`Restoring ${ids.length} widget(s)`)
+    for (const id of ids) {
+      this.open(id)
+    }
+  },
+
   destroy(): void {
+    isDestroying = true
     for (const [id] of widgets) {
       this.close(id)
     }
