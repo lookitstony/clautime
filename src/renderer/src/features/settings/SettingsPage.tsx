@@ -133,19 +133,18 @@ export function SettingsPage(): React.JSX.Element {
 
   const idleTimeoutChanged = idleTimeout !== savedIdleTimeout
 
-  const saveIdleTimeoutAndRescan = useCallback(async () => {
+  const saveIdleTimeoutAndRebuild = useCallback(async () => {
     setIsSavingIdle(true)
     try {
       await window.api.settings.set('idle_timeout_minutes', String(idleTimeout))
-      await window.api.sessions.reset()
-      await window.api.sessions.scan()
+      await window.api.sessions.scanAndRebuild()
       setSavedIdleTimeout(idleTimeout)
       queryClient.invalidateQueries({ queryKey: ['settings'] })
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
       queryClient.invalidateQueries({ queryKey: ['live'] })
-      toast.success('Idle timeout saved — sessions re-scanned')
+      toast.success('Idle timeout saved — sessions rebuilt')
     } catch {
-      toast.error('Failed to save and rescan')
+      toast.error('Failed to save and rebuild')
     } finally {
       setIsSavingIdle(false)
     }
@@ -345,10 +344,10 @@ export function SettingsPage(): React.JSX.Element {
                   size="sm"
                   disabled={isSavingIdle}
                   className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-                  onClick={saveIdleTimeoutAndRescan}
+                  onClick={saveIdleTimeoutAndRebuild}
                 >
                   {isSavingIdle && <LoaderCircle size={14} className="mr-1 animate-spin" />}
-                  {isSavingIdle ? 'Rescanning...' : 'Save & Rescan'}
+                  {isSavingIdle ? 'Rebuilding...' : 'Save & Rebuild'}
                 </Button>
               )}
             </div>
@@ -620,7 +619,7 @@ export function SettingsPage(): React.JSX.Element {
       <ConfirmDialog
         open={confirmReset}
         title="Reset Sessions"
-        description="This will delete all sessions and re-import from scratch. This cannot be undone."
+        description="This will delete ALL data including raw message history and re-import from scratch. Any history from compacted conversations will be permanently lost. This cannot be undone."
         confirmLabel="Reset & Rescan"
         cancelLabel="Cancel"
         variant="destructive"

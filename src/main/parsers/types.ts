@@ -45,6 +45,10 @@ export interface ParsedSessionData {
   messageCount: number
   /** Session summary from JSONL `summary` record, if present */
   summary: string | null
+  /** Messages from subagent JSONL files (with sourceFile set to the subagent file path) */
+  subagentMessages: ParsedMessage[]
+  /** Progress event timestamps from subagent JSONL files */
+  subagentProgressTimestamps: string[]
 }
 
 export interface SessionParserOptions {

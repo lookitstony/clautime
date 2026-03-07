@@ -58,6 +58,8 @@ function makeParsedSession(
     models: [],
     messageCount: messages.length,
     summary: null,
+    subagentMessages: [],
+    subagentProgressTimestamps: [],
     ...overrides
   }
 }

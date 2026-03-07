@@ -57,12 +57,28 @@ vi.mock('node:fs/promises', () => ({
 import * as sessionsSchema from '../db/schema/sessions'
 import * as appSettingsSchema from '../db/schema/app-settings'
 import * as scanStateSchema from '../db/schema/scan-state'
+import * as rawMessagesSchema from '../db/schema/raw-messages'
+import * as aiSummariesSchema from '../db/schema/ai-summaries'
+import * as gitCommitsSchema from '../db/schema/git-commits'
+import * as clientsSchema from '../db/schema/clients'
+import * as projectsSchema from '../db/schema/projects'
+import * as projectAlertConfigSchema from '../db/schema/project-alert-config'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
 import { sessionService } from './session-service'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
-const schema = { ...sessionsSchema, ...appSettingsSchema, ...scanStateSchema }
+const schema = {
+  ...sessionsSchema,
+  ...appSettingsSchema,
+  ...scanStateSchema,
+  ...rawMessagesSchema,
+  ...aiSummariesSchema,
+  ...gitCommitsSchema,
+  ...clientsSchema,
+  ...projectsSchema,
+  ...projectAlertConfigSchema
+}
 
 function setupTestDb(): void {
   testSqlite = new Database(':memory:')
@@ -116,7 +132,9 @@ function makeParsedSession(
     },
     models: [],
     messageCount: messages.length,
-    summary: null
+    summary: null,
+    subagentMessages: [],
+    subagentProgressTimestamps: []
   }
 }
 

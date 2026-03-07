@@ -193,8 +193,8 @@ export async function parseSessionFile(
     sessionId = basename(filePath, '.jsonl')
   }
 
-  // Collect subagent token usage
-  const subagentTokenUsage = await collectSubagentTokens(filePath, sessionId)
+  // Collect subagent data (messages, tokens, progress)
+  const subagentData = await collectSubagentData(filePath, sessionId)
 
   const timestamps = messages.filter((m) => m.timestamp).map((m) => m.timestamp)
 
@@ -208,43 +208,68 @@ export async function parseSessionFile(
     firstTimestamp: timestamps[0] ?? null,
     lastTimestamp: timestamps[timestamps.length - 1] ?? null,
     totalTokenUsage: totalUsage,
-    subagentTokenUsage,
+    subagentTokenUsage: subagentData.tokenUsage,
     models: Array.from(modelsSet),
     messageCount: messages.length,
-    summary
+    summary,
+    subagentMessages: subagentData.messages,
+    subagentProgressTimestamps: subagentData.progressTimestamps
   }
 }
 
+interface SubagentData {
+  tokenUsage: TokenUsage
+  messages: ParsedMessage[]
+  progressTimestamps: string[]
+}
+
 /**
- * Collect token usage from subagent JSONL files for a given session.
+ * Collect messages, token usage, and progress timestamps from subagent JSONL files.
  * Subagents are stored in {session-id}/subagents/*.jsonl alongside the main file.
  */
-async function collectSubagentTokens(mainFilePath: string, sessionId: string): Promise<TokenUsage> {
-  const usage = emptyTokenUsage()
+async function collectSubagentData(mainFilePath: string, sessionId: string): Promise<SubagentData> {
+  const tokenUsage = emptyTokenUsage()
+  const messages: ParsedMessage[] = []
+  const progressTimestamps: string[] = []
   const sessionDir = join(dirname(mainFilePath), sessionId, 'subagents')
 
   let entries: Awaited<ReturnType<typeof readdir>>
   try {
     entries = await readdir(sessionDir, { withFileTypes: true })
   } catch {
-    return usage // No subagent directory — common case
+    return { tokenUsage, messages, progressTimestamps }
   }
 
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+    const subagentFilePath = join(sessionDir, entry.name)
     try {
-      const content = await readFile(join(sessionDir, entry.name), 'utf-8')
+      const content = await readFile(subagentFilePath, 'utf-8')
       for (const line of content.split('\n')) {
         if (!line.trim()) continue
         const raw = parseJsonlLine(line)
-        if (!raw || raw.type !== 'assistant') continue
-        const message = raw.message as Record<string, unknown> | undefined
-        const u = message?.usage as Record<string, number> | undefined
-        if (u) {
-          usage.inputTokens += u.input_tokens || 0
-          usage.outputTokens += u.output_tokens || 0
-          usage.cacheCreationInputTokens += u.cache_creation_input_tokens || 0
-          usage.cacheReadInputTokens += u.cache_read_input_tokens || 0
+        if (!raw) continue
+
+        const type = raw.type as string
+
+        if (type === PROGRESS_TYPE) {
+          const ts = raw.timestamp as string
+          if (ts) progressTimestamps.push(ts)
+          continue
+        }
+
+        if (!RELEVANT_TYPES.has(type)) continue
+
+        const msg = extractMessage(raw)
+        // Tag with the subagent's own source file for dedup
+        ;(msg as ParsedMessage & { sourceFile?: string }).sourceFile = subagentFilePath
+        messages.push(msg)
+
+        if (msg.usage) {
+          tokenUsage.inputTokens += msg.usage.inputTokens
+          tokenUsage.outputTokens += msg.usage.outputTokens
+          tokenUsage.cacheCreationInputTokens += msg.usage.cacheCreationInputTokens
+          tokenUsage.cacheReadInputTokens += msg.usage.cacheReadInputTokens
         }
       }
     } catch (err) {
@@ -252,7 +277,8 @@ async function collectSubagentTokens(mainFilePath: string, sessionId: string): P
     }
   }
 
-  return usage
+  progressTimestamps.sort()
+  return { tokenUsage, messages, progressTimestamps }
 }
 
 /**

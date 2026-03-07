@@ -27,6 +27,8 @@ interface SettingsApi {
 interface SessionsApi {
   scan(claudeDir?: string, projectFilter?: string[]): Promise<IpcResult<ScanResult>>
   reset(): Promise<IpcResult<void>>
+  rebuild(): Promise<IpcResult<ScanResult>>
+  scanAndRebuild(): Promise<IpcResult<ScanResult>>
   getAll(filters?: SessionFilters): Promise<IpcResult<Session[]>>
   getById(id: number): Promise<IpcResult<Session | null>>
   getPromptTimings(sessionId: number): Promise<IpcResult<PromptTiming[]>>

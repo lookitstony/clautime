@@ -7,7 +7,8 @@ export const scanState = sqliteTable(
     filePath: text('file_path').notNull().unique(),
     lastModifiedAt: text('last_modified_at').notNull(),
     lastScannedAt: text('last_scanned_at').notNull(),
-    sessionCount: integer('session_count').notNull().default(0)
+    sessionCount: integer('session_count').notNull().default(0),
+    lastFileSize: integer('last_file_size').notNull().default(0)
   },
   (table) => [index('idx_scan_state_file_path').on(table.filePath)]
 )

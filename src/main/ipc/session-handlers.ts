@@ -6,6 +6,9 @@ import { gitService } from '../services/git-service'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
+import { aiSummaries } from '../db/schema/ai-summaries'
+import { gitCommits } from '../db/schema/git-commits'
+import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession } from '../../shared/types/session'
 
@@ -51,13 +54,51 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('session:reset', async (): Promise<IpcResult<void>> => {
     try {
       const db = getDb()
+      db.delete(aiSummaries).run()
+      db.update(gitCommits).set({ sessionId: null }).run()
       db.delete(sessions).run()
+      db.delete(rawMessages).run()
+      db.delete(progressEvents).run()
       db.delete(scanState).run()
-      log.info('Session data reset')
+      log.info('Session data reset (all tables cleared)')
       return ipcSuccess(undefined)
     } catch (error) {
       log.error('IPC session:reset failed:', error)
       return ipcError('SESSION_RESET_ERROR', String(error))
+    }
+  })
+
+  ipcMain.handle('session:rebuild', async (): Promise<IpcResult<ScanResult>> => {
+    try {
+      const result = await sessionService.rebuildSessionsFromRaw()
+      const attributedCount = clientProjectService.attributeSessions()
+      gitService.scanCommits().then((scanResult) => {
+        const correlated = gitService.correlateCommitsWithSessions()
+        log.info(`Post-rebuild git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`)
+      }).catch((err) => {
+        log.warn('Post-rebuild git scan failed (non-critical):', err)
+      })
+      return ipcSuccess({ ...result, attributedCount })
+    } catch (error) {
+      log.error('IPC session:rebuild failed:', error)
+      return ipcError('SESSION_REBUILD_ERROR', String(error))
+    }
+  })
+
+  ipcMain.handle('session:scanAndRebuild', async (): Promise<IpcResult<ScanResult>> => {
+    try {
+      const result = await sessionService.scanAndRebuild()
+      const attributedCount = clientProjectService.attributeSessions()
+      gitService.scanCommits().then((scanResult) => {
+        const correlated = gitService.correlateCommitsWithSessions()
+        log.info(`Post-rebuild git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`)
+      }).catch((err) => {
+        log.warn('Post-rebuild git scan failed (non-critical):', err)
+      })
+      return ipcSuccess({ ...result, attributedCount })
+    } catch (error) {
+      log.error('IPC session:scanAndRebuild failed:', error)
+      return ipcError('SESSION_SCAN_REBUILD_ERROR', String(error))
     }
   })
 

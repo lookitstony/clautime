@@ -28,6 +28,10 @@ const api = {
     ): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
       ipcRenderer.invoke('session:scan', claudeDir, projectFilter),
     reset: (): Promise<IpcResult<void>> => ipcRenderer.invoke('session:reset'),
+    rebuild: (): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
+      ipcRenderer.invoke('session:rebuild'),
+    scanAndRebuild: (): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
+      ipcRenderer.invoke('session:scanAndRebuild'),
     getAll: (
       filters?: import('../shared/types/session').SessionFilters
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
