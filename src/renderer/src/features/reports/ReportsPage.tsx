@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from 'react'
-import { FileBarChart, Download, Loader2, ChevronRight, Sparkles, GitCommit } from 'lucide-react'
+import { FileBarChart, Download, Loader2, ChevronRight, ChevronDown, Sparkles, GitCommit } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -81,6 +81,26 @@ function groupByClientAndProject(items: SessionLineItem[]): ClientGroup[] {
 
 function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.JSX.Element {
   const clientGroups = useMemo(() => groupByClientAndProject(items), [items])
+  const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set())
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
+
+  const toggleClient = useCallback((name: string) => {
+    setCollapsedClients((prev) => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }, [])
+
+  const toggleProject = useCallback((key: string) => {
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }, [])
+
+  const multiClient = clientGroups.length > 1
 
   return (
     <div className="overflow-auto">
@@ -96,58 +116,75 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
           </tr>
         </thead>
         <tbody>
-          {clientGroups.map((clientGroup) => (
-            <Fragment key={clientGroup.clientName}>
-              {clientGroups.length > 1 && (
-                <tr className="border-t-2 border-[var(--surface-border)]">
-                  <td colSpan={6} className="px-3 py-2 text-[13px] font-bold text-[var(--text-primary)]">
-                    {clientGroup.clientName}
-                    <span className="ml-2 font-normal text-[var(--text-muted)]">
-                      {formatDuration(clientGroup.totalDuration)}
-                    </span>
-                  </td>
-                </tr>
-              )}
-              {clientGroup.projects.map((project) => {
-                const totalDuration = project.sessions.reduce((s, i) => s + i.durationMinutes, 0)
-                const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
-                const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
-                return (
-                  <Fragment key={project.projectName}>
-                    <tr className="bg-[var(--background-elevated)]">
-                      <td colSpan={2} className={cn('px-3 py-1.5 font-semibold', clientGroups.length > 1 && 'pl-6')}>
-                        {project.projectName}
-                      </td>
-                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
-                        {formatDuration(totalDuration)}
-                      </td>
-                      <td className="px-3 py-1.5 text-right font-mono font-semibold">{totalPrompts}</td>
-                      <td className="px-3 py-1.5 text-right font-mono font-semibold">{formatCompactNumber(totalTokens)}</td>
-                      <td className="px-3 py-1.5 text-[var(--text-muted)]">{project.sessions.length} session{project.sessions.length !== 1 ? 's' : ''}</td>
-                    </tr>
-                    {project.sessions.map((item, i) => (
-                      <tr key={i} className="hover:bg-[var(--background-elevated)] border-t border-[var(--surface-border)]/30">
-                        <td className={cn('whitespace-nowrap px-3 py-1.5', clientGroups.length > 1 ? 'pl-9' : 'pl-6')}>{item.date}</td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
-                          {formatTimeOnly(item.startedAt)}{'\u2013'}{formatTimeOnly(item.endedAt)}
+          {clientGroups.map((clientGroup) => {
+            const clientCollapsed = collapsedClients.has(clientGroup.clientName)
+            return (
+              <Fragment key={clientGroup.clientName}>
+                {multiClient && (
+                  <tr
+                    className="border-t-2 border-[var(--surface-border)] cursor-pointer select-none hover:bg-[var(--background-elevated)]"
+                    onClick={() => toggleClient(clientGroup.clientName)}
+                  >
+                    <td colSpan={6} className="px-3 py-2 text-[13px] font-bold text-[var(--text-primary)]">
+                      <span className="inline-flex items-center gap-1">
+                        {clientCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                        {clientGroup.clientName}
+                      </span>
+                      <span className="ml-2 font-normal text-[var(--text-muted)]">
+                        {formatDuration(clientGroup.totalDuration)}
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                {!clientCollapsed && clientGroup.projects.map((project) => {
+                  const projectKey = `${clientGroup.clientName}:${project.projectName}`
+                  const projectCollapsed = collapsedProjects.has(projectKey)
+                  const totalDuration = project.sessions.reduce((s, i) => s + i.durationMinutes, 0)
+                  const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
+                  const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
+                  return (
+                    <Fragment key={project.projectName}>
+                      <tr
+                        className="bg-[var(--background-elevated)] cursor-pointer select-none hover:brightness-[1.05]"
+                        onClick={() => toggleProject(projectKey)}
+                      >
+                        <td colSpan={2} className={cn('px-3 py-1.5 font-semibold', multiClient && 'pl-6')}>
+                          <span className="inline-flex items-center gap-1">
+                            {projectCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                            {project.projectName}
+                          </span>
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono text-[var(--accent)]">
-                          {formatDuration(item.durationMinutes)}
+                        <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
+                          {formatDuration(totalDuration)}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono">{item.promptCount}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">
-                          {formatCompactNumber(item.inputTokens + item.outputTokens)}
-                        </td>
-                        <td className="px-3 py-1.5 text-[var(--text-muted)]">
-                          {item.source === 'auto' ? 'Auto' : 'Manual'}
-                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono font-semibold">{totalPrompts}</td>
+                        <td className="px-3 py-1.5 text-right font-mono font-semibold">{formatCompactNumber(totalTokens)}</td>
+                        <td className="px-3 py-1.5 text-[var(--text-muted)]">{project.sessions.length} session{project.sessions.length !== 1 ? 's' : ''}</td>
                       </tr>
-                    ))}
-                  </Fragment>
-                )
-              })}
-            </Fragment>
-          ))}
+                      {!projectCollapsed && project.sessions.map((item, i) => (
+                        <tr key={i} className="hover:bg-[var(--background-elevated)] border-t border-[var(--surface-border)]/30">
+                          <td className={cn('whitespace-nowrap px-3 py-1.5', multiClient ? 'pl-9' : 'pl-6')}>{item.date}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
+                            {formatTimeOnly(item.startedAt)}{'\u2013'}{formatTimeOnly(item.endedAt)}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono text-[var(--accent)]">
+                            {formatDuration(item.durationMinutes)}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono">{item.promptCount}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">
+                            {formatCompactNumber(item.inputTokens + item.outputTokens)}
+                          </td>
+                          <td className="px-3 py-1.5 text-[var(--text-muted)]">
+                            {item.source === 'auto' ? 'Auto' : 'Manual'}
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  )
+                })}
+              </Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>

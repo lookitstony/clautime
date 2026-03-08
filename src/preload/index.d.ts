@@ -1,6 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { IpcResult } from '../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult, DiscoveredProject, PromptTiming, UpdateSession } from '../shared/types/session'
+import type { Session, SessionFilters, ScanResult, DiscoveredProject, PromptTiming, UpdateSession, GapAnalysis } from '../shared/types/session'
 import type { GitCommit, GitScanResult, GitIdentity } from '../shared/types/git'
 import type {
   Client,
@@ -35,6 +35,7 @@ interface SessionsApi {
   update(id: number, data: UpdateSession): Promise<IpcResult<Session>>
   delete(id: number): Promise<IpcResult<void>>
   split(id: number, splitAt: string): Promise<IpcResult<Session[]>>
+  getGapAnalysis(): Promise<IpcResult<GapAnalysis>>
   create(data: {
     projectPath: string
     startedAt: string

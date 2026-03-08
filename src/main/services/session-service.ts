@@ -13,7 +13,7 @@ import { progressEvents } from '../db/schema/raw-messages'
 import { settingsService } from './settings-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
-import type { SessionFilters, ScanResult, PromptTiming, UpdateSession } from '../../shared/types/session'
+import type { SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis } from '../../shared/types/session'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
@@ -833,6 +833,61 @@ export const sessionService = {
       timestamp: m.timestamp,
       isToolResult: m.isToolResult
     })))
+  },
+
+  /**
+   * Analyze gaps between messages across all raw_messages to help visualize
+   * idle timeout impact. Returns gap distribution buckets and session count
+   * at various timeout values.
+   */
+  getGapAnalysis(): GapAnalysis {
+    const db = getDb()
+
+    // Get all messages ordered by source file then timestamp
+    const msgs = db
+      .select({ sourceFile: rawMessages.sourceFile, timestamp: rawMessages.timestamp })
+      .from(rawMessages)
+      .orderBy(rawMessages.sourceFile, rawMessages.timestamp)
+      .all()
+
+    if (msgs.length === 0) {
+      return { gaps: [], sessionCounts: [], totalMessages: 0 }
+    }
+
+    // Compute gaps between consecutive messages within same source file
+    const gaps: number[] = []
+    for (let i = 1; i < msgs.length; i++) {
+      if (msgs[i].sourceFile !== msgs[i - 1].sourceFile) continue
+      const prevTime = new Date(msgs[i - 1].timestamp).getTime()
+      const currTime = new Date(msgs[i].timestamp).getTime()
+      const gapMinutes = (currTime - prevTime) / 60_000
+      if (gapMinutes > 0 && gapMinutes < 480) { // Cap at 8 hours, ignore negatives
+        gaps.push(Math.round(gapMinutes * 10) / 10) // 1 decimal
+      }
+    }
+
+    gaps.sort((a, b) => a - b)
+
+    // Build histogram buckets (0-1, 1-2, ..., 59-60, 60+)
+    const bucketSize = 1
+    const maxBucket = 60
+    const buckets: { minMinutes: number; maxMinutes: number; count: number }[] = []
+    for (let i = 0; i <= maxBucket; i += bucketSize) {
+      const min = i
+      const max = i === maxBucket ? Infinity : i + bucketSize
+      const count = gaps.filter((g) => g >= min && g < max).length
+      buckets.push({ minMinutes: min, maxMinutes: max === Infinity ? 999 : max, count })
+    }
+
+    // Session counts at various timeout values
+    const timeoutValues = [5, 10, 15, 20, 25, 30, 45, 60]
+    const sessionCounts = timeoutValues.map((timeout) => ({
+      timeoutMinutes: timeout,
+      estimatedSessions: gaps.filter((g) => g > timeout).length + 1, // +1 for initial session
+      capturedIdleMinutes: Math.round(gaps.filter((g) => g <= timeout).reduce((s, g) => s + g, 0))
+    }))
+
+    return { gaps: buckets, sessionCounts, totalMessages: msgs.length }
   }
 }
 

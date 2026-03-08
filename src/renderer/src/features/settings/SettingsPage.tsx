@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo, type ChangeEvent } from 'react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Volume2, VolumeX, LoaderCircle } from 'lucide-react'
+import { Volume2, VolumeX, LoaderCircle, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -25,6 +25,141 @@ function SectionCard({ children }: { children: React.ReactNode }): React.JSX.Ele
   return (
     <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--background-elevated)] p-4">
       {children}
+    </div>
+  )
+}
+
+const GAP_RANGES = [
+  { label: '0-5m', min: 0, max: 5 },
+  { label: '5-10m', min: 5, max: 10 },
+  { label: '10-15m', min: 10, max: 15 },
+  { label: '15-20m', min: 15, max: 20 },
+  { label: '20-30m', min: 20, max: 30 },
+  { label: '30-45m', min: 30, max: 45 },
+  { label: '45-60m', min: 45, max: 60 },
+  { label: '60m+', min: 60, max: 999 }
+] as const
+
+function GapAnalysisChart({ idleTimeout }: { idleTimeout: number }): React.JSX.Element | null {
+  const [show, setShow] = useState(false)
+  const { data: gapData, isLoading } = useQuery({
+    queryKey: ['sessions', 'gapAnalysis'],
+    queryFn: async () => {
+      const r = await window.api.sessions.getGapAnalysis()
+      return r.success ? r.data : null
+    },
+    enabled: show,
+    staleTime: 60_000
+  })
+
+  const chartBuckets = useMemo(() => {
+    if (!gapData || gapData.totalMessages === 0) return null
+    return GAP_RANGES.map(({ label, min, max }) => ({
+      label,
+      min,
+      max,
+      count: gapData.gaps
+        .filter((g) => g.minMinutes >= min && g.minMinutes < max)
+        .reduce((s, g) => s + g.count, 0)
+    }))
+  }, [gapData])
+
+  const currentEntry = useMemo(() => {
+    if (!gapData || gapData.sessionCounts.length === 0) return null
+    return gapData.sessionCounts.find((s) => s.timeoutMinutes === idleTimeout)
+      ?? gapData.sessionCounts.reduce((closest, s) =>
+        Math.abs(s.timeoutMinutes - idleTimeout) < Math.abs(closest.timeoutMinutes - idleTimeout) ? s : closest
+      )
+  }, [gapData, idleTimeout])
+
+  if (!show) {
+    return (
+      <button
+        type="button"
+        onClick={() => setShow(true)}
+        className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--accent)] hover:underline"
+      >
+        <BarChart3 size={13} />
+        Show gap analysis
+      </button>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+        <LoaderCircle size={13} className="animate-spin" />
+        Analyzing message gaps...
+      </div>
+    )
+  }
+
+  if (!chartBuckets || !currentEntry) {
+    return (
+      <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+        No message data available for analysis. Run a scan first.
+      </p>
+    )
+  }
+
+  const maxCount = Math.max(...chartBuckets.map((b) => b.count), 1)
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-[11px] text-[var(--text-muted)]">
+        Distribution of gaps between messages — bars to the <strong>right</strong> of the line become session splits.
+      </p>
+      <div className="flex items-end gap-[2px] h-16">
+        {chartBuckets.map((bucket) => {
+          const height = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0
+          const isAfterTimeout = bucket.min >= idleTimeout
+          const spansTimeout = bucket.min < idleTimeout && bucket.max > idleTimeout
+          return (
+            <div key={bucket.label} className="flex flex-1 flex-col items-center gap-0.5 h-full justify-end relative">
+              {spansTimeout && (
+                <div
+                  className="absolute bottom-0 left-0 w-[2px] h-full bg-[var(--accent)] z-10"
+                  title={`${idleTimeout}m timeout`}
+                />
+              )}
+              {bucket.count > 0 && (
+                <span className="text-[9px] text-[var(--text-muted)]">{bucket.count}</span>
+              )}
+              <div
+                className={cn(
+                  'w-full rounded-t-sm transition-colors min-h-[2px]',
+                  isAfterTimeout
+                    ? 'bg-red-400/60'
+                    : spansTimeout
+                      ? 'bg-amber-400/60'
+                      : 'bg-[var(--accent)]/40'
+                )}
+                style={{ height: `${height}%` }}
+                title={`${bucket.label}: ${bucket.count} gaps`}
+              />
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-end gap-[2px]">
+        {chartBuckets.map((bucket) => (
+          <span key={bucket.label} className="flex-1 text-center text-[8px] text-[var(--text-muted)] leading-tight">
+            {bucket.label}
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-4 text-[11px] text-[var(--text-muted)] pt-1">
+        <span>
+          Est. sessions: <strong className="text-[var(--text-primary)]">{currentEntry.estimatedSessions}</strong>
+        </span>
+        <span>
+          Captured idle: <strong className="text-[var(--text-primary)]">{currentEntry.capturedIdleMinutes}m</strong>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-sm bg-[var(--accent)]/40" /> Kept
+          <span className="inline-block w-2 h-2 rounded-sm bg-red-400/60 ml-1" /> Split
+        </span>
+      </div>
     </div>
   )
 }
@@ -351,6 +486,7 @@ export function SettingsPage(): React.JSX.Element {
                 </Button>
               )}
             </div>
+            <GapAnalysisChart idleTimeout={idleTimeout} />
           </div>
 
           <div className="mb-4">

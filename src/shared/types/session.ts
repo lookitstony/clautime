@@ -66,6 +66,13 @@ export interface UpdateSession {
   clientId?: number | null
 }
 
+/** Gap analysis data for visualizing idle timeout impact */
+export interface GapAnalysis {
+  gaps: { minMinutes: number; maxMinutes: number; count: number }[]
+  sessionCounts: { timeoutMinutes: number; estimatedSessions: number; capturedIdleMinutes: number }[]
+  totalMessages: number
+}
+
 /** A detected session before DB insertion (output of detection algorithm) */
 export interface DetectedSession {
   startedAt: string

@@ -56,6 +56,8 @@ const api = {
       splitAt: string
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
       ipcRenderer.invoke('session:split', id, splitAt),
+    getGapAnalysis: (): Promise<IpcResult<import('../shared/types/session').GapAnalysis>> =>
+      ipcRenderer.invoke('session:getGapAnalysis'),
     create: (
       data: {
         projectPath: string
