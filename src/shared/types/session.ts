@@ -66,10 +66,24 @@ export interface UpdateSession {
   clientId?: number | null
 }
 
+/** Daily work vs idle time breakdown */
+export interface TimeBreakdownDay {
+  date: string
+  workMinutes: number
+  idleMinutes: number
+  totalMinutes: number
+}
+
 /** Gap analysis data for visualizing idle timeout impact */
 export interface GapAnalysis {
   gaps: { minMinutes: number; maxMinutes: number; count: number }[]
-  sessionCounts: { timeoutMinutes: number; estimatedSessions: number; capturedIdleMinutes: number }[]
+  sessionCounts: {
+    timeoutMinutes: number
+    estimatedSessions: number
+    workMinutes: number
+    idleMinutes: number
+    totalTrackedMinutes: number
+  }[]
   totalMessages: number
 }
 

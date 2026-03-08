@@ -56,6 +56,8 @@ const api = {
       splitAt: string
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
       ipcRenderer.invoke('session:split', id, splitAt),
+    getTimeBreakdown: (startDate: string, endDate: string): Promise<IpcResult<import('../shared/types/session').TimeBreakdownDay[]>> =>
+      ipcRenderer.invoke('session:getTimeBreakdown', startDate, endDate),
     getGapAnalysis: (): Promise<IpcResult<import('../shared/types/session').GapAnalysis>> =>
       ipcRenderer.invoke('session:getGapAnalysis'),
     create: (

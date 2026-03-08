@@ -6,6 +6,7 @@ import {
   TrendingUp,
   Timer,
   Activity,
+  Clock,
   type LucideIcon
 } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
@@ -50,7 +51,8 @@ const WIDGET_REGISTRY: readonly WidgetConfig[] = Object.freeze([
   { id: 'prompts-per-day', title: 'Prompts per Day', icon: TrendingUp, defaultSize: 'medium' as WidgetSize, component: lazy(() => import('./widgets/PromptsPerDayChart')) },
   { id: 'billable-earnings', title: 'Billable Earnings', icon: Coins, defaultSize: 'medium' as WidgetSize, component: lazy(() => import('./widgets/BillableEarningsChart')) },
   { id: 'session-length', title: 'Session Length', icon: Timer, defaultSize: 'medium' as WidgetSize, component: lazy(() => import('./widgets/SessionLengthChart')) },
-  { id: 'peak-hours', title: 'Peak Hours', icon: Activity, defaultSize: 'medium' as WidgetSize, component: lazy(() => import('./widgets/PeakHoursChart')) }
+  { id: 'peak-hours', title: 'Peak Hours', icon: Activity, defaultSize: 'medium' as WidgetSize, component: lazy(() => import('./widgets/PeakHoursChart')) },
+  { id: 'work-vs-idle', title: 'AI vs Human Time', icon: Clock, defaultSize: 'medium' as WidgetSize, component: lazy(() => import('./widgets/WorkVsIdleChart')) }
 ]) as unknown as WidgetConfig[]
 
 export { WIDGET_REGISTRY }

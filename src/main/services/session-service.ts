@@ -13,7 +13,7 @@ import { progressEvents } from '../db/schema/raw-messages'
 import { settingsService } from './settings-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
-import type { SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis } from '../../shared/types/session'
+import type { SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../../shared/types/session'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
@@ -836,6 +836,94 @@ export const sessionService = {
   },
 
   /**
+   * Compute work vs idle breakdown for sessions by date.
+   * For each session, analyzes raw_messages to determine how much of the
+   * session duration is active work (<2min gaps) vs idle gaps.
+   */
+  getTimeBreakdown(startDate: string, endDate: string): TimeBreakdownDay[] {
+    const db = getDb()
+    const idleTimeout = this._getIdleTimeout()
+    const WORK_THRESHOLD = 2 // minutes
+
+    // Get sessions in date range
+    const sessionRows = db.select()
+      .from(sessions)
+      .where(and(
+        gte(sessions.startedAt, startDate),
+        lte(sessions.startedAt, endDate),
+        eq(sessions.source, 'auto')
+      ))
+      .orderBy(sessions.startedAt)
+      .all()
+
+    if (sessionRows.length === 0) return []
+
+    // For each session, get raw messages and compute breakdown
+    const dailyMap = new Map<string, { workMinutes: number; idleMinutes: number; totalMinutes: number }>()
+
+    for (const session of sessionRows) {
+      const startMs = new Date(session.startedAt).getTime()
+      const endMs = new Date(session.endedAt).getTime()
+      const date = session.startedAt.slice(0, 10)
+
+      // Get messages for this session's time window and source file
+      const conditions: SQL[] = [
+        gte(rawMessages.timestamp, session.startedAt),
+        lte(rawMessages.timestamp, session.endedAt)
+      ]
+      if (session.sourceFile) {
+        conditions.push(eq(rawMessages.sourceFile, session.sourceFile))
+      }
+
+      const msgs = db.select({ timestamp: rawMessages.timestamp })
+        .from(rawMessages)
+        .where(and(...conditions))
+        .orderBy(rawMessages.timestamp)
+        .all()
+
+      let workMin = 0
+      let idleMin = 0
+
+      if (msgs.length >= 2) {
+        for (let i = 1; i < msgs.length; i++) {
+          const gap = (new Date(msgs[i].timestamp).getTime() - new Date(msgs[i - 1].timestamp).getTime()) / 60_000
+          if (gap > 0 && gap <= idleTimeout) {
+            if (gap < WORK_THRESHOLD) {
+              workMin += gap
+            } else {
+              idleMin += gap
+            }
+          }
+        }
+      } else {
+        // No raw messages — treat entire duration as work
+        workMin = session.durationMinutes
+      }
+
+      const day = dailyMap.get(date) ?? { workMinutes: 0, idleMinutes: 0, totalMinutes: 0 }
+      day.workMinutes += workMin
+      day.idleMinutes += idleMin
+      day.totalMinutes += session.durationMinutes
+      dailyMap.set(date, day)
+    }
+
+    return Array.from(dailyMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, data]) => ({
+        date,
+        workMinutes: Math.round(data.workMinutes),
+        idleMinutes: Math.round(data.idleMinutes),
+        totalMinutes: Math.round(data.totalMinutes)
+      }))
+  },
+
+  /** @internal */
+  _getIdleTimeout(): number {
+    const setting = settingsService.getSetting('idle_timeout_minutes')
+    return setting ? parseInt(setting, 10) || DEFAULT_IDLE_TIMEOUT_MINUTES : DEFAULT_IDLE_TIMEOUT_MINUTES
+  },
+
+  /**
    * Analyze gaps between messages across all raw_messages to help visualize
    * idle timeout impact. Returns gap distribution buckets and session count
    * at various timeout values.
@@ -879,13 +967,24 @@ export const sessionService = {
       buckets.push({ minMinutes: min, maxMinutes: max === Infinity ? 999 : max, count })
     }
 
+    // Work time = sum of small gaps (< 2 min) — actual active coding time between prompts
+    const WORK_THRESHOLD = 2
+    const workMinutes = Math.round(gaps.filter((g) => g < WORK_THRESHOLD).reduce((s, g) => s + g, 0))
+
     // Session counts at various timeout values
     const timeoutValues = [5, 10, 15, 20, 25, 30, 45, 60]
-    const sessionCounts = timeoutValues.map((timeout) => ({
-      timeoutMinutes: timeout,
-      estimatedSessions: gaps.filter((g) => g > timeout).length + 1, // +1 for initial session
-      capturedIdleMinutes: Math.round(gaps.filter((g) => g <= timeout).reduce((s, g) => s + g, 0))
-    }))
+    const sessionCounts = timeoutValues.map((timeout) => {
+      const idleMinutes = Math.round(
+        gaps.filter((g) => g >= WORK_THRESHOLD && g <= timeout).reduce((s, g) => s + g, 0)
+      )
+      return {
+        timeoutMinutes: timeout,
+        estimatedSessions: gaps.filter((g) => g > timeout).length + 1,
+        workMinutes,
+        idleMinutes,
+        totalTrackedMinutes: workMinutes + idleMinutes
+      }
+    })
 
     return { gaps: buckets, sessionCounts, totalMessages: msgs.length }
   }

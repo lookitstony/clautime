@@ -3,6 +3,7 @@ import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, Outlet, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { Toaster } from '@/components/ui/sonner'
 import { TitleBar } from '@/components/shared/TitleBar'
 import { ActivityBar } from '@/components/shared/ActivityBar'
@@ -99,7 +100,9 @@ function RootLayout(): React.JSX.Element {
           <ActivityBar />
           <div className="flex flex-1 flex-col overflow-hidden">
             <main className="flex-1 overflow-auto">
-              <Outlet />
+              <ErrorBoundary>
+                <Outlet />
+              </ErrorBoundary>
             </main>
             <StatusBar />
           </div>

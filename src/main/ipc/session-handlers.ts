@@ -10,7 +10,7 @@ import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis } from '../../shared/types/session'
+import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../../shared/types/session'
 
 export function registerSessionHandlers(): void {
   ipcMain.handle(
@@ -163,6 +163,19 @@ export function registerSessionHandlers(): void {
       } catch (error) {
         log.error('IPC session:split failed:', error)
         return ipcError('SESSION_SPLIT_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'session:getTimeBreakdown',
+    async (_event, startDate: string, endDate: string): Promise<IpcResult<TimeBreakdownDay[]>> => {
+      try {
+        const result = sessionService.getTimeBreakdown(startDate, endDate)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC session:getTimeBreakdown failed:', error)
+        return ipcError('SESSION_TIME_BREAKDOWN_ERROR', String(error))
       }
     }
   )
