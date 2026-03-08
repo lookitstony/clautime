@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, Fragment } from 'react'
 import { FileBarChart, Download, Loader2, ChevronRight, Sparkles, GitCommit } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -39,15 +39,55 @@ function formatTimeOnly(isoString: string): string {
   return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+interface ProjectGroup {
+  projectName: string
+  sessions: SessionLineItem[]
+}
+
+interface ClientGroup {
+  clientName: string
+  projects: ProjectGroup[]
+  totalDuration: number
+}
+
+function groupByClientAndProject(items: SessionLineItem[]): ClientGroup[] {
+  const clientMap = new Map<string, Map<string, SessionLineItem[]>>()
+  for (const item of items) {
+    const clientKey = item.clientName ?? 'Unassigned'
+    let projectMap = clientMap.get(clientKey)
+    if (!projectMap) {
+      projectMap = new Map()
+      clientMap.set(clientKey, projectMap)
+    }
+    const sessions = projectMap.get(item.projectName) ?? []
+    sessions.push(item)
+    projectMap.set(item.projectName, sessions)
+  }
+
+  return Array.from(clientMap.entries())
+    .map(([clientName, projectMap]) => {
+      const projects = Array.from(projectMap.entries())
+        .map(([projectName, sessions]) => ({ projectName, sessions }))
+        .sort((a, b) => {
+          const aDur = a.sessions.reduce((s, i) => s + i.durationMinutes, 0)
+          const bDur = b.sessions.reduce((s, i) => s + i.durationMinutes, 0)
+          return bDur - aDur
+        })
+      const totalDuration = projects.reduce((s, p) => s + p.sessions.reduce((ss, i) => ss + i.durationMinutes, 0), 0)
+      return { clientName, projects, totalDuration }
+    })
+    .sort((a, b) => b.totalDuration - a.totalDuration)
+}
+
 function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.JSX.Element {
+  const clientGroups = useMemo(() => groupByClientAndProject(items), [items])
+
   return (
     <div className="overflow-auto">
       <table className="w-full text-[12px]">
         <thead>
           <tr className="border-b border-[var(--surface-border)] text-left text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
             <th className="px-3 py-2">Date</th>
-            <th className="px-3 py-2">Project</th>
-            <th className="px-3 py-2">Client</th>
             <th className="px-3 py-2 text-right">Time</th>
             <th className="px-3 py-2 text-right">Duration</th>
             <th className="px-3 py-2 text-right">Prompts</th>
@@ -55,26 +95,58 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
             <th className="px-3 py-2">Source</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[var(--surface-border)]">
-          {items.map((item, i) => (
-            <tr key={i} className="hover:bg-[var(--background-elevated)]">
-              <td className="whitespace-nowrap px-3 py-1.5">{item.date}</td>
-              <td className="px-3 py-1.5 font-medium">{item.projectName}</td>
-              <td className="px-3 py-1.5 text-[var(--text-muted)]">{item.clientName ?? '\u2014'}</td>
-              <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
-                {formatTimeOnly(item.startedAt)}{'\u2013'}{formatTimeOnly(item.endedAt)}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
-                {formatDuration(item.durationMinutes)}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono">{item.promptCount}</td>
-              <td className="px-3 py-1.5 text-right font-mono">
-                {formatCompactNumber(item.inputTokens + item.outputTokens)}
-              </td>
-              <td className="px-3 py-1.5 text-[var(--text-muted)]">
-                {item.source === 'auto' ? 'Auto' : 'Manual'}
-              </td>
-            </tr>
+        <tbody>
+          {clientGroups.map((clientGroup) => (
+            <Fragment key={clientGroup.clientName}>
+              {clientGroups.length > 1 && (
+                <tr className="border-t-2 border-[var(--surface-border)]">
+                  <td colSpan={6} className="px-3 py-2 text-[13px] font-bold text-[var(--text-primary)]">
+                    {clientGroup.clientName}
+                    <span className="ml-2 font-normal text-[var(--text-muted)]">
+                      {formatDuration(clientGroup.totalDuration)}
+                    </span>
+                  </td>
+                </tr>
+              )}
+              {clientGroup.projects.map((project) => {
+                const totalDuration = project.sessions.reduce((s, i) => s + i.durationMinutes, 0)
+                const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
+                const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
+                return (
+                  <Fragment key={project.projectName}>
+                    <tr className="bg-[var(--background-elevated)]">
+                      <td colSpan={2} className={cn('px-3 py-1.5 font-semibold', clientGroups.length > 1 && 'pl-6')}>
+                        {project.projectName}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
+                        {formatDuration(totalDuration)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono font-semibold">{totalPrompts}</td>
+                      <td className="px-3 py-1.5 text-right font-mono font-semibold">{formatCompactNumber(totalTokens)}</td>
+                      <td className="px-3 py-1.5 text-[var(--text-muted)]">{project.sessions.length} session{project.sessions.length !== 1 ? 's' : ''}</td>
+                    </tr>
+                    {project.sessions.map((item, i) => (
+                      <tr key={i} className="hover:bg-[var(--background-elevated)] border-t border-[var(--surface-border)]/30">
+                        <td className={cn('whitespace-nowrap px-3 py-1.5', clientGroups.length > 1 ? 'pl-9' : 'pl-6')}>{item.date}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
+                          {formatTimeOnly(item.startedAt)}{'\u2013'}{formatTimeOnly(item.endedAt)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono text-[var(--accent)]">
+                          {formatDuration(item.durationMinutes)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono">{item.promptCount}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">
+                          {formatCompactNumber(item.inputTokens + item.outputTokens)}
+                        </td>
+                        <td className="px-3 py-1.5 text-[var(--text-muted)]">
+                          {item.source === 'auto' ? 'Auto' : 'Manual'}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                )
+              })}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -325,13 +397,28 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null): stri
 
   if (report.sessionBreakdown) {
     lines.push('## Session Breakdown')
-    lines.push('')
-    lines.push('| Date | Project | Client | Time | Duration | Prompts | Tokens | Source |')
-    lines.push('|------|---------|--------|------|----------|---------|--------|--------|')
-    for (const item of report.sessionBreakdown) {
-      lines.push(
-        `| ${item.date} | ${item.projectName} | ${item.clientName ?? '\u2014'} | ${formatTimeOnly(item.startedAt)}\u2013${formatTimeOnly(item.endedAt)} | ${formatDuration(item.durationMinutes)} | ${item.promptCount} | ${formatCompactNumber(item.inputTokens + item.outputTokens)} | ${item.source === 'auto' ? 'Auto' : 'Manual'} |`
-      )
+    const clientGroups = groupByClientAndProject(report.sessionBreakdown)
+    for (const clientGroup of clientGroups) {
+      if (clientGroups.length > 1) {
+        lines.push('')
+        lines.push(`### ${clientGroup.clientName}`)
+      }
+      for (const project of clientGroup.projects) {
+        const totalDuration = project.sessions.reduce((s, i) => s + i.durationMinutes, 0)
+        const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
+        const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
+        lines.push('')
+        lines.push(`${clientGroups.length > 1 ? '####' : '###'} ${project.projectName}`)
+        lines.push(`**${project.sessions.length} sessions \u2014 ${formatDuration(totalDuration)} \u2014 ${totalPrompts} prompts \u2014 ${formatCompactNumber(totalTokens)} tokens**`)
+        lines.push('')
+        lines.push('| Date | Time | Duration | Prompts | Tokens | Source |')
+        lines.push('|------|------|----------|---------|--------|--------|')
+        for (const item of project.sessions) {
+          lines.push(
+            `| ${item.date} | ${formatTimeOnly(item.startedAt)}\u2013${formatTimeOnly(item.endedAt)} | ${formatDuration(item.durationMinutes)} | ${item.promptCount} | ${formatCompactNumber(item.inputTokens + item.outputTokens)} | ${item.source === 'auto' ? 'Auto' : 'Manual'} |`
+          )
+        }
+      }
     }
   }
 
