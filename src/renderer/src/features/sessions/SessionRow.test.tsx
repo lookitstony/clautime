@@ -5,7 +5,7 @@ import type { Session } from '../../../../shared/types/session'
 
 const mockSession: Session = {
   id: 1,
-  projectPath: '/apps/ClawdTime',
+  projectPath: '/apps/ClauTime',
   startedAt: '2026-03-04T09:15:00Z',
   endedAt: '2026-03-04T11:42:00Z',
   durationMinutes: 147,

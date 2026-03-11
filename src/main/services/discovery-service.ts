@@ -56,7 +56,7 @@ async function readClaudeProjects(): Promise<DiscoveredProject[]> {
 /**
  * Decode a .claude/projects/ folder name back to a project path.
  * Claude CLI encodes paths by replacing `:`, `\`, and `/` with `-`.
- * Example: "C--apps-ClawdTime" → "C:\apps\ClawdTime" (Windows)
+ * Example: "C--apps-ClauTime" → "C:\apps\ClauTime" (Windows)
  * Example: "-home-user-projects-myapp" → "/home/user/projects/myapp" (Unix)
  */
 function decodeProjectName(encoded: string): string {

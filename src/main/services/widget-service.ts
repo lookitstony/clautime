@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, app } from 'electron'
+import { BrowserWindow, screen, app, globalShortcut } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { is } from '@electron-toolkit/utils'
@@ -6,6 +6,15 @@ import log from 'electron-log/main.js'
 
 const widgets = new Map<number, BrowserWindow>()
 let isDestroying = false
+let userHiddenAll = false // User toggled all widgets hidden via hotkey
+let registeredAccelerator: string | null = null
+const DEFAULT_WIDGET_HOTKEY = 'CommandOrControl+Shift+H'
+// Widgets auto-hidden because their project has no today activity.
+// They'll auto-show when the project becomes active again.
+const autoHiddenIds = new Set<number>()
+// Widgets hidden because their project went idle (not processing).
+// They'll auto-show when the project starts processing again.
+const idleHiddenIds = new Set<number>()
 
 interface WidgetBounds { x: number; y: number; width: number; height: number }
 interface WidgetState { positions: Record<string, WidgetBounds>; openIds: number[] }
@@ -30,7 +39,8 @@ function loadState(): void {
 function saveState(): void {
   try {
     mkdirSync(join(stateFile, '..'), { recursive: true })
-    savedState.openIds = [...widgets.keys()]
+    // Save both open and auto-hidden widget IDs so they survive restarts
+    savedState.openIds = [...new Set([...widgets.keys(), ...autoHiddenIds, ...idleHiddenIds])]
     writeFileSync(stateFile, JSON.stringify(savedState, null, 2))
   } catch {
     // Best effort
@@ -148,6 +158,8 @@ export const widgetService = {
   close(projectId: number): void {
     const w = widgets.get(projectId)
     widgets.delete(projectId)
+    autoHiddenIds.delete(projectId) // User explicitly closed — don't auto-show
+    idleHiddenIds.delete(projectId)
     if (!isDestroying) saveState()
     if (w && !w.isDestroyed()) {
       w.destroy()
@@ -169,13 +181,135 @@ export const widgetService = {
   restoreAll(): void {
     const ids = savedState.openIds
     if (ids.length === 0) return
-    log.info(`Restoring ${ids.length} widget(s)`)
+    // Don't open immediately — queue them for activity-based restore.
+    // syncWithActiveProjects() on the first monitor tick will open the active ones.
+    log.info(`Queued ${ids.length} widget(s) for activity-based restore`)
     for (const id of ids) {
-      this.open(id)
+      autoHiddenIds.add(id)
     }
   },
 
+  syncWithActiveProjects(activeProjectIds: Set<number>): void {
+    // Auto-hide open widgets for projects without today activity
+    for (const [projectId, w] of widgets) {
+      if (!activeProjectIds.has(projectId)) {
+        log.info(`Auto-hiding widget for inactive project ${projectId}`)
+        autoHiddenIds.add(projectId)
+        widgets.delete(projectId)
+        if (!w.isDestroyed()) w.destroy()
+      }
+    }
+    // Auto-show widgets for projects that became active
+    for (const projectId of autoHiddenIds) {
+      if (activeProjectIds.has(projectId)) {
+        log.info(`Auto-showing widget for active project ${projectId}`)
+        autoHiddenIds.delete(projectId)
+        this.open(projectId)
+      }
+    }
+  },
+
+  /** Hide widgets for idle projects, show them again when processing resumes */
+  syncIdleState(processingProjectIds: Set<number>): void {
+    // Hide open widgets for projects that stopped processing
+    for (const [projectId, w] of widgets) {
+      if (!processingProjectIds.has(projectId)) {
+        log.info(`Idle-hiding widget for project ${projectId}`)
+        idleHiddenIds.add(projectId)
+        if (!w.isDestroyed()) w.hide()
+      }
+    }
+    // Show idle-hidden widgets for projects that started processing again
+    for (const projectId of idleHiddenIds) {
+      if (processingProjectIds.has(projectId)) {
+        log.info(`Idle-showing widget for project ${projectId}`)
+        idleHiddenIds.delete(projectId)
+        const w = widgets.get(projectId)
+        if (w && !w.isDestroyed()) {
+          w.show()
+        }
+      }
+    }
+  },
+
+  /** Toggle visibility of all widgets via hotkey */
+  toggleAllVisibility(): void {
+    if (userHiddenAll) {
+      // Show all widgets
+      for (const w of widgets.values()) {
+        if (!w.isDestroyed()) w.show()
+      }
+      userHiddenAll = false
+      log.info('Widgets shown via hotkey')
+    } else {
+      // Hide all widgets
+      for (const w of widgets.values()) {
+        if (!w.isDestroyed()) w.hide()
+      }
+      userHiddenAll = true
+      log.info('Widgets hidden via hotkey')
+    }
+  },
+
+  /** Register global hotkey for toggling widget visibility */
+  registerHotkey(accelerator?: string): void {
+    // Unregister previous if any
+    this.unregisterHotkey()
+
+    const key = accelerator || DEFAULT_WIDGET_HOTKEY
+    try {
+      const success = globalShortcut.register(key, () => {
+        this.toggleAllVisibility()
+      })
+      if (success) {
+        registeredAccelerator = key
+        log.info(`Widget hotkey registered: ${key}`)
+      } else {
+        log.warn(`Widget hotkey registration failed: ${key}`)
+      }
+    } catch (err) {
+      log.warn(`Widget hotkey registration error for ${key}:`, err)
+    }
+  },
+
+  /** Unregister the current widget hotkey */
+  unregisterHotkey(): void {
+    if (registeredAccelerator) {
+      try {
+        globalShortcut.unregister(registeredAccelerator)
+      } catch { /* already unregistered */ }
+      registeredAccelerator = null
+    }
+  },
+
+  /** Get the currently registered hotkey accelerator */
+  getHotkey(): string {
+    return registeredAccelerator ?? DEFAULT_WIDGET_HOTKEY
+  },
+
+  /** Open widgets for all given project IDs */
+  showAll(projectIds: number[]): void {
+    for (const id of projectIds) {
+      if (!this.isOpen(id)) {
+        this.open(id)
+      }
+    }
+  },
+
+  /** Close all open widgets */
+  hideAll(): void {
+    for (const id of [...widgets.keys()]) {
+      this.close(id)
+    }
+  },
+
+  /** True if any widget is currently open */
+  hasAnyOpen(): boolean {
+    return widgets.size > 0
+  },
+
   destroy(): void {
+    this.unregisterHotkey()
     isDestroying = true
     for (const [id] of widgets) {
       this.close(id)

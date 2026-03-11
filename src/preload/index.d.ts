@@ -12,6 +12,7 @@ import type {
 } from '../shared/types/client-project'
 import type { ReportFilters, ReportFormat, ReportResult } from '../shared/types/report'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../shared/types/live'
+import type { SecretScanResult, SecretFinding, SecretScanSummary, CustomSecretPattern, PatternTestResult } from '../shared/types/secret-scan'
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
@@ -114,7 +115,11 @@ interface LiveApi {
   timerStarted(projectName: string, startedAt: string): Promise<IpcResult<void>>
   timerStopped(): Promise<IpcResult<void>>
   toggleWidget(projectId: number): Promise<IpcResult<void>>
+  showAllWidgets(projectIds: number[]): Promise<IpcResult<void>>
+  hideAllWidgets(): Promise<IpcResult<void>>
   showStopDialog(projectId: number): Promise<IpcResult<void>>
+  getWidgetHotkey(): Promise<IpcResult<string>>
+  setWidgetHotkey(accelerator: string): Promise<IpcResult<void>>
   onWidgetAlert(callback: (info: { projectName: string }) => void): void
   onOpenStopDialog(callback: (projectId: number) => void): void
 }
@@ -138,6 +143,20 @@ interface ProjectsApi {
   attributeSessions(): Promise<IpcResult<number>>
 }
 
+interface SecretScanApi {
+  run(): Promise<IpcResult<SecretScanResult>>
+  cancel(): Promise<IpcResult<void>>
+  getFindings(limit?: number, offset?: number): Promise<IpcResult<SecretFinding[]>>
+  getSummary(): Promise<IpcResult<SecretScanSummary>>
+  ignoreFinding(id: number): Promise<IpcResult<void>>
+  redactFinding(id: number): Promise<IpcResult<void>>
+  redactAll(): Promise<IpcResult<number>>
+  getCustomPatterns(): Promise<IpcResult<CustomSecretPattern[]>>
+  upsertCustomPattern(pattern: CustomSecretPattern): Promise<IpcResult<{ success: boolean; warnings: string[] }>>
+  deleteCustomPattern(id: string): Promise<IpcResult<void>>
+  testPattern(source: string, flags: string, testString: string): Promise<IpcResult<PatternTestResult>>
+}
+
 interface Api {
   dialog: DialogApi
   settings: SettingsApi
@@ -149,6 +168,7 @@ interface Api {
   updater: UpdaterApi
   git: GitApi
   ai: AiApi
+  secretScan: SecretScanApi
   window: WindowApi
 }
 

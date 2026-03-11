@@ -4,7 +4,7 @@ import { ProjectGroup } from './ProjectGroup'
 
 describe('ProjectGroup', () => {
   const defaultProps = {
-    projectName: 'ClawdTime',
+    projectName: 'ClauTime',
     projectColor: '#3b82f6',
     sessionCount: 5,
     totalDurationMinutes: 125,
@@ -17,7 +17,7 @@ describe('ProjectGroup', () => {
 
   it('renders project name and stats', () => {
     render(<ProjectGroup {...defaultProps} />)
-    expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    expect(screen.getByText('ClauTime')).toBeInTheDocument()
     expect(screen.getByText('5 sessions')).toBeInTheDocument()
     expect(screen.getByText('42 prompts')).toBeInTheDocument()
     expect(screen.getByText('2h 5m')).toBeInTheDocument()
@@ -36,7 +36,7 @@ describe('ProjectGroup', () => {
   it('calls onToggle when clicked', () => {
     const onToggle = vi.fn()
     render(<ProjectGroup {...defaultProps} onToggle={onToggle} />)
-    fireEvent.click(screen.getByText('ClawdTime'))
+    fireEvent.click(screen.getByText('ClauTime'))
     expect(onToggle).toHaveBeenCalled()
   })
 
@@ -61,7 +61,7 @@ describe('ProjectGroup', () => {
     const group = screen.getByRole('group')
     expect(group).toHaveAttribute(
       'aria-label',
-      'ClawdTime - 5 sessions, 2h 5m total'
+      'ClauTime - 5 sessions, 2h 5m total'
     )
   })
 
@@ -76,7 +76,7 @@ describe('ProjectGroup', () => {
   it('displays client name when provided', () => {
     render(<ProjectGroup {...defaultProps} clientName="Acme Corp" />)
     expect(screen.getByText('Acme Corp')).toBeInTheDocument()
-    expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    expect(screen.getByText('ClauTime')).toBeInTheDocument()
   })
 
   it('includes client name in aria-label when provided', () => {
@@ -84,7 +84,7 @@ describe('ProjectGroup', () => {
     const group = screen.getByRole('group')
     expect(group).toHaveAttribute(
       'aria-label',
-      'Acme Corp / ClawdTime - 5 sessions, 2h 5m total'
+      'Acme Corp / ClauTime - 5 sessions, 2h 5m total'
     )
   })
 
@@ -106,7 +106,7 @@ describe('ProjectGroup', () => {
     const group = screen.getByRole('group')
     expect(group).toHaveAttribute(
       'aria-label',
-      'ClawdTime (Unassigned) - 5 sessions, 2h 5m total'
+      'ClauTime (Unassigned) - 5 sessions, 2h 5m total'
     )
   })
 

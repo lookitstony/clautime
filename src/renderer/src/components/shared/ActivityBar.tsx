@@ -5,7 +5,7 @@ import {
   Activity,
   FileBarChart,
   BarChart3,
-  Users,
+  FolderKanban,
   Settings,
   type LucideIcon
 } from 'lucide-react'
@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
   { icon: Activity, label: 'Live', route: '/' },
   { icon: FileBarChart, label: 'Reports', route: '/reports' },
   { icon: BarChart3, label: 'Analytics', route: '/analytics' },
-  { icon: Users, label: 'Clients', route: '/clients' },
+  { icon: FolderKanban, label: 'Projects', route: '/clients' },
   { icon: Settings, label: 'Settings', route: '/settings' }
 ]
 

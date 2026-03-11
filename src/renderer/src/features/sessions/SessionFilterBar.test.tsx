@@ -9,7 +9,7 @@ const mockClients = [
 ]
 
 const mockProjects = [
-  { id: 1, clientId: 1, name: 'ClawdTime', directoryPath: 'C:\\apps\\ClawdTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' },
+  { id: 1, clientId: 1, name: 'ClauTime', directoryPath: 'C:\\apps\\ClauTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' },
   { id: 2, clientId: 2, name: 'OtherApp', directoryPath: 'C:\\apps\\OtherApp', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
 ]
 

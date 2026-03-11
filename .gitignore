@@ -1,5 +1,6 @@
 # BMAD framework (installed via npx bmad-method install)
 _bmad/
+_bmad-output/
 
 # Node
 node_modules/
@@ -16,3 +17,20 @@ Thumbs.db
 .eslintcache
 *.log*
 *.tsbuildinfo
+
+# Environment & Secrets
+.env
+.env.*
+*.pem
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json

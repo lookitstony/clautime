@@ -25,6 +25,17 @@ export interface SessionLineItem {
   source: 'auto' | 'manual'
 }
 
+/** Per-client-per-project breakdown within a day */
+export interface DailyProjectBreakdown {
+  clientName: string | null
+  projectName: string
+  sessionCount: number
+  totalDurationMinutes: number
+  totalPrompts: number
+  totalInputTokens: number
+  totalOutputTokens: number
+}
+
 /** A daily summary entry */
 export interface DailySummaryItem {
   date: string
@@ -34,6 +45,7 @@ export interface DailySummaryItem {
   totalInputTokens: number
   totalOutputTokens: number
   projects: string[]
+  breakdown: DailyProjectBreakdown[]
 }
 
 /** A period summary grouped by project */

@@ -71,6 +71,20 @@
       "when": 1772913609143,
       "tag": "0009_pink_iron_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1772990716828,
+      "tag": "0010_tiny_shiva",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1773184569763,
+      "tag": "0011_cultured_unicorn",
+      "breakpoints": true
     }
   ]
 }

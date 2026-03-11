@@ -1,6 +1,7 @@
-import { Tray, Menu, app, nativeImage, type BrowserWindow } from 'electron'
+import { Tray, Menu, app, nativeImage, Notification, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import log from 'electron-log/main.js'
+import { secretScanService } from './secret-scan-service'
 
 let tray: Tray | null = null
 let mainWindowRef: BrowserWindow | null = null
@@ -22,16 +23,16 @@ function formatElapsed(startedAt: string): string {
 function updateTitleAndTray(): void {
   if (!timerStartedAt || !timerProjectName) {
     if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-      mainWindowRef.setTitle('ClawdTime')
+      mainWindowRef.setTitle('ClauTime')
     }
     if (tray) {
-      tray.setToolTip('ClawdTime')
+      tray.setToolTip('ClauTime')
     }
     return
   }
 
   const elapsed = formatElapsed(timerStartedAt)
-  const title = `${elapsed} - ${timerProjectName} | ClawdTime`
+  const title = `${elapsed} - ${timerProjectName} | ClauTime`
   const tooltip = `${timerProjectName}: ${elapsed}`
 
   if (mainWindowRef && !mainWindowRef.isDestroyed()) {
@@ -63,15 +64,43 @@ export const trayService = {
     const icon = nativeImage.createFromPath(iconPath)
 
     tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-    tray.setToolTip('ClawdTime')
+    tray.setToolTip('ClauTime')
 
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: 'Show ClawdTime',
+        label: 'Show ClauTime',
         click: (): void => {
           if (mainWindowRef && !mainWindowRef.isDestroyed()) {
             mainWindowRef.show()
             mainWindowRef.focus()
+          }
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Scan for Secrets',
+        click: async (): Promise<void> => {
+          try {
+            const result = await secretScanService.runScan()
+            if (result.newFindings > 0) {
+              // Show notification and open app to settings
+              new Notification({
+                title: 'ClauTime — Secrets Found',
+                body: `${result.newFindings} new finding${result.newFindings === 1 ? '' : 's'} detected in ${result.filesScanned} files.`
+              }).on('click', () => {
+                if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+                  mainWindowRef.show()
+                  mainWindowRef.focus()
+                }
+              }).show()
+            } else {
+              new Notification({
+                title: 'ClauTime — Scan Complete',
+                body: `${result.filesScanned} files scanned, no new findings.`
+              }).show()
+            }
+          } catch (err) {
+            log.error('Tray secret scan failed:', err)
           }
         }
       },

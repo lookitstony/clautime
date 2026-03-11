@@ -72,7 +72,7 @@ function makeSnapshotLine() {
 let tmpDir: string
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(join(tmpdir(), 'clawdtime-test-'))
+  tmpDir = await mkdtemp(join(tmpdir(), 'clautime-test-'))
   vi.clearAllMocks()
 })
 

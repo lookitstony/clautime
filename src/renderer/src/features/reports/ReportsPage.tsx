@@ -192,36 +192,72 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
 }
 
 function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.Element {
+  const [expandedDays, setExpandedDays] = useState<Set<number>>(() => new Set(items.map((_, i) => i)))
+  const toggleDay = (i: number): void => {
+    setExpandedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }
+
   return (
     <div className="overflow-auto">
       <table className="w-full text-[12px]">
         <thead>
           <tr className="border-b border-[var(--surface-border)] text-left text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
             <th className="px-3 py-2">Date</th>
+            <th className="px-3 py-2">Client / Project</th>
             <th className="px-3 py-2 text-right">Sessions</th>
             <th className="px-3 py-2 text-right">Duration</th>
             <th className="px-3 py-2 text-right">Prompts</th>
             <th className="px-3 py-2 text-right">Tokens</th>
-            <th className="px-3 py-2">Projects</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--surface-border)]">
-          {items.map((item, i) => (
-            <tr key={i} className="hover:bg-[var(--background-elevated)]">
-              <td className="whitespace-nowrap px-3 py-1.5">{item.date}</td>
-              <td className="px-3 py-1.5 text-right font-mono">{item.sessionCount}</td>
-              <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
-                {formatDuration(item.totalDurationMinutes)}
-              </td>
-              <td className="px-3 py-1.5 text-right font-mono">{item.totalPrompts}</td>
-              <td className="px-3 py-1.5 text-right font-mono">
-                {formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)}
-              </td>
-              <td className="px-3 py-1.5 text-[var(--text-muted)]">
-                {item.projects.join(', ')}
-              </td>
-            </tr>
-          ))}
+          {items.map((item, i) => {
+            const isExpanded = expandedDays.has(i)
+            return (
+              <Fragment key={i}>
+                <tr
+                  className="cursor-pointer hover:bg-[var(--background-elevated)]"
+                  onClick={() => toggleDay(i)}
+                >
+                  <td className="whitespace-nowrap px-3 py-1.5 font-semibold">
+                    <span className="inline-flex items-center gap-1">
+                      {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      {item.date}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-[var(--text-muted)]">{item.projects.join(', ')}</td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{item.sessionCount}</td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
+                    {formatDuration(item.totalDurationMinutes)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{item.totalPrompts}</td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">
+                    {formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)}
+                  </td>
+                </tr>
+                {isExpanded && item.breakdown.map((bp, j) => (
+                  <tr key={`${i}-${j}`} className="bg-[var(--background-elevated)]/50">
+                    <td className="px-3 py-1" />
+                    <td className="px-3 py-1 pl-8 text-[var(--text-secondary)]">
+                      {bp.clientName && <span className="text-[var(--text-muted)]">{bp.clientName} / </span>}
+                      {bp.projectName}
+                    </td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{bp.sessionCount}</td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--accent)]/70">{formatDuration(bp.totalDurationMinutes)}</td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{bp.totalPrompts}</td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">
+                      {formatCompactNumber(bp.totalInputTokens + bp.totalOutputTokens)}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -461,13 +497,20 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null): stri
 
   if (report.dailySummary) {
     lines.push('## Daily Summary')
-    lines.push('')
-    lines.push('| Date | Sessions | Duration | Prompts | Tokens | Projects |')
-    lines.push('|------|----------|----------|---------|--------|----------|')
     for (const item of report.dailySummary) {
-      lines.push(
-        `| ${item.date} | ${item.sessionCount} | ${formatDuration(item.totalDurationMinutes)} | ${item.totalPrompts} | ${formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)} | ${item.projects.join(', ')} |`
-      )
+      lines.push('')
+      lines.push(`### ${item.date}`)
+      lines.push(`**${item.sessionCount} sessions — ${formatDuration(item.totalDurationMinutes)} — ${item.totalPrompts} prompts — ${formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)} tokens**`)
+      if (item.breakdown.length > 0) {
+        lines.push('')
+        lines.push('| Client | Project | Sessions | Duration | Prompts | Tokens |')
+        lines.push('|--------|---------|----------|----------|---------|--------|')
+        for (const bp of item.breakdown) {
+          lines.push(
+            `| ${bp.clientName ?? '\u2014'} | ${bp.projectName} | ${bp.sessionCount} | ${formatDuration(bp.totalDurationMinutes)} | ${bp.totalPrompts} | ${formatCompactNumber(bp.totalInputTokens + bp.totalOutputTokens)} |`
+          )
+        }
+      }
     }
   }
 
@@ -534,13 +577,15 @@ function reportToCsv(report: ReportResult): string {
   }
 
   if (report.dailySummary) {
-    rows.push(['Date', 'Sessions', 'Duration (min)', 'Prompts', 'Input Tokens', 'Output Tokens', 'Projects'])
+    rows.push(['Date', 'Client', 'Project', 'Sessions', 'Duration (min)', 'Prompts', 'Input Tokens', 'Output Tokens'])
     for (const item of report.dailySummary) {
-      rows.push([
-        item.date, String(item.sessionCount), String(item.totalDurationMinutes),
-        String(item.totalPrompts), String(item.totalInputTokens), String(item.totalOutputTokens),
-        item.projects.join('; ')
-      ])
+      for (const bp of item.breakdown) {
+        rows.push([
+          item.date, bp.clientName ?? '', bp.projectName, String(bp.sessionCount),
+          String(bp.totalDurationMinutes), String(bp.totalPrompts),
+          String(bp.totalInputTokens), String(bp.totalOutputTokens)
+        ])
+      }
     }
   }
 
@@ -573,9 +618,11 @@ function reportToHtml(report: ReportResult, aiSummary?: string | null): string {
   }
 
   if (report.dailySummary) {
-    tableHtml = `<table><thead><tr><th>Date</th><th>Sessions</th><th>Duration</th><th>Prompts</th><th>Tokens</th><th>Projects</th></tr></thead><tbody>`
+    tableHtml = `<table><thead><tr><th>Date</th><th>Client</th><th>Project</th><th>Sessions</th><th>Duration</th><th>Prompts</th><th>Tokens</th></tr></thead><tbody>`
     for (const item of report.dailySummary) {
-      tableHtml += `<tr><td>${item.date}</td><td>${item.sessionCount}</td><td><strong>${formatDuration(item.totalDurationMinutes)}</strong></td><td>${item.totalPrompts}</td><td>${formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)}</td><td>${item.projects.join(', ')}</td></tr>`
+      for (const bp of item.breakdown) {
+        tableHtml += `<tr><td>${item.date}</td><td>${bp.clientName ?? '\u2014'}</td><td>${bp.projectName}</td><td>${bp.sessionCount}</td><td><strong>${formatDuration(bp.totalDurationMinutes)}</strong></td><td>${bp.totalPrompts}</td><td>${formatCompactNumber(bp.totalInputTokens + bp.totalOutputTokens)}</td></tr>`
+      }
     }
     tableHtml += '</tbody></table>'
   }
@@ -663,13 +710,13 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
     }
   } else if (report.dailySummary) {
     for (const item of report.dailySummary) {
-      for (const proj of item.projects) {
-        const k = key(item.date, '\u2014', proj)
+      for (const bp of item.breakdown) {
+        const k = key(item.date, bp.clientName ?? '\u2014', bp.projectName)
         const existing = agg.get(k)
         if (existing) {
-          existing.minutes += item.totalDurationMinutes / item.projects.length
+          existing.minutes += bp.totalDurationMinutes
         } else {
-          agg.set(k, { date: item.date, client: '\u2014', project: proj, minutes: item.totalDurationMinutes / item.projects.length })
+          agg.set(k, { date: item.date, client: bp.clientName ?? '\u2014', project: bp.projectName, minutes: bp.totalDurationMinutes })
         }
       }
     }

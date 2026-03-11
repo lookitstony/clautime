@@ -42,26 +42,26 @@ describe('useUnassignedDirectories', () => {
   it('returns directories from sessions not matched by any project', () => {
     mockUseSessions.mockReturnValue(
       mockQuery([
-        { projectPath: 'C:\\apps\\ClawdTime' },
+        { projectPath: 'C:\\apps\\ClauTime' },
         { projectPath: 'C:\\apps\\OtherApp' }
       ]) as any
     )
     mockUseProjects.mockReturnValue(mockQuery([]) as any)
     const { result } = renderHook(() => useUnassignedDirectories())
     expect(result.current).toHaveLength(2)
-    expect(result.current[0].name).toBe('ClawdTime')
+    expect(result.current[0].name).toBe('ClauTime')
     expect(result.current[1].name).toBe('OtherApp')
   })
 
   it('excludes directories already assigned to a project', () => {
     mockUseSessions.mockReturnValue(
       mockQuery([
-        { projectPath: 'C:\\apps\\ClawdTime' },
+        { projectPath: 'C:\\apps\\ClauTime' },
         { projectPath: 'C:\\apps\\OtherApp' }
       ]) as any
     )
     mockUseProjects.mockReturnValue(
-      mockQuery([{ directoryPath: 'C:\\apps\\ClawdTime' }]) as any
+      mockQuery([{ directoryPath: 'C:\\apps\\ClauTime' }]) as any
     )
     const { result } = renderHook(() => useUnassignedDirectories())
     expect(result.current).toHaveLength(1)
@@ -71,8 +71,8 @@ describe('useUnassignedDirectories', () => {
   it('deduplicates by normalized path (case-insensitive)', () => {
     mockUseSessions.mockReturnValue(
       mockQuery([
-        { projectPath: 'C:\\Apps\\ClawdTime' },
-        { projectPath: 'c:\\apps\\clawdtime' }
+        { projectPath: 'C:\\Apps\\ClauTime' },
+        { projectPath: 'c:\\apps\\clautime' }
       ]) as any
     )
     mockUseProjects.mockReturnValue(mockQuery([]) as any)
@@ -114,10 +114,10 @@ describe('useUnassignedDirectories', () => {
 
   it('matches projects case-insensitively with backslash normalization', () => {
     mockUseSessions.mockReturnValue(
-      mockQuery([{ projectPath: 'C:/Apps/ClawdTime' }]) as any
+      mockQuery([{ projectPath: 'C:/Apps/ClauTime' }]) as any
     )
     mockUseProjects.mockReturnValue(
-      mockQuery([{ directoryPath: 'c:\\apps\\clawdtime' }]) as any
+      mockQuery([{ directoryPath: 'c:\\apps\\clautime' }]) as any
     )
     const { result } = renderHook(() => useUnassignedDirectories())
     expect(result.current).toHaveLength(0)

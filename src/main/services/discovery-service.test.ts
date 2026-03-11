@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('discoveryService.discoverDefaultProjects', () => {
   it('discovers projects from ~/.claude/projects directory', async () => {
     mockReaddir.mockResolvedValue([
-      dirent('C--apps-ClawdTime', true),
+      dirent('C--apps-ClauTime', true),
       dirent('C--apps-OtherProject', true),
       dirent('.DS_Store', false)
     ])
@@ -51,9 +51,9 @@ describe('discoveryService.discoverDefaultProjects', () => {
       { withFileTypes: true }
     )
     expect(result).toHaveLength(2)
-    expect(result[0].projectName).toBe('ClawdTime')
-    expect(result[0].projectPath).toBe('C:\\apps\\ClawdTime')
-    expect(result[0].encodedName).toBe('C--apps-ClawdTime')
+    expect(result[0].projectName).toBe('ClauTime')
+    expect(result[0].projectPath).toBe('C:\\apps\\ClauTime')
+    expect(result[0].encodedName).toBe('C--apps-ClauTime')
     expect(result[0].hasClaudeDir).toBe(true)
     expect(result[1].projectName).toBe('OtherProject')
   })
@@ -90,20 +90,20 @@ describe('discoveryService.discoverDefaultProjects', () => {
 describe('discoveryService.discoverProjectsUnderFolder', () => {
   it('filters projects to those under the given folder', async () => {
     mockReaddir.mockResolvedValue([
-      dirent('C--apps-ClawdTime', true),
+      dirent('C--apps-ClauTime', true),
       dirent('C--apps-ButtonMaker', true),
       dirent('C--other-SomeProject', true)
     ])
 
     const result = await discoveryService.discoverProjectsUnderFolder('C:\\apps')
     expect(result).toHaveLength(2)
-    expect(result[0].projectName).toBe('ClawdTime')
+    expect(result[0].projectName).toBe('ClauTime')
     expect(result[1].projectName).toBe('ButtonMaker')
   })
 
   it('returns empty when no projects match the folder', async () => {
     mockReaddir.mockResolvedValue([
-      dirent('C--apps-ClawdTime', true)
+      dirent('C--apps-ClauTime', true)
     ])
 
     const result = await discoveryService.discoverProjectsUnderFolder('D:\\work')
@@ -112,7 +112,7 @@ describe('discoveryService.discoverProjectsUnderFolder', () => {
 
   it('is case-insensitive on Windows paths', async () => {
     mockReaddir.mockResolvedValue([
-      dirent('C--Apps-ClawdTime', true)
+      dirent('C--Apps-ClauTime', true)
     ])
 
     const result = await discoveryService.discoverProjectsUnderFolder('c:\\apps')

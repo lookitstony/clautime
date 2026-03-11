@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useSessions } from '../sessions/use-sessions'
 import { useProjects } from './use-projects'
+import { useClients } from './use-clients'
 import { getProjectName } from '@/lib/format'
 
 export interface UnassignedDirectory {
@@ -16,13 +17,19 @@ function normalizePath(p: string): string {
 export function useUnassignedDirectories(): UnassignedDirectory[] {
   const { data: sessions } = useSessions()
   const { data: allProjects } = useProjects()
+  const { data: allClients } = useClients()
 
   return useMemo(() => {
     if (!sessions || sessions.length === 0) return []
 
-    // Collect assigned directory paths (normalized) from all projects
+    // Find the "Unassigned" client ID so we treat its projects as reassignable
+    const unassignedClientId = allClients?.find((c) => c.name === 'Unassigned')?.id
+
+    // Collect assigned directory paths — exclude projects under "Unassigned" client
     const assignedPaths = new Set(
-      (allProjects ?? []).map((p) => normalizePath(p.directoryPath))
+      (allProjects ?? [])
+        .filter((p) => p.clientId !== unassignedClientId)
+        .map((p) => normalizePath(p.directoryPath))
     )
 
     // Group sessions by normalized path, keep original path from first occurrence
@@ -45,5 +52,5 @@ export function useUnassignedDirectories(): UnassignedDirectory[] {
         sessionCount: d.count
       }))
       .sort((a, b) => b.sessionCount - a.sessionCount)
-  }, [sessions, allProjects])
+  }, [sessions, allProjects, allClients])
 }

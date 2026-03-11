@@ -25,7 +25,7 @@ beforeEach(() => {
 describe('WelcomeWizard', () => {
   it('renders welcome title and feature list', () => {
     render(<WelcomeWizard onComplete={vi.fn()} />, { wrapper: createWrapper() })
-    expect(screen.getByText('Welcome to ClawdTime')).toBeInTheDocument()
+    expect(screen.getByText('Welcome to ClauTime')).toBeInTheDocument()
     expect(screen.getByText('Live View')).toBeInTheDocument()
     expect(screen.getByText('Sessions')).toBeInTheDocument()
     expect(screen.getByText('Reports & Analytics')).toBeInTheDocument()

@@ -8,8 +8,8 @@ import type { Project } from '../../../../shared/types/client-project'
 const mockProject: Project = {
   id: 1,
   clientId: 1,
-  name: 'ClawdTime',
-  directoryPath: 'C:\\apps\\ClawdTime',
+  name: 'ClauTime',
+  directoryPath: 'C:\\apps\\ClauTime',
   isBillable: true,
   isActive: true,
   createdAt: '2026-03-04T00:00:00.000Z',
@@ -62,7 +62,7 @@ describe('ProjectForm', () => {
       { wrapper: createWrapper() }
     )
     expect(screen.getByText('Edit Project')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('Project name')).toHaveValue('ClawdTime')
+    expect(screen.getByPlaceholderText('Project name')).toHaveValue('ClauTime')
   })
 
   it('Browse button calls dialog.openFolder and populates path', async () => {
@@ -90,8 +90,10 @@ describe('ProjectForm', () => {
       <ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />,
       { wrapper: createWrapper() }
     )
-    const toggle = screen.getByRole('switch')
-    expect(toggle).toBeChecked()
+    const toggles = screen.getAllByRole('switch')
+    // First switch is Billable (should be checked by default), second is Exclude (unchecked)
+    expect(toggles[0]).toBeChecked()
+    expect(toggles[1]).not.toBeChecked()
   })
 
   it('calls create mutation on submit with correct data', async () => {

@@ -63,7 +63,7 @@ export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Ele
       >
         <div className="flex flex-col gap-4 py-2">
           <div className="text-center">
-            <DialogTitle className="text-xl font-bold">Welcome to ClawdTime</DialogTitle>
+            <DialogTitle className="text-xl font-bold">Welcome to ClauTime</DialogTitle>
             <DialogDescription className="mt-1 text-[var(--text-muted)]">
               Track your Claude Code sessions automatically — no setup required.
             </DialogDescription>

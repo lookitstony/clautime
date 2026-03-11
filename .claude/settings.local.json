@@ -41,7 +41,10 @@
       "Read(//c/apps/ClawdTime/$USERPROFILE/.ClawdTime/**)",
       "Read(//c/apps/ClawdTime/$APPDATA/ClawdTime/**)",
       "Read(//c/apps/ClawdTime/$APPDATA/clawd-time/**)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Read(//c/apps/ClawdTime/$APPDATA/clawdtime/**)",
+      "Read(//c/apps/ClawdTime/$LOCALAPPDATA/clawdtime/**)",
+      "Read(//c/apps/ClawdTime/**)"
     ]
   }
 }

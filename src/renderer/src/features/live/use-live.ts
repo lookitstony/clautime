@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../../../shared/types/live'
 
 // Cross-window query invalidation
-const liveChannel = new BroadcastChannel('clawdtime-live-queries')
+const liveChannel = new BroadcastChannel('clautime-live-queries')
 
 function broadcastInvalidate(): void {
   liveChannel.postMessage({ type: 'invalidate-live' })

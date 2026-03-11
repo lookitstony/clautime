@@ -189,13 +189,41 @@ const api = {
       ipcRenderer.invoke('live:timerStarted', projectName, startedAt),
     timerStopped: () => ipcRenderer.invoke('live:timerStopped'),
     toggleWidget: (projectId: number) => ipcRenderer.invoke('live:toggleWidget', projectId),
+    showAllWidgets: (projectIds: number[]) => ipcRenderer.invoke('live:showAllWidgets', projectIds),
+    hideAllWidgets: () => ipcRenderer.invoke('live:hideAllWidgets'),
     showStopDialog: (projectId: number) => ipcRenderer.invoke('live:showStopDialog', projectId),
+    getWidgetHotkey: () => ipcRenderer.invoke('live:getWidgetHotkey'),
+    setWidgetHotkey: (accelerator: string) => ipcRenderer.invoke('live:setWidgetHotkey', accelerator),
     onWidgetAlert: (callback: (info: { projectName: string }) => void) => {
       ipcRenderer.on('widget:alert', (_event, info) => callback(info))
     },
     onOpenStopDialog: (callback: (projectId: number) => void) => {
       ipcRenderer.on('live:openStopDialog', (_event, projectId) => callback(projectId))
     }
+  },
+  secretScan: {
+    run: (): Promise<IpcResult<import('../shared/types/secret-scan').SecretScanResult>> =>
+      ipcRenderer.invoke('secretScan:run'),
+    cancel: (): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('secretScan:cancel'),
+    getFindings: (limit?: number, offset?: number): Promise<IpcResult<import('../shared/types/secret-scan').SecretFinding[]>> =>
+      ipcRenderer.invoke('secretScan:getFindings', limit, offset),
+    getSummary: (): Promise<IpcResult<import('../shared/types/secret-scan').SecretScanSummary>> =>
+      ipcRenderer.invoke('secretScan:getSummary'),
+    ignoreFinding: (id: number): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('secretScan:ignoreFinding', id),
+    redactFinding: (id: number): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('secretScan:redactFinding', id),
+    redactAll: (): Promise<IpcResult<number>> =>
+      ipcRenderer.invoke('secretScan:redactAll'),
+    getCustomPatterns: (): Promise<IpcResult<import('../shared/types/secret-scan').CustomSecretPattern[]>> =>
+      ipcRenderer.invoke('secretScan:getCustomPatterns'),
+    upsertCustomPattern: (pattern: import('../shared/types/secret-scan').CustomSecretPattern): Promise<IpcResult<{ success: boolean; warnings: string[] }>> =>
+      ipcRenderer.invoke('secretScan:upsertCustomPattern', pattern),
+    deleteCustomPattern: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('secretScan:deleteCustomPattern', id),
+    testPattern: (source: string, flags: string, testString: string): Promise<IpcResult<import('../shared/types/secret-scan').PatternTestResult>> =>
+      ipcRenderer.invoke('secretScan:testPattern', source, flags, testString)
   },
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),

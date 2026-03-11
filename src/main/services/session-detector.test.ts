@@ -553,7 +553,7 @@ describe('resolveProjectPath', () => {
 
 describe('decodeProjectPath', () => {
   it('should decode Windows drive letter path with backslashes', () => {
-    expect(decodeProjectPath('C--apps-ClawdTime')).toBe('C:\\apps\\ClawdTime')
+    expect(decodeProjectPath('C--apps-ClauTime')).toBe('C:\\apps\\ClauTime')
   })
 
   it('should decode Unix path with leading dash as root', () => {

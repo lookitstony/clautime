@@ -56,7 +56,7 @@ export function ClientsPage(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--surface-border)] px-4">
-        <h1 className="text-base font-semibold">Clients &amp; Projects</h1>
+        <h1 className="text-base font-semibold">Projects &amp; Clients</h1>
         <Button size="sm" onClick={handleAddClient} className="gap-1.5">
           <Plus size={14} />
           Add Client

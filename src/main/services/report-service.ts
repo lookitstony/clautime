@@ -1,10 +1,11 @@
-import { eq, and, gte, lte, type SQL } from 'drizzle-orm'
+import { eq, and, gte, lte, or, isNull, notInArray, type SQL } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { getProjectName } from '../../shared/paths'
+import { clientProjectService } from './client-project-service'
 import type {
   ReportFilters,
   ReportFormat,
@@ -36,6 +37,15 @@ export const reportService = {
       gte(sessions.startedAt, filters.startDate),
       lte(sessions.endedAt, filters.endDate)
     ]
+
+    // Exclude inactive projects
+    const excludedIds = clientProjectService.getExcludedProjectIds()
+    if (excludedIds.length > 0) {
+      conditions.push(
+        or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!
+      )
+    }
+
     if (filters.clientId != null) {
       conditions.push(eq(sessions.clientId, filters.clientId))
     }
@@ -121,6 +131,15 @@ export const reportService = {
           totalInput: number
           totalOutput: number
           projects: Set<string>
+          breakdown: Map<string, {
+            clientName: string | null
+            projectName: string
+            sessionCount: number
+            totalDuration: number
+            totalPrompts: number
+            totalInput: number
+            totalOutput: number
+          }>
         }>()
 
         for (const row of rows) {
@@ -131,14 +150,34 @@ export const reportService = {
             totalPrompts: 0,
             totalInput: 0,
             totalOutput: 0,
-            projects: new Set<string>()
+            projects: new Set<string>(),
+            breakdown: new Map()
           }
+          const { projectName, clientName } = getProjectInfo(row)
           existing.sessionCount++
           existing.totalDuration += row.durationMinutes
           existing.totalPrompts += row.promptCount
           existing.totalInput += row.inputTokens
           existing.totalOutput += row.outputTokens
-          existing.projects.add(getProjectInfo(row).projectName)
+          existing.projects.add(projectName)
+
+          const bKey = `${clientName ?? ''}::${projectName}`
+          const bp = existing.breakdown.get(bKey) ?? {
+            clientName,
+            projectName,
+            sessionCount: 0,
+            totalDuration: 0,
+            totalPrompts: 0,
+            totalInput: 0,
+            totalOutput: 0
+          }
+          bp.sessionCount++
+          bp.totalDuration += row.durationMinutes
+          bp.totalPrompts += row.promptCount
+          bp.totalInput += row.inputTokens
+          bp.totalOutput += row.outputTokens
+          existing.breakdown.set(bKey, bp)
+
           dayMap.set(key, existing)
         }
 
@@ -151,7 +190,18 @@ export const reportService = {
             totalPrompts: data.totalPrompts,
             totalInputTokens: data.totalInput,
             totalOutputTokens: data.totalOutput,
-            projects: Array.from(data.projects)
+            projects: Array.from(data.projects),
+            breakdown: Array.from(data.breakdown.values())
+              .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') || a.projectName.localeCompare(b.projectName))
+              .map((bp) => ({
+                clientName: bp.clientName,
+                projectName: bp.projectName,
+                sessionCount: bp.sessionCount,
+                totalDurationMinutes: bp.totalDuration,
+                totalPrompts: bp.totalPrompts,
+                totalInputTokens: bp.totalInput,
+                totalOutputTokens: bp.totalOutput
+              }))
           }))
 
         result.dailySummary = items

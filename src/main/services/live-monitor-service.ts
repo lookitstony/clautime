@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { Notification, shell } from 'electron'
-import { eq, gte, count } from 'drizzle-orm'
+import { eq, gte, and, count, or, isNull, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
@@ -12,6 +12,7 @@ import { clients } from '../db/schema/clients'
 import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
+import { clientProjectService } from './client-project-service'
 import { decodeProjectPath, encodeProjectPath } from './session-detector'
 import { widgetService } from './widget-service'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../shared/types/live'
@@ -88,11 +89,26 @@ export const liveMonitorService = {
     const db = getDb()
     const todayMidnight = getTodayMidnightISO()
 
-    const todaySessions = db
+    const excludedIds = clientProjectService.getExcludedProjectIds()
+    const excludeCondition = excludedIds.length > 0
+      ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
+      : undefined
+
+    let todaySessions = db
       .select()
       .from(sessions)
-      .where(gte(sessions.startedAt, todayMidnight))
+      .where(excludeCondition
+        ? and(gte(sessions.startedAt, todayMidnight), excludeCondition)
+        : gte(sessions.startedAt, todayMidnight))
       .all()
+
+    // Respect after-hours mode: only keep sessions outside 7am-6pm
+    if (settingsService.getSetting('after_hours_mode') === 'true') {
+      todaySessions = todaySessions.filter((s) => {
+        const hour = new Date(s.startedAt).getHours()
+        return hour < 7 || hour >= 18
+      })
+    }
 
     const commitCount = db
       .select({ count: count() })
@@ -138,7 +154,7 @@ export const liveMonitorService = {
     // Get latest prompt timestamps + processing state from JSONL files
     const timestamps = await this.getLatestPromptTimestamps()
 
-    // Get all projects with their client info and alert config
+    // Get all active projects with their client info and alert config
     const allProjects = db
       .select({
         projectId: projects.id,
@@ -152,14 +168,24 @@ export const liveMonitorService = {
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(projectAlertConfig, eq(projects.id, projectAlertConfig.projectId))
+      .where(eq(projects.isActive, true))
       .all()
 
-    // Get today's sessions grouped by projectId to find which projects have activity
-    const todaySessions = db
+    // Get today's sessions grouped by projectId to find which projects have activity.
+    const afterHoursOnly = settingsService.getSetting('after_hours_mode') === 'true'
+    let todaySessions = db
       .select()
       .from(sessions)
       .where(gte(sessions.startedAt, todayMidnight))
       .all()
+
+    // Respect after-hours mode: only keep sessions outside 7am-6pm
+    if (afterHoursOnly) {
+      todaySessions = todaySessions.filter((s) => {
+        const hour = new Date(s.startedAt).getHours()
+        return hour < 7 || hour >= 18
+      })
+    }
 
     // Match sessions to projects by projectId OR by projectPath
     const projectSessionMap = new Map<number, typeof todaySessions>()
@@ -174,14 +200,13 @@ export const liveMonitorService = {
       }
     }
 
-    // Build result: projects with today activity OR that are being watched
+    // Build result: only projects with today activity
     const results: ProjectLiveStatus[] = []
 
     for (const p of allProjects) {
       const projectSessions = projectSessionMap.get(p.projectId) ?? []
       const hasActivity = projectSessions.length > 0
-      const watching = p.isWatching === 1
-      if (!hasActivity && !watching) continue
+      if (!hasActivity) continue
       // Match JSONL timestamp data by encoded project path
       let lastPromptAt: string | null = null
       let isProcessing = false
@@ -223,7 +248,7 @@ export const liveMonitorService = {
         clientId: p.clientId,
         lastPromptAt,
         isProcessing,
-        isWatching: watching,
+        isWatching: p.isWatching === 1,
         alertSound: (!p.alertSound || p.alertSound === 'default') ? 'system' : p.alertSound,
         totalHours: formatDuration(totalMinutes),
         sessionCount: projectSessions.length,
@@ -270,15 +295,10 @@ export const liveMonitorService = {
       try {
         const entries = await readdir(projectPath, { withFileTypes: true })
         const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
-        const subdirs = entries.filter((e) => e.isDirectory())
-
-        // [DIAG] Log directory contents for this project
-        log.info(`[DIAG] ${dir.name}: ${jsonlFiles.length} top-level JSONL, ${subdirs.length} subdirs (${subdirs.map(d => d.name).join(', ')})`)
 
         // Also scan subagent JSONL files (in {conversation-id}/subagents/ dirs).
         // These include Agent tool subagents AND compaction sidechains, which write
         // to separate files while the main conversation JSONL stays idle.
-        let subagentFilesFound = 0 // [DIAG]
         for (const entry of entries) {
           if (!entry.isDirectory()) continue
           try {
@@ -289,14 +309,12 @@ export const liveMonitorService = {
                 const composedName = join(entry.name, 'subagents', sub.name)
                 // Push with adjusted path info for stat checking below
                 jsonlFiles.push({ ...sub, name: composedName } as typeof sub)
-                subagentFilesFound++ // [DIAG]
               }
             }
           } catch {
             // No subagents dir — normal
           }
         }
-        if (subagentFilesFound > 0) log.info(`[DIAG] ${dir.name}: found ${subagentFilesFound} subagent JSONL files`) // [DIAG]
 
         // Check ALL today's JSONL files for activity (not just the latest).
         // When Agent subagents or compaction run, they write to separate JSONL files.
@@ -315,24 +333,15 @@ export const liveMonitorService = {
             const mtime = s.mtime.getTime()
             if (mtime < todayStart) continue
 
-            const ageSeconds = Math.round((now.getTime() - mtime) / 1000) // [DIAG]
-
             // Track mtime changes for EACH file to detect active writing
             const prev = this._lastMtimeChange.get(fp)
-            const mtimeChanged = !prev || prev.prevMtime !== mtime // [DIAG]
             if (!prev || prev.prevMtime !== mtime) {
               this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
             }
             const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
-            const changeStaleness = Math.round((now.getTime() - lastChanged) / 1000) // [DIAG]
             if ((now.getTime() - lastChanged) < 30_000) {
               anyRecentlyWritten = true
               if (isSubagentFile) subagentRecentlyWritten = true
-            }
-
-            // [DIAG] Log each file's status
-            if (isSubagentFile || ageSeconds < 120) {
-              log.info(`[DIAG] ${dir.name} file: ${entry.name} | sub=${isSubagentFile} age=${ageSeconds}s mtimeChanged=${mtimeChanged} changeStaleness=${changeStaleness}s`)
             }
 
             // Track most recent mtime across ALL files (including subagents)
@@ -380,10 +389,6 @@ export const liveMonitorService = {
               fileIsActive = true
             }
           }
-          // [DIAG] Elevated to info + added main file age
-          const mainAge = Math.round((now.getTime() - latestMtime) / 1000)
-          const anyAge = Math.round((now.getTime() - latestAnyMtime) / 1000)
-          log.info(`[DIAG] ${dir.name} CACHED: awaiting=${cached.awaitingResponse} state=${cached.state} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} recentAny=${recentlyModifiedAny} mainAge=${mainAge}s anyAge=${anyAge}s → active=${fileIsActive}`)
           result.set(dir.name, { lastPromptAt: cached.lastPromptAt, isProcessing: fileIsActive })
           continue
         }
@@ -413,10 +418,6 @@ export const liveMonitorService = {
               fileIsActive = true
             }
           }
-          // [DIAG] Elevated to info + added main file age
-          const mainAge = Math.round((now.getTime() - latestMtime) / 1000)
-          const anyAge = Math.round((now.getTime() - latestAnyMtime) / 1000)
-          log.info(`[DIAG] ${dir.name} FRESH: awaiting=${awaitingResponse} state=${state} recentWrite=${anyRecentlyWritten} subagent=${subagentRecentlyWritten} recentAny=${recentlyModifiedAny} mainAge=${mainAge}s anyAge=${anyAge}s promptFallback=${!lastPromptAt} → active=${fileIsActive}`)
           result.set(dir.name, { lastPromptAt: effectivePromptAt, isProcessing: fileIsActive })
         }
       } catch (err) {
@@ -435,12 +436,49 @@ export const liveMonitorService = {
 
     this._monitorInterval = setInterval(async () => {
       try {
+        // Sync widgets: auto-hide inactive projects, auto-show active ones
+        const syncDb = getDb()
+        const todayMidnight = getTodayMidnightISO()
+        const todaySessionRows = syncDb
+          .select({ projectId: sessions.projectId })
+          .from(sessions)
+          .where(gte(sessions.startedAt, todayMidnight))
+          .all()
+        const activeProjectIds = new Set(
+          todaySessionRows.map(s => s.projectId).filter((id): id is number => id != null)
+        )
+        widgetService.syncWithActiveProjects(activeProjectIds)
+
         const timestamps = await this.getLatestPromptTimestamps()
+
         const idleTimeoutStr = settingsService.getSetting('idle_timeout_minutes')
         const parsed = idleTimeoutStr ? parseInt(idleTimeoutStr, 10) : NaN
         const idleTimeoutMinutes = Number.isNaN(parsed)
           ? DEFAULT_IDLE_TIMEOUT_MINUTES
           : parsed
+
+        // Hide widgets that have been idle for 1 hour (matches widget "idle" text threshold)
+        if (settingsService.getSetting('hide_inactive_widgets') !== 'false') {
+          const now = Date.now()
+          const WIDGET_IDLE_MS = 3600_000 // 1 hour — same as FloatingWidget's "idle" cutoff
+          const notIdleIds = new Set<number>()
+          const db2 = getDb()
+          const allProjects = db2.select({ id: projects.id, directoryPath: projects.directoryPath }).from(projects).where(eq(projects.isActive, true)).all()
+          for (const p of allProjects) {
+            const encoded = encodeProjectPath(p.directoryPath)
+            const ts = timestamps.get(encoded)
+            if (!ts) continue
+            if (ts.isProcessing) {
+              notIdleIds.add(p.id)
+            } else {
+              const idleStart = this._idleSince.get(p.id) ?? new Date(ts.lastPromptAt).getTime()
+              if (now - idleStart < WIDGET_IDLE_MS) {
+                notIdleIds.add(p.id)
+              }
+            }
+          }
+          widgetService.syncIdleState(notIdleIds)
+        }
 
         // Check if desktop alerts are enabled globally
         const alertsEnabled = settingsService.getSetting('desktop_alerts_enabled') !== 'false'
@@ -702,7 +740,6 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
         } catch { return false }
       })
       if (hasUserPrompt || readSize >= fileSize) break
-      log.info(`[DIAG] tailRead expanding chunk: ${chunkSize} → ${chunkSize * 2} (no user prompt in ${lines.length} lines)`) // [DIAG]
     }
     // Track session state to detect if Claude is actively working:
     // 'idle'         = Claude gave a final response, ball is in user's court → isProcessing=false (green/yellow/red glow)
@@ -710,7 +747,6 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
     // 'tool-pending' = Claude called a tool, waiting for result → isProcessing=true (purple glow)
     // 'processing'   = Tool result returned, Claude generating next response → isProcessing=true (purple glow)
     let lastMessageState: 'idle' | 'awaiting' | 'tool-pending' | 'processing' = 'idle'
-    // [DIAG] Track last few state transitions
     const recentTransitions: string[] = []
     for (const line of lines) {
       try {
@@ -718,28 +754,21 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
         if (obj.type === 'user' && !obj.toolUseResult && obj.timestamp) {
           lastPromptAt = obj.timestamp
           lastMessageState = 'awaiting'
-          recentTransitions.push(`user-prompt(${obj.timestamp})`) // [DIAG]
+          recentTransitions.push(`user-prompt(${obj.timestamp})`)
         } else if (obj.type === 'user' && obj.toolUseResult) {
           // Tool result returned — Claude is about to generate next response
           lastMessageState = 'processing'
-          recentTransitions.push('tool-result') // [DIAG]
+          recentTransitions.push('tool-result')
         } else if (obj.type === 'assistant') {
           const hasToolUse = Array.isArray(obj.message?.content)
             && obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
-          const toolNames = hasToolUse // [DIAG]
-            ? obj.message.content.filter((b: { type?: string; name?: string }) => b.type === 'tool_use').map((b: { name?: string }) => b.name).join(',')
-            : ''
           lastMessageState = hasToolUse ? 'tool-pending' : 'idle'
-          recentTransitions.push(hasToolUse ? `assistant-tools(${toolNames})` : 'assistant-idle') // [DIAG]
+          recentTransitions.push(hasToolUse ? 'assistant-tools' : 'assistant-idle')
         }
       } catch {
         continue
       }
     }
-
-    // [DIAG] Log the last 5 state transitions and final state
-    const lastTransitions = recentTransitions.slice(-5).join(' → ')
-    log.info(`[DIAG] tailRead ${filePath.split(/[/\\]/).slice(-2).join('/')}: ${lines.length} lines, state=${lastMessageState}, transitions: ${lastTransitions}`)
 
     // Detect post-compaction state: after /compact rewrites the JSONL, the tail
     // contains multiple consecutive user-prompt entries (compacted context chunks)

@@ -15,8 +15,8 @@ const mockProjects: Project[] = [
   {
     id: 1,
     clientId: 1,
-    name: 'ClawdTime',
-    directoryPath: 'C:\\apps\\ClawdTime',
+    name: 'ClauTime',
+    directoryPath: 'C:\\apps\\ClauTime',
     isBillable: true,
     isActive: true,
     createdAt: '2026-03-04T00:00:00.000Z',

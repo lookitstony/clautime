@@ -169,12 +169,43 @@ export const clientProjectService = {
       throw new AppError('CLIENT_NOT_FOUND', `Client with id ${data.clientId} not found`)
     }
 
+    const normalized = normalizePath(data.directoryPath)
+
+    // Check if a project with this directory already exists (e.g. under Unassigned)
+    // If so, move it to the new client instead of duplicating
+    const existing = this.findProjectByDirectory(normalized)
+    if (existing) {
+      if (existing.clientId === data.clientId) {
+        return existing // already under this client
+      }
+      const result = db
+        .update(projects)
+        .set({
+          clientId: data.clientId,
+          name: data.name,
+          isBillable: data.isBillable ?? existing.isBillable,
+          updatedAt: now
+        })
+        .where(eq(projects.id, existing.id))
+        .returning()
+        .get()
+
+      // Update sessions to reflect new client
+      db.update(sessions)
+        .set({ clientId: data.clientId, updatedAt: now })
+        .where(eq(sessions.projectId, existing.id))
+        .run()
+
+      log.info(`Moved project: ${result.name} (id=${existing.id}) from client ${existing.clientId} to ${data.clientId}`)
+      return toProject(result)
+    }
+
     const result = db
       .insert(projects)
       .values({
         clientId: data.clientId,
         name: data.name,
-        directoryPath: normalizePath(data.directoryPath),
+        directoryPath: normalized,
         isBillable: data.isBillable ?? true,
         createdAt: now,
         updatedAt: now
@@ -217,7 +248,17 @@ export const clientProjectService = {
       .returning()
       .get()
 
-    log.info(`Updated project: ${result.name} (id=${id})`)
+    // If client changed, update all sessions for this project too
+    if (data.clientId !== undefined && data.clientId !== existing.clientId) {
+      db.update(sessions)
+        .set({ clientId: data.clientId, updatedAt: now })
+        .where(eq(sessions.projectId, id))
+        .run()
+      log.info(`Moved project: ${result.name} (id=${id}) from client ${existing.clientId} to ${data.clientId}`)
+    } else {
+      log.info(`Updated project: ${result.name} (id=${id})`)
+    }
+
     return toProject(result)
   },
 
@@ -310,6 +351,32 @@ export const clientProjectService = {
       }
       throw err
     }
+  },
+
+  /**
+   * Return IDs of all excluded (inactive) projects for query filtering.
+   */
+  getExcludedProjectIds(): number[] {
+    const db = getDb()
+    return db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.isActive, false))
+      .all()
+      .map((r) => r.id)
+  },
+
+  /**
+   * Return directory paths of all excluded (inactive) projects.
+   */
+  getExcludedProjectPaths(): string[] {
+    const db = getDb()
+    return db
+      .select({ directoryPath: projects.directoryPath })
+      .from(projects)
+      .where(eq(projects.isActive, false))
+      .all()
+      .map((r) => r.directoryPath.toLowerCase())
   },
 
   // ── Directory Mapping ──

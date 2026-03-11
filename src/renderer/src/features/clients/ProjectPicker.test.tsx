@@ -41,14 +41,14 @@ describe('ProjectPicker', () => {
 
   it('renders discovered directories with session counts', () => {
     mockUseUnassignedDirectories.mockReturnValue([
-      { path: 'C:\\apps\\ClawdTime', name: 'ClawdTime', sessionCount: 3 },
+      { path: 'C:\\apps\\ClauTime', name: 'ClauTime', sessionCount: 3 },
       { path: 'C:\\apps\\Other', name: 'Other', sessionCount: 1 }
     ])
     render(<ProjectPicker clientId={1} open={true} onClose={vi.fn()} />, {
       wrapper: createWrapper()
     })
     expect(screen.getByText('Assign Discovered Projects')).toBeInTheDocument()
-    expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    expect(screen.getByText('ClauTime')).toBeInTheDocument()
     expect(screen.getByText('3 sessions')).toBeInTheDocument()
     expect(screen.getByText('Other')).toBeInTheDocument()
     expect(screen.getByText('1 session')).toBeInTheDocument()
@@ -56,14 +56,14 @@ describe('ProjectPicker', () => {
 
   it('assign button is disabled until items are selected', () => {
     mockUseUnassignedDirectories.mockReturnValue([
-      { path: 'C:\\apps\\ClawdTime', name: 'ClawdTime', sessionCount: 3 }
+      { path: 'C:\\apps\\ClauTime', name: 'ClauTime', sessionCount: 3 }
     ])
     render(<ProjectPicker clientId={1} open={true} onClose={vi.fn()} />, {
       wrapper: createWrapper()
     })
     expect(screen.getByText('Assign Projects')).toBeDisabled()
 
-    fireEvent.click(screen.getByLabelText('Select ClawdTime'))
+    fireEvent.click(screen.getByLabelText('Select ClauTime'))
     expect(screen.getByText('Assign 1 Project')).toBeEnabled()
   })
 
@@ -84,20 +84,20 @@ describe('ProjectPicker', () => {
   it('calls createProject with billable=true by default and attributeSessions on assign', async () => {
     const onClose = vi.fn()
     mockUseUnassignedDirectories.mockReturnValue([
-      { path: 'C:\\apps\\ClawdTime', name: 'ClawdTime', sessionCount: 3 }
+      { path: 'C:\\apps\\ClauTime', name: 'ClauTime', sessionCount: 3 }
     ])
     render(<ProjectPicker clientId={5} open={true} onClose={onClose} />, {
       wrapper: createWrapper()
     })
 
-    fireEvent.click(screen.getByLabelText('Select ClawdTime'))
+    fireEvent.click(screen.getByLabelText('Select ClauTime'))
     fireEvent.click(screen.getByText('Assign 1 Project'))
 
     await waitFor(() => {
       expect(window.api.projects.create).toHaveBeenCalledWith({
         clientId: 5,
-        name: 'ClawdTime',
-        directoryPath: 'C:\\apps\\ClawdTime',
+        name: 'ClauTime',
+        directoryPath: 'C:\\apps\\ClauTime',
         isBillable: true
       })
       expect(window.api.projects.attributeSessions).toHaveBeenCalled()
@@ -107,16 +107,16 @@ describe('ProjectPicker', () => {
 
   it('respects billable toggle set to off', async () => {
     mockUseUnassignedDirectories.mockReturnValue([
-      { path: 'C:\\apps\\ClawdTime', name: 'ClawdTime', sessionCount: 1 }
+      { path: 'C:\\apps\\ClauTime', name: 'ClauTime', sessionCount: 1 }
     ])
     render(<ProjectPicker clientId={1} open={true} onClose={vi.fn()} />, {
       wrapper: createWrapper()
     })
 
     // Toggle billable off
-    fireEvent.click(screen.getByLabelText('Billable ClawdTime'))
+    fireEvent.click(screen.getByLabelText('Billable ClauTime'))
     // Select the project
-    fireEvent.click(screen.getByLabelText('Select ClawdTime'))
+    fireEvent.click(screen.getByLabelText('Select ClauTime'))
     fireEvent.click(screen.getByText('Assign 1 Project'))
 
     await waitFor(() => {

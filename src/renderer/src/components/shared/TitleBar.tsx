@@ -37,7 +37,7 @@ export function TitleBar(): React.JSX.Element {
       {/* Left: app name */}
       <div className="flex items-center gap-2 pl-3">
         <span className="text-[11px] font-medium text-[var(--text-muted)]">
-          ClawdTime
+          ClauTime
         </span>
       </div>
 

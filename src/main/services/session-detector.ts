@@ -88,7 +88,7 @@ export function resolveProjectPath(parsed: ParsedSessionData): string {
 
 /**
  * Best-effort decode of the encoded project path from .claude folder structure.
- * e.g. "C--apps-ClawdTime" -> "C:\apps\ClawdTime" (Windows)
+ * e.g. "C--apps-ClauTime" -> "C:\apps\ClauTime" (Windows)
  */
 /**
  * Encode a filesystem path to the .claude/projects/ directory name format.

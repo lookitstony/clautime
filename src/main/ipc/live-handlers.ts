@@ -6,6 +6,7 @@ import log from 'electron-log/main.js'
 import { liveMonitorService } from '../services/live-monitor-service'
 import { trayService } from '../services/tray-service'
 import { widgetService } from '../services/widget-service'
+import { settingsService } from '../services/settings-service'
 
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../shared/types/live'
@@ -169,6 +170,43 @@ export function registerLiveHandlers(): void {
     async (_event, projectId: number): Promise<IpcResult<void>> => {
       widgetService.toggle(projectId)
       return ipcSuccess(undefined)
+    }
+  )
+
+  ipcMain.handle(
+    'live:showAllWidgets',
+    async (_event, projectIds: number[]): Promise<IpcResult<void>> => {
+      widgetService.showAll(projectIds)
+      return ipcSuccess(undefined)
+    }
+  )
+
+  ipcMain.handle(
+    'live:hideAllWidgets',
+    async (): Promise<IpcResult<void>> => {
+      widgetService.hideAll()
+      return ipcSuccess(undefined)
+    }
+  )
+
+  ipcMain.handle(
+    'live:getWidgetHotkey',
+    async (): Promise<IpcResult<string>> => {
+      return ipcSuccess(widgetService.getHotkey())
+    }
+  )
+
+  ipcMain.handle(
+    'live:setWidgetHotkey',
+    async (_event, accelerator: string): Promise<IpcResult<void>> => {
+      try {
+        widgetService.registerHotkey(accelerator)
+        settingsService.setSetting('widget_toggle_hotkey', accelerator)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC live:setWidgetHotkey failed:', error)
+        return ipcError('LIVE_SET_HOTKEY_ERROR', String(error))
+      }
     }
   )
 

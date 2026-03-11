@@ -1,5 +1,5 @@
-appId: com.clawdtime.app
-productName: ClawdTime
+appId: com.clautime.app
+productName: ClauTime
 directories:
   buildResources: build
 files:
@@ -14,7 +14,7 @@ asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**
 win:
-  executableName: ClawdTime
+  executableName: ClauTime
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -35,5 +35,5 @@ appImage:
 npmRebuild: true
 publish:
   provider: github
-  owner: tony
-  repo: clawdtime
+  owner: lookitstony
+  repo: clautime

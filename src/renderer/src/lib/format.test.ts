@@ -72,18 +72,18 @@ describe('formatRelativeTime', () => {
 
 describe('getProjectColor', () => {
   it('returns a CSS variable string', () => {
-    const color = getProjectColor('/apps/ClawdTime')
+    const color = getProjectColor('/apps/ClauTime')
     expect(color).toMatch(/^var\(--project-\d\)$/)
   })
 
   it('returns deterministic color for same path', () => {
-    const a = getProjectColor('/apps/ClawdTime')
-    const b = getProjectColor('/apps/ClawdTime')
+    const a = getProjectColor('/apps/ClauTime')
+    const b = getProjectColor('/apps/ClauTime')
     expect(a).toBe(b)
   })
 
   it('returns different colors for different paths', () => {
-    const a = getProjectColor('/apps/ClawdTime')
+    const a = getProjectColor('/apps/ClauTime')
     const b = getProjectColor('/home/user/other-project')
     // Not guaranteed different but very likely for these two paths
     // Just verify both are valid
@@ -94,19 +94,19 @@ describe('getProjectColor', () => {
 
 describe('getProjectName', () => {
   it('extracts last path segment from Unix path', () => {
-    expect(getProjectName('/apps/ClawdTime')).toBe('ClawdTime')
+    expect(getProjectName('/apps/ClauTime')).toBe('ClauTime')
   })
 
   it('extracts last path segment from Windows path', () => {
-    expect(getProjectName('C:\\apps\\ClawdTime')).toBe('ClawdTime')
+    expect(getProjectName('C:\\apps\\ClauTime')).toBe('ClauTime')
   })
 
   it('handles trailing slash', () => {
-    expect(getProjectName('/apps/ClawdTime/')).toBe('ClawdTime')
+    expect(getProjectName('/apps/ClauTime/')).toBe('ClauTime')
   })
 
   it('returns path when no separator', () => {
-    expect(getProjectName('ClawdTime')).toBe('ClawdTime')
+    expect(getProjectName('ClauTime')).toBe('ClauTime')
   })
 })
 

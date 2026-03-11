@@ -49,7 +49,7 @@ describe('ActivityBar', () => {
     expect(screen.getByLabelText('Live')).toBeInTheDocument()
     expect(screen.getByLabelText('Reports')).toBeInTheDocument()
     expect(screen.getByLabelText('Analytics')).toBeInTheDocument()
-    expect(screen.getByLabelText('Clients')).toBeInTheDocument()
+    expect(screen.getByLabelText('Projects')).toBeInTheDocument()
     expect(screen.getByLabelText('Settings')).toBeInTheDocument()
   })
 

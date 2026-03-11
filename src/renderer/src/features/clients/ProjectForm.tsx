@@ -7,11 +7,19 @@ import {
   DialogDescription,
   DialogFooter
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useCreateProject, useUpdateProject } from './use-projects'
+import { useClients } from './use-clients'
 import type { Project } from '../../../../shared/types/client-project'
 
 interface ProjectFormProps {
@@ -30,10 +38,13 @@ export function ProjectForm({
   const isEdit = project !== null
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
+  const { data: allClients } = useClients()
 
   const [name, setName] = useState('')
   const [directoryPath, setDirectoryPath] = useState('')
   const [isBillable, setIsBillable] = useState(true)
+  const [isExcluded, setIsExcluded] = useState(false)
+  const [selectedClientId, setSelectedClientId] = useState(clientId)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -42,14 +53,18 @@ export function ProjectForm({
         setName(project.name)
         setDirectoryPath(project.directoryPath)
         setIsBillable(project.isBillable)
+        setIsExcluded(!project.isActive)
+        setSelectedClientId(project.clientId)
       } else {
         setName('')
         setDirectoryPath('')
         setIsBillable(true)
+        setIsExcluded(false)
+        setSelectedClientId(clientId)
       }
       setError('')
     }
-  }, [open, project])
+  }, [open, project, clientId])
 
   const handleBrowse = async (): Promise<void> => {
     const result = await window.api.dialog.openFolder()
@@ -70,12 +85,12 @@ export function ProjectForm({
       if (isEdit && project) {
         await updateProject.mutateAsync({
           id: project.id,
-          data: { name: trimmedName, directoryPath: trimmedPath, isBillable }
+          data: { name: trimmedName, directoryPath: trimmedPath, isBillable, isActive: !isExcluded, clientId: selectedClientId }
         })
         toast.success('Project updated')
       } else {
         await createProject.mutateAsync({
-          clientId,
+          clientId: selectedClientId,
           name: trimmedName,
           directoryPath: trimmedPath,
           isBillable
@@ -168,6 +183,30 @@ export function ProjectForm({
             {error && <p className="text-[12px] text-red-400">{error}</p>}
           </div>
 
+          <div className="space-y-2">
+            <label htmlFor="project-client" className="text-[13px] font-medium">
+              Client
+            </label>
+            <Select
+              value={String(selectedClientId)}
+              onValueChange={(v) => setSelectedClientId(Number(v))}
+            >
+              <SelectTrigger
+                id="project-client"
+                className="w-full border-[var(--surface-border)] bg-[var(--background-secondary)] text-[13px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" sideOffset={4}>
+                {allClients?.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex items-center justify-between">
             <label htmlFor="project-billable" className="text-[13px] font-medium">
               Billable
@@ -176,6 +215,22 @@ export function ProjectForm({
               id="project-billable"
               checked={isBillable}
               onCheckedChange={setIsBillable}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <label htmlFor="project-excluded" className="text-[13px] font-medium">
+                Exclude from app
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Hide this project from sessions, reports, and live view.
+              </p>
+            </div>
+            <Switch
+              id="project-excluded"
+              checked={isExcluded}
+              onCheckedChange={setIsExcluded}
             />
           </div>
         </div>

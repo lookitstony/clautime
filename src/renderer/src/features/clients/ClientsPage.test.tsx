@@ -97,7 +97,7 @@ describe('ClientsPage', () => {
   it('shows header with title and Add Client button', async () => {
     render(<ClientsPage />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByText('Clients & Projects')).toBeInTheDocument()
+      expect(screen.getByText('Projects & Clients')).toBeInTheDocument()
     })
     // Header Add Client button
     expect(screen.getByRole('button', { name: 'Add Client' })).toBeInTheDocument()

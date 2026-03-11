@@ -7,7 +7,7 @@ log.transports.file.level = 'info'
 log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
 log.transports.console.level = 'debug'
 
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -18,9 +18,30 @@ import { trayService } from './services/tray-service'
 import { liveMonitorService } from './services/live-monitor-service'
 import { fileWatcherService } from './services/file-watcher-service'
 import { widgetService } from './services/widget-service'
+import { secretScanService } from './services/secret-scan-service'
+import { settingsService } from './services/settings-service'
+
+// Single instance lock — prevent multiple instances
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.whenReady().then(() => {
+    // The second-instance event on the first process will focus its window.
+    // Just quit silently — the user will see the existing window come to focus.
+    app.quit()
+  })
+}
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+
+app.on('second-instance', () => {
+  // Focus the existing window when a second instance tries to launch
+  if (mainWindow) {
+    if (!mainWindow.isVisible()) mainWindow.show()
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  }
+})
 
 app.on('before-quit', () => {
   isQuitting = true
@@ -94,7 +115,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.clawdtime.app')
+  if (!gotLock) return // Second instance — dialog handler above will quit
+  electronApp.setAppUserModelId('com.clautime.app')
 
   // Initialize database BEFORE any window is created
   initializeDatabase()
@@ -113,6 +135,8 @@ app.whenReady().then(() => {
   liveMonitorService.startMonitoring(5000)
   fileWatcherService.start(mainWindow!)
   widgetService.restoreAll()
+  widgetService.registerHotkey(settingsService.getSetting('widget_toggle_hotkey') || undefined)
+  secretScanService.startDailyScanning()
 
   // Initialize auto-updater (only in production)
   if (!is.dev) {
@@ -128,7 +152,7 @@ app.whenReady().then(() => {
     }
   })
 
-  log.info('ClawdTime started')
+  log.info('ClauTime started')
 })
 
 app.on('window-all-closed', () => {
@@ -137,6 +161,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  secretScanService.stopDailyScanning()
   widgetService.destroy()
   fileWatcherService.stop()
   liveMonitorService.stopMonitoring()

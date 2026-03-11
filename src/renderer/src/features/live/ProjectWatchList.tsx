@@ -124,166 +124,167 @@ function ProjectCard({
   const isPaused = isTimerOnThis && !!activeTimer?.pausedAt
 
   return (
-    <Card className="bg-[var(--background-elevated)] border-[var(--surface-border)]">
-      <CardContent className="px-3 py-1.5">
-        {/* Row 1: project name + widget icon */}
-        <div className="flex items-center gap-2">
-          <div
-            className="h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: getProjectColor(project.projectPath) }}
-          />
-          <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[var(--text-primary)]">
+    <Card className="overflow-hidden bg-[var(--background-elevated)] border-[var(--surface-border)] !py-0 !gap-0">
+      {/* Header: dot + name/client + popout */}
+      <div className="flex items-start gap-2 px-3 pt-2 pb-1">
+        <div
+          className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: getProjectColor(project.projectPath) }}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
             {project.projectName}
           </p>
+          {project.clientName && (
+            <p className="truncate text-[11px] text-[var(--text-secondary)]">
+              {project.clientName}
+            </p>
+          )}
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => window.api.live.toggleWidget(project.projectId)}
+              className="mt-0.5 shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
+            >
+              <MonitorUp size={16} className="text-[var(--text-muted)] hover:text-[var(--accent)]" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={4}>
+            Float always-on-top widget
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* Hours — centered */}
+      <div className="px-3 py-1 text-center">
+        <span className="font-mono text-3xl font-bold text-[var(--accent)]">
+          <FormattedDuration value={project.totalHours} />
+        </span>
+      </div>
+
+      {/* Stats grid row */}
+      <div className="grid grid-cols-4 border-t border-[var(--surface-border)]">
+        <div className="border-r border-[var(--surface-border)] py-1.5 text-center">
+          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">{project.sessionCount}</div>
+          <div className="text-[9px] text-[var(--text-muted)]">sessions</div>
+        </div>
+        <div className="border-r border-[var(--surface-border)] py-1.5 text-center">
+          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">{project.totalPrompts}</div>
+          <div className="text-[9px] text-[var(--text-muted)]">prompts</div>
+        </div>
+        <div className="border-r border-[var(--surface-border)] py-1.5 text-center">
+          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">
+            {project.totalTokens > 0 ? `${(project.totalTokens / 1000).toFixed(0)}K` : '\u2014'}
+          </div>
+          <div className="text-[9px] text-[var(--text-muted)]">tokens</div>
+        </div>
+        <div className="py-1.5 text-center">
+          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">
+            {project.totalCommits > 0 ? project.totalCommits : '\u2014'}
+          </div>
+          <div className="text-[9px] text-[var(--text-muted)]">commits</div>
+        </div>
+      </div>
+
+      {/* Footer: bell + time left, timer right */}
+      <div className="flex items-center justify-between border-t border-[var(--surface-border)] px-2 py-1.5">
+        <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={() => window.api.live.toggleWidget(project.projectId)}
-                className="shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
+                onClick={onToggleWatch}
+                className="shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--surface-border)]/50"
+                aria-label={project.isWatching ? 'Disable alerts' : 'Enable alerts'}
               >
-                <MonitorUp size={18} className="text-[var(--text-muted)] hover:text-[var(--accent)]" />
+                {project.isWatching ? (
+                  <Bell size={16} className="text-yellow-400" />
+                ) : (
+                  <BellOff size={16} className="text-[var(--text-muted)]/40" />
+                )}
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={4}>
-              Float always-on-top widget
+              {project.isWatching ? 'Click to disable alerts' : 'Enable idle alerts'}
             </TooltipContent>
           </Tooltip>
-        </div>
-        {/* Client name */}
-        {project.clientName && (
-          <p className="ml-[18px] text-[11px] font-medium text-[var(--text-secondary)]">
-            {project.clientName}
-          </p>
-        )}
 
-        {/* Row 2: large hours left + stats right */}
-        <div className="mt-3 flex items-end justify-between">
-          <span className="font-mono text-4xl font-bold text-[var(--accent)]">
-            <FormattedDuration value={project.totalHours} />
+          {project.isWatching && (
+            <Select value={project.alertSound} onValueChange={onSoundChange}>
+              <SelectTrigger className="h-5 w-5 border-0 bg-transparent p-0 shadow-none [&>svg:last-child]:hidden">
+                <ChevronDown size={10} className="text-[var(--text-muted)]" />
+              </SelectTrigger>
+              <SelectContent position="popper" sideOffset={4} align="start">
+                <SelectItem value="system">System</SelectItem>
+                <SelectItem value="silent">Silent</SelectItem>
+                {sounds.map((s) => (
+                  <SelectItem key={s.filename} value={s.filename.replace(/\.\w+$/, '')}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">Custom...</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
+          <span className="text-[10px] text-[var(--text-muted)]">
+            {project.lastPromptAt ? <LiveRelativeTime timestamp={project.lastPromptAt} /> : 'idle'}
           </span>
-          <div className="flex items-end gap-3">
-          <div className="text-center">
-            <div className="font-mono text-[14px] font-semibold text-[var(--text-secondary)]">{project.sessionCount}</div>
-            <div className="text-[10px] text-[var(--text-muted)]">sessions</div>
-          </div>
-          <div className="text-center">
-            <div className="font-mono text-[14px] font-semibold text-[var(--text-secondary)]">{project.totalPrompts}</div>
-            <div className="text-[10px] text-[var(--text-muted)]">prompts</div>
-          </div>
-          {project.totalTokens > 0 && (
-            <div className="text-center">
-              <div className="font-mono text-[14px] font-semibold text-[var(--text-secondary)]">{(project.totalTokens / 1000).toFixed(0)}K</div>
-              <div className="text-[10px] text-[var(--text-muted)]">tokens</div>
-            </div>
-          )}
-          {project.totalCommits > 0 && (
-            <div className="text-center">
-              <div className="font-mono text-[14px] font-semibold text-[var(--text-secondary)]">{project.totalCommits}</div>
-              <div className="text-[10px] text-[var(--text-muted)]">commits</div>
-            </div>
-          )}
-          </div>
         </div>
 
-        {/* Row 4: bell + sound left, elapsed + timer right */}
-        <div className="flex flex-wrap items-end justify-between gap-1.5 mt-3">
-          {/* Alert controls — left */}
-          <div className="flex items-center gap-0.5">
+        {/* Timer controls — right */}
+        <div className="flex items-center gap-1">
+          {isTimerOnThis ? (
+            <>
+              <Button
+                variant="ghost"
+                onClick={onPauseResume}
+                className={`h-7 px-2 text-[11px] font-semibold font-mono ${
+                  isPaused
+                    ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-400'
+                    : 'bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 hover:text-yellow-400'
+                }`}
+                aria-label={isPaused ? 'Resume timer' : 'Pause timer'}
+              >
+                {isPaused ? <Play size={12} /> : <Pause size={12} />}
+                <ElapsedInline />
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={onTimerAction}
+                className="h-7 px-1.5 bg-red-500/15 text-red-400 hover:bg-red-500/25 hover:text-red-400"
+                aria-label="Stop timer"
+              >
+                <Square size={12} />
+              </Button>
+            </>
+          ) : (
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={onToggleWatch}
-                  className="shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
-                  aria-label={project.isWatching ? 'Disable alerts' : 'Enable alerts'}
-                >
-                  {project.isWatching ? (
-                    <Bell size={22} className="text-yellow-400" />
-                  ) : (
-                    <BellOff size={22} className="text-[var(--text-muted)]/40" />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={4}>
-                {project.isWatching ? 'Click to disable alerts' : 'Enable idle alerts'}
-              </TooltipContent>
-            </Tooltip>
-
-            {project.isWatching && (
-              <Select value={project.alertSound} onValueChange={onSoundChange}>
-                <SelectTrigger className="h-6 w-6 border-0 bg-transparent p-0 shadow-none [&>svg:last-child]:hidden">
-                  <ChevronDown size={12} className="text-[var(--text-muted)]" />
-                </SelectTrigger>
-                <SelectContent position="popper" sideOffset={4} align="start">
-                  <SelectItem value="system">System</SelectItem>
-                  <SelectItem value="silent">Silent</SelectItem>
-                  {sounds.map((s) => (
-                    <SelectItem key={s.filename} value={s.filename.replace(/\.\w+$/, '')}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="__custom__">Custom...</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          {/* Timer + elapsed — right */}
-          <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[10px] text-[var(--text-muted)]">
-              {project.lastPromptAt ? <LiveRelativeTime timestamp={project.lastPromptAt} /> : 'idle'}
-            </span>
-            {isTimerOnThis ? (
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  onClick={onPauseResume}
-                  className={`h-8 px-3 text-[12px] font-semibold font-mono ${
-                    isPaused
-                      ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-400'
-                      : 'bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 hover:text-yellow-400'
-                  }`}
-                  aria-label={isPaused ? 'Resume timer' : 'Pause timer'}
-                >
-                  {isPaused ? <Play size={14} /> : <Pause size={14} />}
-                  <ElapsedInline />
-                </Button>
                 <Button
                   variant="ghost"
                   onClick={onTimerAction}
-                  className="h-8 px-2 bg-red-500/15 text-red-400 hover:bg-red-500/25 hover:text-red-400"
-                  aria-label="Stop timer"
+                  disabled={isTimerOnOther}
+                  className={`h-6 px-1.5 text-[10px] font-semibold font-mono ${
+                    isTimerOnOther
+                      ? 'opacity-30'
+                      : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-400'
+                  }`}
+                  aria-label="Start timer"
                 >
-                  <Square size={14} />
+                  <Play size={10} />
+                  Start
                 </Button>
-              </div>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    onClick={onTimerAction}
-                    disabled={isTimerOnOther}
-                    className={`h-8 px-3 text-[12px] font-semibold font-mono ${
-                      isTimerOnOther
-                        ? 'opacity-30'
-                        : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-400'
-                    }`}
-                    aria-label="Start timer"
-                  >
-                    <Play size={14} />
-                    Start
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" sideOffset={4}>
-                  {isTimerOnOther ? 'Timer running on another project' : 'Start manual timer'}
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={4}>
+                {isTimerOnOther ? 'Timer running on another project' : 'Start manual timer'}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
-      </CardContent>
+      </div>
     </Card>
   )
 }

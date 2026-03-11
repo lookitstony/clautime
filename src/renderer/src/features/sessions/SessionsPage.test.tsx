@@ -9,7 +9,7 @@ import type { Session } from '../../../../shared/types/session'
 const mockSessions: Session[] = [
   {
     id: 1,
-    projectPath: 'C:\\apps\\ClawdTime',
+    projectPath: 'C:\\apps\\ClauTime',
     startedAt: new Date().toISOString(),
     endedAt: new Date().toISOString(),
     durationMinutes: 45,
@@ -50,7 +50,7 @@ const mockSessions: Session[] = [
 const mockAttributedSessions: Session[] = [
   {
     id: 1,
-    projectPath: 'C:\\apps\\ClawdTime',
+    projectPath: 'C:\\apps\\ClauTime',
     startedAt: new Date().toISOString(),
     endedAt: new Date().toISOString(),
     durationMinutes: 45,
@@ -92,7 +92,7 @@ const mockClients = [
   { id: 1, name: 'Acme Corp', color: 'var(--project-1)', billableRate: null, isActive: true, createdAt: '', updatedAt: '' }
 ]
 const mockProjects = [
-  { id: 1, clientId: 1, name: 'ClawdTime', directoryPath: 'C:\\apps\\ClawdTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
+  { id: 1, clientId: 1, name: 'ClauTime', directoryPath: 'C:\\apps\\ClauTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
 ]
 
 function stubApi(sessionsData: Session[] = [], clientsData = [] as typeof mockClients, projectsData = [] as typeof mockProjects) {
@@ -160,7 +160,7 @@ describe('SessionsPage', () => {
     stubApi(mockSessions)
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+      expect(screen.getByText('ClauTime')).toBeInTheDocument()
     })
     expect(screen.getByText('OtherProject')).toBeInTheDocument()
   })
@@ -179,7 +179,7 @@ describe('SessionsPage', () => {
     stubApi(mockSessions)
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {
-      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+      expect(screen.getByText('ClauTime')).toBeInTheDocument()
     })
     // Expand project group — day headers appear (use Expand All to open everything)
     fireEvent.click(screen.getByText('Expand All'))
@@ -234,7 +234,7 @@ describe('SessionsPage', () => {
     render(<SessionsPage />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+      expect(screen.getByText('ClauTime')).toBeInTheDocument()
     })
 
     // Expand everything
@@ -250,7 +250,7 @@ describe('SessionsPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('region', { name: /details for session/i })).toBeInTheDocument()
     })
-    expect(screen.getByText('No summary available')).toBeInTheDocument()
+    expect(screen.getByText('No description')).toBeInTheDocument()
   })
 
   it('closes detail panel when clicking same session again', async () => {
@@ -258,7 +258,7 @@ describe('SessionsPage', () => {
     render(<SessionsPage />, { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+      expect(screen.getByText('ClauTime')).toBeInTheDocument()
     })
 
     // Expand everything

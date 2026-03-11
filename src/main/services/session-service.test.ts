@@ -13,7 +13,7 @@ vi.mock('electron-log/main.js', () => ({
 
 // Mock electron app
 vi.mock('electron', () => ({
-  app: { getPath: vi.fn(() => '/tmp/test-clawdtime') }
+  app: { getPath: vi.fn(() => '/tmp/test-clautime') }
 }))
 
 // Mock the db module to use our test DB
@@ -65,6 +65,7 @@ import * as projectsSchema from '../db/schema/projects'
 import * as projectAlertConfigSchema from '../db/schema/project-alert-config'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
+import { rawMessages } from '../db/schema/raw-messages'
 import { sessionService } from './session-service'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
@@ -85,6 +86,12 @@ function setupTestDb(): void {
   testSqlite.pragma('journal_mode = WAL')
   testDb = drizzle(testSqlite, { schema })
   migrate(testDb, { migrationsFolder: join(__dirname, '../db/migrations') })
+  // Seed a dummy raw_messages row so _backfillIfNeeded skips (avoids consuming mocks)
+  testDb.insert(rawMessages).values({
+    sourceFile: '__seed__',
+    type: 'user',
+    timestamp: '2026-01-01T00:00:00Z'
+  }).run()
 }
 
 function makeMessage(timestamp: string): ParsedMessage {

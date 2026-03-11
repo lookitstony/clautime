@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Activity, MonitorUp } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Activity, MonitorUp, MonitorOff } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ export function LivePage(): React.JSX.Element {
   const { data: projectStatuses, isLoading: statusesLoading } = useProjectStatuses()
 
   const [staleDialog, setStaleDialog] = useState(false)
+  const [allWidgetsOpen, setAllWidgetsOpen] = useState(false)
   const activeTimer = useLiveStore((s) => s.activeTimer)
   const isStale = useLiveStore((s) => s.isStale)
   const stopTimer = useLiveStore((s) => s.stopTimer)
@@ -85,17 +86,25 @@ export function LivePage(): React.JSX.Element {
                 <button
                   type="button"
                   onClick={() => {
-                    for (const p of projectStatuses) {
-                      window.api.live.toggleWidget(p.projectId)
+                    if (allWidgetsOpen) {
+                      window.api.live.hideAllWidgets()
+                      setAllWidgetsOpen(false)
+                    } else {
+                      window.api.live.showAllWidgets(projectStatuses.map((p) => p.projectId))
+                      setAllWidgetsOpen(true)
                     }
                   }}
                   className="rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
                 >
-                  <MonitorUp size={16} className="text-[var(--text-muted)] hover:text-[var(--accent)]" />
+                  {allWidgetsOpen ? (
+                    <MonitorOff size={16} className="text-[var(--accent)]" />
+                  ) : (
+                    <MonitorUp size={16} className="text-[var(--text-muted)] hover:text-[var(--accent)]" />
+                  )}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={4}>
-                Open all widgets
+                {allWidgetsOpen ? 'Hide all widgets' : 'Show all widgets'}
               </TooltipContent>
             </Tooltip>
           )}

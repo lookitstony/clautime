@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, basename, dirname } from 'node:path'
-import { eq, and, gte, lte, inArray, sql, type SQL } from 'drizzle-orm'
+import { eq, and, gte, lte, inArray, notInArray, sql, or, isNull, type SQL } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
@@ -11,6 +11,7 @@ import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages } from '../db/schema/raw-messages'
 import { progressEvents } from '../db/schema/raw-messages'
 import { settingsService } from './settings-service'
+import { clientProjectService } from './client-project-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
 import type { SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../../shared/types/session'
@@ -580,6 +581,14 @@ export const sessionService = {
     const db = getDb()
     const conditions: SQL[] = []
 
+    // Exclude sessions belonging to inactive (excluded) projects
+    const excludedIds = clientProjectService.getExcludedProjectIds()
+    if (excludedIds.length > 0) {
+      conditions.push(
+        or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!
+      )
+    }
+
     if (filters?.projectPath) {
       conditions.push(eq(sessions.projectPath, filters.projectPath))
     }
@@ -845,13 +854,18 @@ export const sessionService = {
     const idleTimeout = this._getIdleTimeout()
     const WORK_THRESHOLD = 2 // minutes
 
-    // Get sessions in date range
+    // Get sessions in date range (excluding inactive projects)
+    const excludedIds = clientProjectService.getExcludedProjectIds()
+    const excludeCondition = excludedIds.length > 0
+      ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
+      : undefined
     const sessionRows = db.select()
       .from(sessions)
       .where(and(
         gte(sessions.startedAt, startDate),
         lte(sessions.startedAt, endDate),
-        eq(sessions.source, 'auto')
+        eq(sessions.source, 'auto'),
+        excludeCondition
       ))
       .orderBy(sessions.startedAt)
       .all()

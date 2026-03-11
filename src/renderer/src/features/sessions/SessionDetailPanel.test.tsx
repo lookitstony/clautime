@@ -37,7 +37,7 @@ vi.stubGlobal('window', {
 
 const baseSession: Session = {
   id: 1,
-  projectPath: 'C:\\apps\\ClawdTime',
+  projectPath: 'C:\\apps\\ClauTime',
   startedAt: '2026-03-05T09:15:00.000Z',
   endedAt: '2026-03-05T11:30:00.000Z',
   durationMinutes: 135,
@@ -57,7 +57,7 @@ const baseSession: Session = {
 
 const defaultProps = {
   session: baseSession,
-  projectName: 'ClawdTime',
+  projectName: 'ClauTime',
   clientName: 'Acme Corp',
   projectColor: 'var(--project-1)',
   onClose: vi.fn()
@@ -93,27 +93,27 @@ describe('SessionDetailPanel', () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
     expect(screen.getByText('Acme Corp')).toBeInTheDocument()
-    expect(screen.getByText('ClawdTime')).toBeInTheDocument()
+    expect(screen.getByText('ClauTime')).toBeInTheDocument()
   })
 
-  it('shows "No summary available" when description is null', () => {
+  it('shows "No description" when description is null', () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-    expect(screen.getByText('No summary available')).toBeInTheDocument()
+    expect(screen.getByText('No description')).toBeInTheDocument()
   })
 
   it('shows description when present', () => {
     const session = { ...baseSession, description: 'Fixed authentication bug' }
     render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
     expect(screen.getByText('Fixed authentication bug')).toBeInTheDocument()
-    expect(screen.queryByText('No summary available')).not.toBeInTheDocument()
+    expect(screen.queryByText('No description')).not.toBeInTheDocument()
   })
 
-  it('shows enabled Edit Time button for auto sessions', () => {
+  it('does not show action buttons for auto sessions', () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
-    const editBtn = screen.getByRole('button', { name: /edit time/i })
-    expect(editBtn).toBeInTheDocument()
-    expect(editBtn).not.toBeDisabled()
+    // Auto sessions have no Edit Description or Delete buttons
+    expect(screen.queryByRole('button', { name: /edit description/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^delete$/i })).not.toBeInTheDocument()
   })
 
   it('shows enabled Edit Description and Delete buttons for manual sessions', () => {
@@ -203,38 +203,27 @@ describe('SessionDetailPanel', () => {
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument()
   })
 
-  describe('Edit Time', () => {
-    it('shows time inputs when Edit Time is clicked', () => {
+  describe('Prompt Timeline', () => {
+    it('shows Prompt Timeline toggle for auto sessions with prompts', () => {
       render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
-      fireEvent.click(screen.getByRole('button', { name: /edit time/i }))
-
-      const inputs = screen.getAllByPlaceholderText('HH:MM:SS')
-      expect(inputs).toHaveLength(2)
-      expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
+      expect(screen.getByText('Prompt Timeline')).toBeInTheDocument()
     })
 
-    it('cancels edit mode when Cancel is clicked', () => {
-      render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+    it('does not show Prompt Timeline for manual sessions', () => {
+      const session = { ...baseSession, source: 'manual' as const, promptCount: 0 }
+      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
 
-      fireEvent.click(screen.getByRole('button', { name: /edit time/i }))
-      expect(screen.getAllByPlaceholderText('HH:MM:SS')).toHaveLength(2)
-
-      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
-      expect(screen.queryByPlaceholderText('HH:MM:SS')).not.toBeInTheDocument()
+      expect(screen.queryByText('Prompt Timeline')).not.toBeInTheDocument()
     })
 
-    it('cancels edit mode when Escape is pressed in edit mode', () => {
+    it('toggles Prompt Timeline section on click', () => {
       render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
-      fireEvent.click(screen.getByRole('button', { name: /edit time/i }))
-      const panel = screen.getByRole('region')
-      fireEvent.keyDown(panel, { key: 'Escape' })
+      fireEvent.click(screen.getByText('Prompt Timeline'))
 
-      // Should cancel edit mode, NOT close the panel
-      expect(screen.queryByPlaceholderText('HH:MM:SS')).not.toBeInTheDocument()
-      expect(defaultProps.onClose).not.toHaveBeenCalled()
+      // Should show loading or content area
+      expect(screen.getByText('Loading timings...')).toBeInTheDocument()
     })
   })
 

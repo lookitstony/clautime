@@ -16,7 +16,7 @@ function createWrapper() {
 
 const mockSession = {
   date: 'Mon, Mar 3, 2026',
-  projectName: 'ClawdTime',
+  projectName: 'ClauTime',
   clientName: 'Acme',
   startedAt: '2026-03-03T09:00:00.000Z',
   endedAt: '2026-03-03T10:00:00.000Z',
@@ -102,7 +102,7 @@ describe('useDashboardLayout', () => {
     const { result } = renderHook(() => useDashboardLayout(), { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(8)
+      expect(result.current.layout.widgets).toHaveLength(9)
     })
     expect(result.current.layout).toEqual(DEFAULT_LAYOUT)
   })
@@ -140,7 +140,7 @@ describe('useDashboardLayout', () => {
     const { result } = renderHook(() => useDashboardLayout(), { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(8)
+      expect(result.current.layout.widgets).toHaveLength(9)
     })
 
     act(() => {
@@ -148,7 +148,7 @@ describe('useDashboardLayout', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(7)
+      expect(result.current.layout.widgets).toHaveLength(8)
     })
     expect(result.current.layout.widgets.find((w) => w.id === 'daily-hours')).toBeUndefined()
   })
@@ -210,7 +210,7 @@ describe('useDashboardLayout', () => {
     const { result } = renderHook(() => useDashboardLayout(), { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(8)
+      expect(result.current.layout.widgets).toHaveLength(9)
     })
 
     act(() => {
