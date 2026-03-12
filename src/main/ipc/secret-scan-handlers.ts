@@ -126,7 +126,7 @@ export function registerSecretScanHandlers(): void {
         if (!p || typeof p.id !== 'string' || typeof p.source !== 'string' || typeof p.label !== 'string') {
           return ipcError('INVALID_INPUT', 'Pattern must have id, label, and source')
         }
-        const result = secretScanService.upsertCustomPattern(p)
+        const result = await secretScanService.upsertCustomPattern(p)
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC secretScan:upsertCustomPattern failed:', error)
@@ -142,7 +142,7 @@ export function registerSecretScanHandlers(): void {
         if (typeof id !== 'string') {
           return ipcError('INVALID_INPUT', 'Pattern ID must be a string')
         }
-        secretScanService.deleteCustomPattern(id)
+        await secretScanService.deleteCustomPattern(id)
         return ipcSuccess(undefined)
       } catch (error) {
         log.error('IPC secretScan:deleteCustomPattern failed:', error)

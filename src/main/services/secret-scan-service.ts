@@ -1,5 +1,5 @@
-import { readFile, writeFile, stat, readdir, rename, lstat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, writeFile, stat, readdir, rename, lstat, mkdir } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { eq, desc, sql, and } from 'drizzle-orm'
 import { Notification } from 'electron'
@@ -110,7 +110,11 @@ const PATTERN_DEFS: PatternDef[] = [
   { id: 'nuget-api-key', label: 'NuGet API Key', source: 'oy2[a-z0-9]{43}', flags: '', severity: 'critical', redactLabel: 'REDACTED-nuget-api-key' },
   { id: 'generic-api-key', label: 'Generic API Key/Secret', source: '(?:api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token|secret[_-]?key)\\s*[:=]\\s*["\']?[a-zA-Z0-9\\-_.]{16,}["\']?', flags: 'i', severity: 'medium', redactLabel: 'REDACTED-api-key' },
   { id: 'env-secret-assignment', label: 'Env/Config Secret', source: '[A-Z_]*(?:SECRET|PRIVATE|TOKEN|APIKEY|API_KEY|CREDENTIALS|AUTH)[A-Z_]*\\s*[:=]\\s*["\']?[a-zA-Z0-9\\-_.+/]{16,}["\']?', flags: '', severity: 'medium', redactLabel: 'REDACTED-env-secret' },
-  { id: 'password-assignment', label: 'Password Assignment', source: '(?:password|passwd|pwd)\\s*[:=]\\s*["\']?[^\\s"\']{8,}["\']?', flags: 'i', severity: 'medium', redactLabel: 'REDACTED-password' }
+  { id: 'password-assignment', label: 'Password Assignment', source: '(?:password|passwd|pwd)\\s*[:=]\\s*["\']?[^\\s"\']{8,}["\']?', flags: 'i', severity: 'medium', redactLabel: 'REDACTED-password' },
+
+  // === JSON/Config format secrets (handles "Key": "value" with optional backslash-escaping in JSONL) ===
+  { id: 'json-config-secret-key', label: 'JSON/Config Secret Key', source: '(?:ApiKey|ClientSecret|SecretKey|AccessToken|AuthToken|ApiSecret)(?:[\\\\]*")?\\s*:\\s*(?:[\\\\]*")?\\s*[a-zA-Z0-9\\-_.+/~@{}|]{16,}', flags: 'i', severity: 'high', redactLabel: 'REDACTED-config-secret' },
+  { id: 'json-config-password', label: 'JSON/Config Password', source: '(?:password|passwd|pwd)(?:[\\\\]*")?\\s*:\\s*(?:[\\\\]*")?\\s*[^\\\\s"\\\\\\\\]{8,}', flags: 'i', severity: 'high', redactLabel: 'REDACTED-config-password' }
 ]
 
 /** Create a fresh global regex from a pattern def — safe for single-use iteration (F02) */
@@ -753,29 +757,56 @@ export const secretScanService = {
     log.info('secret-scan: Scan cancelled')
   },
 
-  // ============= Custom Patterns =============
+  // ============= Custom Patterns (file-based) =============
 
-  /** Load user-defined custom patterns from settings */
+  /** Resolve path to custom patterns JSON file */
+  _getCustomPatternsPath(): string {
+    const claudeDir = settingsService.getSetting('claude_dir') || join(homedir(), '.claude')
+    return join(claudeDir, 'custom-secret-patterns.json')
+  },
+
+  /** Load user-defined custom patterns from JSON file (migrates from settings DB on first call) */
   getCustomPatterns(): CustomSecretPattern[] {
-    const raw = settingsService.getSetting('custom_secret_patterns')
-    if (!raw) return []
+    const filePath = this._getCustomPatternsPath()
     try {
+      const { readFileSync } = require('node:fs')
+      const raw = readFileSync(filePath, 'utf-8')
       const parsed = JSON.parse(raw)
       return Array.isArray(parsed) ? parsed : []
-    } catch {
-      log.warn('secret-scan: Failed to parse custom patterns')
+    } catch (err: unknown) {
+      // ENOENT — check if there are legacy patterns in the settings DB to migrate
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') {
+        const legacy = settingsService.getSetting('custom_secret_patterns')
+        if (legacy) {
+          try {
+            const parsed = JSON.parse(legacy)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              log.info(`secret-scan: Migrating ${parsed.length} custom patterns from settings DB to ${filePath}`)
+              this.saveCustomPatterns(parsed).catch(() => {})
+              settingsService.setSetting('custom_secret_patterns', '')
+              return parsed
+            }
+          } catch { /* ignore bad legacy data */ }
+        }
+        return []
+      }
+      log.warn(`secret-scan: Failed to read custom patterns from ${filePath}:`, err)
       return []
     }
   },
 
-  /** Save custom patterns to settings */
-  saveCustomPatterns(patterns: CustomSecretPattern[]): void {
-    settingsService.setSetting('custom_secret_patterns', JSON.stringify(patterns))
-    log.info(`secret-scan: Saved ${patterns.length} custom pattern(s)`)
+  /** Save custom patterns to JSON file */
+  async saveCustomPatterns(patterns: CustomSecretPattern[]): Promise<void> {
+    const filePath = this._getCustomPatternsPath()
+    const dir = dirname(filePath)
+    await mkdir(dir, { recursive: true })
+    const json = JSON.stringify(patterns, null, 2)
+    await writeFile(filePath, json, 'utf-8')
+    log.info(`secret-scan: Saved ${patterns.length} custom pattern(s) to ${filePath}`)
   },
 
   /** Add or update a custom pattern (validates regex, checks broadness) */
-  upsertCustomPattern(pattern: CustomSecretPattern): { success: boolean; warnings: string[] } {
+  async upsertCustomPattern(pattern: CustomSecretPattern): Promise<{ success: boolean; warnings: string[] }> {
     const warnings = validatePatternBroadness(pattern.source, pattern.flags)
 
     // Validate the regex compiles
@@ -792,14 +823,14 @@ export const secretScanService = {
     } else {
       patterns.push(pattern)
     }
-    this.saveCustomPatterns(patterns)
+    await this.saveCustomPatterns(patterns)
     return { success: true, warnings }
   },
 
   /** Delete a custom pattern by id */
-  deleteCustomPattern(id: string): void {
+  async deleteCustomPattern(id: string): Promise<void> {
     const patterns = this.getCustomPatterns().filter((p) => p.id !== id)
-    this.saveCustomPatterns(patterns)
+    await this.saveCustomPatterns(patterns)
   },
 
   /** Test a regex pattern against a user-provided string */

@@ -94,12 +94,13 @@ export const liveMonitorService = {
       ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
       : undefined
 
+    const todayFilter = or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight))
     let todaySessions = db
       .select()
       .from(sessions)
       .where(excludeCondition
-        ? and(gte(sessions.startedAt, todayMidnight), excludeCondition)
-        : gte(sessions.startedAt, todayMidnight))
+        ? and(todayFilter, excludeCondition)
+        : todayFilter)
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
@@ -129,13 +130,26 @@ export const liveMonitorService = {
       }
     }
 
-    const totalMinutes = todaySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+    // Pro-rate sessions that span midnight — only count the portion after today's midnight
+    const midnightMs = new Date(todayMidnight).getTime()
+    const totalMinutes = todaySessions.reduce((sum, s) => {
+      const startMs = new Date(s.startedAt).getTime()
+      if (startMs >= midnightMs) return sum + s.durationMinutes
+      const endMs = new Date(s.endedAt).getTime()
+      return sum + Math.round(Math.max(0, endMs - midnightMs) / 60_000)
+    }, 0)
     const totalPrompts = todaySessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0)
     const totalTokens = todaySessions.reduce(
       (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),
       0
     )
-    const humanMinutes = computeHumanMinutes(todaySessions)
+    // Clamp session start times to midnight for human-minutes overlap calculation
+    const clampedSessions = todaySessions.map((s) => {
+      const startMs = new Date(s.startedAt).getTime()
+      if (startMs >= midnightMs) return s
+      return { ...s, startedAt: todayMidnight }
+    })
+    const humanMinutes = computeHumanMinutes(clampedSessions)
 
     return {
       humanHours: formatDuration(humanMinutes),
@@ -176,7 +190,7 @@ export const liveMonitorService = {
     let todaySessions = db
       .select()
       .from(sessions)
-      .where(gte(sessions.startedAt, todayMidnight))
+      .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
@@ -200,13 +214,11 @@ export const liveMonitorService = {
       }
     }
 
-    // Build result: only projects with today activity
+    // Build result: projects with today sessions OR active JSONL files
     const results: ProjectLiveStatus[] = []
 
     for (const p of allProjects) {
       const projectSessions = projectSessionMap.get(p.projectId) ?? []
-      const hasActivity = projectSessions.length > 0
-      if (!hasActivity) continue
       // Match JSONL timestamp data by encoded project path
       let lastPromptAt: string | null = null
       let isProcessing = false
@@ -218,6 +230,13 @@ export const liveMonitorService = {
           break
         }
       }
+
+      const hasDbSessions = projectSessions.length > 0
+      const hasLiveJsonl = lastPromptAt !== null
+
+      // Skip projects with no DB sessions AND no active JSONL
+      if (!hasDbSessions && !hasLiveJsonl) continue
+
       // Fall back to session endedAt if no JSONL match
       if (!lastPromptAt && projectSessions.length > 0) {
         const sorted = projectSessions.sort(
@@ -226,7 +245,16 @@ export const liveMonitorService = {
         lastPromptAt = sorted[0].endedAt
       }
 
-      const totalMinutes = projectSessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+      // Pro-rate sessions that span midnight — only count the portion after today's midnight
+      const midnightMs = new Date(todayMidnight).getTime()
+      const totalMinutes = projectSessions.reduce((sum, s) => {
+        const startMs = new Date(s.startedAt).getTime()
+        if (startMs >= midnightMs) return sum + s.durationMinutes
+        // Session started before midnight — only count from midnight to endedAt
+        const endMs = new Date(s.endedAt).getTime()
+        const todayPortionMs = Math.max(0, endMs - midnightMs)
+        return sum + Math.round(todayPortionMs / 60_000)
+      }, 0)
       const totalPrompts = projectSessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0)
       const totalTokens = projectSessions.reduce(
         (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),
@@ -442,7 +470,7 @@ export const liveMonitorService = {
         const todaySessionRows = syncDb
           .select({ projectId: sessions.projectId })
           .from(sessions)
-          .where(gte(sessions.startedAt, todayMidnight))
+          .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
           .all()
         const activeProjectIds = new Set(
           todaySessionRows.map(s => s.projectId).filter((id): id is number => id != null)
