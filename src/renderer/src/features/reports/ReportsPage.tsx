@@ -192,12 +192,55 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
 }
 
 function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.Element {
-  const [expandedDays, setExpandedDays] = useState<Set<number>>(() => new Set(items.map((_, i) => i)))
-  const toggleDay = (i: number): void => {
-    setExpandedDays((prev) => {
+  // Reshape: day→client/project into client→project/day rows
+  const clientGroups = useMemo(() => {
+    const map = new Map<string, {
+      totalSessions: number; totalMinutes: number; totalPrompts: number; totalTokens: number
+      rows: { projectName: string; date: string; sessionCount: number; totalDurationMinutes: number; totalPrompts: number; totalTokens: number }[]
+    }>()
+
+    for (const day of items) {
+      for (const bp of day.breakdown) {
+        const clientName = bp.clientName || 'Unassigned'
+        let group = map.get(clientName)
+        if (!group) {
+          group = { totalSessions: 0, totalMinutes: 0, totalPrompts: 0, totalTokens: 0, rows: [] }
+          map.set(clientName, group)
+        }
+        group.totalSessions += bp.sessionCount
+        group.totalMinutes += bp.totalDurationMinutes
+        group.totalPrompts += bp.totalPrompts
+        group.totalTokens += bp.totalInputTokens + bp.totalOutputTokens
+        group.rows.push({
+          projectName: bp.projectName,
+          date: day.date,
+          sessionCount: bp.sessionCount,
+          totalDurationMinutes: bp.totalDurationMinutes,
+          totalPrompts: bp.totalPrompts,
+          totalTokens: bp.totalInputTokens + bp.totalOutputTokens
+        })
+      }
+    }
+
+    // Sort rows within each client by project name, then date
+    for (const group of map.values()) {
+      group.rows.sort((a, b) => a.projectName.localeCompare(b.projectName) || a.date.localeCompare(b.date))
+    }
+
+    // Sort clients alphabetically, Unassigned last
+    return [...map.entries()].sort((a, b) => {
+      if (a[0] === 'Unassigned') return 1
+      if (b[0] === 'Unassigned') return -1
+      return a[0].localeCompare(b[0])
+    })
+  }, [items])
+
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(() => new Set(clientGroups.map(([name]) => name)))
+  const toggleClient = (name: string): void => {
+    setExpandedClients((prev) => {
       const next = new Set(prev)
-      if (next.has(i)) next.delete(i)
-      else next.add(i)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
       return next
     })
   }
@@ -207,8 +250,8 @@ function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.
       <table className="w-full text-[12px]">
         <thead>
           <tr className="border-b border-[var(--surface-border)] text-left text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
-            <th className="px-3 py-2">Date</th>
             <th className="px-3 py-2">Client / Project</th>
+            <th className="px-3 py-2">Date</th>
             <th className="px-3 py-2 text-right">Sessions</th>
             <th className="px-3 py-2 text-right">Duration</th>
             <th className="px-3 py-2 text-right">Prompts</th>
@@ -216,42 +259,39 @@ function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--surface-border)]">
-          {items.map((item, i) => {
-            const isExpanded = expandedDays.has(i)
+          {clientGroups.map(([clientName, group]) => {
+            const isExpanded = expandedClients.has(clientName)
             return (
-              <Fragment key={i}>
+              <Fragment key={clientName}>
                 <tr
                   className="cursor-pointer hover:bg-[var(--background-elevated)]"
-                  onClick={() => toggleDay(i)}
+                  onClick={() => toggleClient(clientName)}
                 >
                   <td className="whitespace-nowrap px-3 py-1.5 font-semibold">
                     <span className="inline-flex items-center gap-1">
                       {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                      {item.date}
+                      {clientName}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 text-[var(--text-muted)]">{item.projects.join(', ')}</td>
-                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{item.sessionCount}</td>
+                  <td className="px-3 py-1.5" />
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{group.totalSessions}</td>
                   <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
-                    {formatDuration(item.totalDurationMinutes)}
+                    {formatDuration(group.totalMinutes)}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{item.totalPrompts}</td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{group.totalPrompts}</td>
                   <td className="px-3 py-1.5 text-right font-mono font-semibold">
-                    {formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)}
+                    {formatCompactNumber(group.totalTokens)}
                   </td>
                 </tr>
-                {isExpanded && item.breakdown.map((bp, j) => (
-                  <tr key={`${i}-${j}`} className="bg-[var(--background-elevated)]/50">
-                    <td className="px-3 py-1" />
-                    <td className="px-3 py-1 pl-8 text-[var(--text-secondary)]">
-                      {bp.clientName && <span className="text-[var(--text-muted)]">{bp.clientName} / </span>}
-                      {bp.projectName}
-                    </td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{bp.sessionCount}</td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--accent)]/70">{formatDuration(bp.totalDurationMinutes)}</td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{bp.totalPrompts}</td>
+                {isExpanded && group.rows.map((row, j) => (
+                  <tr key={`${clientName}-${j}`} className="bg-[var(--background-elevated)]/50">
+                    <td className="px-3 py-1 pl-8 text-[var(--text-secondary)]">{row.projectName}</td>
+                    <td className="px-3 py-1 text-[var(--text-muted)]">{row.date}</td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{row.sessionCount}</td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--accent)]/70">{formatDuration(row.totalDurationMinutes)}</td>
+                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{row.totalPrompts}</td>
                     <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">
-                      {formatCompactNumber(bp.totalInputTokens + bp.totalOutputTokens)}
+                      {formatCompactNumber(row.totalTokens)}
                     </td>
                   </tr>
                 ))}
