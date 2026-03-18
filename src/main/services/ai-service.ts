@@ -372,11 +372,10 @@ export const aiService = {
 
     if (opts.includeOverall) {
       if (opts.includeDailyBreakdown) lines.push('## Overall Summary')
-      for (const [projName, msgs] of grouped) {
-        lines.push(`**${projName}**`)
+      for (const [, msgs] of grouped) {
         for (const msg of msgs) lines.push(`- ${formatCommitWithTicket(msg)}`)
-        lines.push('')
       }
+      lines.push('')
     }
 
     if (opts.includeDailyBreakdown) {
@@ -387,8 +386,7 @@ export const aiService = {
       for (const [key, dayMap] of sortedDays) {
         const dateLabel = key.split('|')[1]
         lines.push(`**${dateLabel}**`)
-        for (const [projName, msgs] of dayMap) {
-          if (dayMap.size > 1) lines.push(`  *${projName}*`)
+        for (const [, msgs] of dayMap) {
           for (const msg of msgs) lines.push(`- ${formatCommitWithTicket(msg)}`)
         }
         lines.push('')
@@ -411,12 +409,13 @@ export const aiService = {
     const endLabel = new Date(filters.endDate).toLocaleDateString()
 
     const commitLines: string[] = []
+    const singleProject = grouped.size === 1
     for (const [projName, msgs] of grouped) {
-      commitLines.push(`Project: ${projName}`)
+      if (!singleProject) commitLines.push(`Project: ${projName}`)
       for (const msg of msgs) {
-        commitLines.push(`  - ${msg}`)
+        commitLines.push(`${singleProject ? '- ' : '  - '}${msg}`)
       }
-      commitLines.push('')
+      if (!singleProject) commitLines.push('')
     }
 
     // Add daily commit data if daily breakdown requested
@@ -427,8 +426,8 @@ export const aiService = {
         const dateLabel = key.split('|')[1]
         dailyLines.push(`Date: ${dateLabel}`)
         for (const [projName, msgs] of dayMap) {
-          dailyLines.push(`  Project: ${projName}`)
-          for (const msg of msgs) dailyLines.push(`    - ${msg}`)
+          if (!singleProject) dailyLines.push(`  Project: ${projName}`)
+          for (const msg of msgs) dailyLines.push(`${singleProject ? '  ' : '    '}- ${msg}`)
         }
         dailyLines.push('')
       }
@@ -439,8 +438,10 @@ export const aiService = {
       formatInstructions.push(
         'Write an "## Overall Summary" section:',
         '1. Start with a 1-2 sentence high-level overview of the work done.',
-        '2. Then break down accomplishments by project, using **Project Name** as headers.',
-        '3. Under each project, list specific accomplishments as bullet points (use "- " prefix).',
+        '2. List specific accomplishments as bullet points (use "- " prefix).',
+        singleProject
+          ? '3. Do NOT mention the project name anywhere — the reader already knows the project.'
+          : '3. You may mention project names inline if helpful, but do NOT use project name headers or subgroups.',
       )
     }
     if (opts.includeDailyBreakdown) {
@@ -448,8 +449,10 @@ export const aiService = {
         '',
         'Write a "## Daily Breakdown" section:',
         'For each day, use **Day Label** as a header (e.g. **Mon, Mar 10**).',
-        'Under each day, list what was accomplished as bullet points.',
-        'Group by project if multiple projects were worked on that day.',
+        'Under each day, list what was accomplished as bullet points (use "- " prefix).',
+        singleProject
+          ? 'Do NOT mention the project name — just the work item description.'
+          : 'You may mention project names inline if helpful, but do NOT use project name headers.',
       )
       if (dailyLines.length > 0) {
         formatInstructions.push('', 'Commits by date:', ...dailyLines)
@@ -458,9 +461,9 @@ export const aiService = {
 
     const prompt = [
       `Summarize the following work done during ${startLabel} to ${endLabel}.`,
-      `There were ${totalCount} commits total across ${grouped.size} project${grouped.size !== 1 ? 's' : ''}.`,
+      `There were ${totalCount} commits total${singleProject ? '' : ` across ${grouped.size} projects`}.`,
       '',
-      'Commits by project:',
+      `Commits${singleProject ? '' : ' by project'}:`,
       ...commitLines,
       ...formatInstructions,
       '',
@@ -469,7 +472,8 @@ export const aiService = {
       '- Format each bullet with the ticket ID first: "TICKET-123: description of work done"',
       '- Group related commits under the same ticket ID when possible',
       'Focus on what was built, fixed, or improved.',
-      'Do not include commit hashes or timestamps.',
+      'Do not include commit hashes, timestamps, or a top-level title/header.',
+      'Start directly with the ## section headers — do NOT add a # title line.',
       opts.includeOverall && !opts.includeDailyBreakdown
         ? 'Do not include a title or header line — start directly with the overview sentence.'
         : ''

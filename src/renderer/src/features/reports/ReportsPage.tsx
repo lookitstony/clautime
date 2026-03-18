@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from 'react'
-import { FileBarChart, Download, Loader2, ChevronRight, ChevronDown, Sparkles, GitCommit } from 'lucide-react'
+import { FileBarChart, Download, Loader2, ChevronRight, ChevronDown, Sparkles, GitCommit, Copy } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -443,6 +443,23 @@ function ReportFooter({
                 Work Summary
               </div>
               <div className="flex gap-1">
+                {workSummary && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(workSummary)
+                      toast.success('Copied to clipboard')
+                    }}
+                    className="h-6 px-2 text-[11px]"
+                    title="Copy summary to clipboard"
+                  >
+                    <Copy className="mr-1 h-3 w-3" />
+                    Copy
+                  </Button>
+                )}
                 <Button
                   type="button"
                   size="sm"
