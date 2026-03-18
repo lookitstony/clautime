@@ -223,8 +223,9 @@ function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.
     }
 
     // Sort rows within each client by project name, then date
+    // date is a formatted label like "Mon, Mar 10" — parse to Date for correct chronological order
     for (const group of map.values()) {
-      group.rows.sort((a, b) => a.projectName.localeCompare(b.projectName) || a.date.localeCompare(b.date))
+      group.rows.sort((a, b) => a.projectName.localeCompare(b.projectName) || new Date(a.date).getTime() - new Date(b.date).getTime())
     }
 
     // Sort clients alphabetically, Unassigned last
@@ -368,11 +369,13 @@ function ReportFooter({
 }: {
   summary: ReportSummary
   workSummary: string | null
-  onGenerateSummary: (useAi: boolean) => void
+  onGenerateSummary: (useAi: boolean, options: { includeOverall: boolean; includeDailyBreakdown: boolean }) => void
   isGenerating: boolean
   hasApiKey: boolean
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
+  const [includeOverall, setIncludeOverall] = useState(true)
+  const [includeDailyBreakdown, setIncludeDailyBreakdown] = useState(false)
   const hasBilling = summary.billedByClient.length > 0
 
   // Auto-expand when summary arrives
@@ -444,8 +447,8 @@ function ReportFooter({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(false) }}
-                  disabled={isGenerating}
+                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(false, { includeOverall, includeDailyBreakdown }) }}
+                  disabled={isGenerating || (!includeOverall && !includeDailyBreakdown)}
                   className="h-6 px-2 text-[11px]"
                 >
                   <GitCommit className="mr-1 h-3 w-3" />
@@ -455,8 +458,8 @@ function ReportFooter({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(true) }}
-                  disabled={isGenerating || !hasApiKey}
+                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(true, { includeOverall, includeDailyBreakdown }) }}
+                  disabled={isGenerating || !hasApiKey || (!includeOverall && !includeDailyBreakdown)}
                   title={hasApiKey ? 'Summarize with AI' : 'Add an API key in Settings to enable'}
                   className="h-6 px-2 text-[11px]"
                 >
@@ -464,6 +467,26 @@ function ReportFooter({
                   AI Summary
                 </Button>
               </div>
+            </div>
+            <div className="mb-2 flex gap-4">
+              <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={includeOverall}
+                  onChange={(e) => setIncludeOverall(e.target.checked)}
+                  className="h-3 w-3 rounded border-[var(--surface-border)]"
+                />
+                Overall Summary
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={includeDailyBreakdown}
+                  onChange={(e) => setIncludeDailyBreakdown(e.target.checked)}
+                  className="h-3 w-3 rounded border-[var(--surface-border)]"
+                />
+                Daily Breakdown
+              </label>
             </div>
             {workSummary ? (
               <div className="space-y-1 text-[12px] leading-relaxed text-[var(--text-secondary)]">
@@ -500,7 +523,7 @@ function ReportFooter({
   )
 }
 
-function reportToMarkdown(report: ReportResult, aiSummary?: string | null): string {
+function reportToMarkdown(report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
   const lines: string[] = []
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
@@ -581,7 +604,7 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null): stri
   lines.push('')
   lines.push(`**Sessions:** ${s.totalSessions} | **Duration:** ${formatDuration(s.totalDurationMinutes)} | **Prompts:** ${s.totalPrompts.toLocaleString()} | **Tokens:** ${formatCompactNumber(s.totalInputTokens + s.totalOutputTokens)}`)
 
-  if (s.billedByClient.length > 0) {
+  if (includeBilling && s.billedByClient.length > 0) {
     lines.push('')
     lines.push('### Billing')
     lines.push('')
@@ -642,7 +665,7 @@ function reportToCsv(report: ReportResult): string {
   return rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
 }
 
-function reportToHtml(report: ReportResult, aiSummary?: string | null): string {
+function reportToHtml(report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
   const s = report.summary
@@ -676,7 +699,7 @@ function reportToHtml(report: ReportResult, aiSummary?: string | null): string {
   }
 
   let billingHtml = ''
-  if (s.billedByClient.length > 0) {
+  if (includeBilling && s.billedByClient.length > 0) {
     billingHtml = '<h3>Billing</h3><table><thead><tr><th>Client</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead><tbody>'
     for (const b of s.billedByClient) {
       billingHtml += `<tr><td>${b.clientName}</td><td>${b.hours}h</td><td>$${b.rate}/hr</td><td><strong>$${b.cost.toFixed(2)}</strong></td></tr>`
@@ -779,7 +802,7 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
   }))
 }
 
-function timesheetToMarkdown(rows: TimesheetRow[], report: ReportResult, aiSummary?: string | null): string {
+function timesheetToMarkdown(rows: TimesheetRow[], report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
   const s = report.summary
@@ -795,7 +818,7 @@ function timesheetToMarkdown(rows: TimesheetRow[], report: ReportResult, aiSumma
   }
   lines.push('')
   lines.push(`**Total Hours: ${totalHours.toFixed(2)}**`)
-  if (s.billedByClient.length > 0) {
+  if (includeBilling && s.billedByClient.length > 0) {
     lines.push('')
     lines.push('### Billing')
     lines.push('')
@@ -822,7 +845,7 @@ function timesheetToCsv(rows: TimesheetRow[]): string {
   return csvRows.map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
 }
 
-function timesheetToHtml(rows: TimesheetRow[], report: ReportResult, aiSummary?: string | null): string {
+function timesheetToHtml(rows: TimesheetRow[], report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
   const s = report.summary
@@ -835,7 +858,7 @@ function timesheetToHtml(rows: TimesheetRow[], report: ReportResult, aiSummary?:
   tableHtml += `</tbody></table><p><strong>Total Hours: ${totalHours.toFixed(2)}</strong></p>`
 
   let billingHtml = ''
-  if (s.billedByClient.length > 0) {
+  if (includeBilling && s.billedByClient.length > 0) {
     billingHtml = '<h3>Billing</h3><table><thead><tr><th>Client</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead><tbody>'
     for (const b of s.billedByClient) {
       billingHtml += `<tr><td>${b.clientName}</td><td>${b.hours}h</td><td>$${b.rate}/hr</td><td><strong>$${b.cost.toFixed(2)}</strong></td></tr>`
@@ -928,6 +951,7 @@ function ExportModal({
   const [contentType, setContentType] = useState<ExportContentType>('timesheet')
   const [summaryOption, setSummaryOption] = useState<SummaryOption>('none')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf')
+  const [includeBilling, setIncludeBilling] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
 
   const { data: hasApiKey } = useQuery({
@@ -981,10 +1005,10 @@ function ExportModal({
             savedPath = await doExport(timesheetToCsv(rows), 'CSV', 'csv')
             break
           case 'markdown':
-            savedPath = await doExport(timesheetToMarkdown(rows, report, summary), 'Markdown', 'md')
+            savedPath = await doExport(timesheetToMarkdown(rows, report, summary, includeBilling), 'Markdown', 'md')
             break
           case 'pdf': {
-            const result = await window.api.reports.exportPdf(timesheetToHtml(rows, report, summary), reportFilename)
+            const result = await window.api.reports.exportPdf(timesheetToHtml(rows, report, summary, includeBilling), reportFilename)
             if (result.success) savedPath = result.data
             break
           }
@@ -995,10 +1019,10 @@ function ExportModal({
             savedPath = await doExport(reportToCsv(report), 'CSV', 'csv')
             break
           case 'markdown':
-            savedPath = await doExport(reportToMarkdown(report, summary), 'Markdown', 'md')
+            savedPath = await doExport(reportToMarkdown(report, summary, includeBilling), 'Markdown', 'md')
             break
           case 'pdf': {
-            const result = await window.api.reports.exportPdf(reportToHtml(report, summary), reportFilename)
+            const result = await window.api.reports.exportPdf(reportToHtml(report, summary, includeBilling), reportFilename)
             if (result.success) savedPath = result.data
             break
           }
@@ -1012,7 +1036,7 @@ function ExportModal({
     } finally {
       setIsExporting(false)
     }
-  }, [contentType, exportFormat, summaryOption, report, reportFilename, generateSummary, onOpenChange])
+  }, [contentType, exportFormat, summaryOption, includeBilling, report, reportFilename, generateSummary, onOpenChange])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1045,6 +1069,28 @@ function ExportModal({
               />
             </div>
           </div>
+
+          {/* Include Billing */}
+          {report.summary.billedByClient.length > 0 && (
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Include Billing
+              </label>
+              <button
+                type="button"
+                onClick={() => setIncludeBilling(!includeBilling)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                  includeBilling ? 'bg-[var(--accent)]' : 'bg-[var(--surface-border)]'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                    includeBilling ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
 
           {/* Work Summary */}
           <div className="space-y-2">
@@ -1251,11 +1297,11 @@ export function ReportsPage(): React.JSX.Element {
     }
   })
 
-  const handleGenerateSummary = useCallback(async (useAi: boolean): Promise<string | null> => {
+  const handleGenerateSummary = useCallback(async (useAi: boolean, summaryOptions?: { includeOverall: boolean; includeDailyBreakdown: boolean }): Promise<string | null> => {
     if (!report) return null
     setIsGeneratingAi(true)
     try {
-      const result = await window.api.ai.generateReportSummary(report.filters, useAi)
+      const result = await window.api.ai.generateReportSummary(report.filters, useAi, summaryOptions)
       if (result.success && result.data) {
         setAiSummary(result.data)
         toast.success(useAi ? 'AI summary generated' : 'Git summary generated')

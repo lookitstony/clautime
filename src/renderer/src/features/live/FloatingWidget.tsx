@@ -144,15 +144,15 @@ function useGlowState(lastPromptAt: string | null, isProcessing: boolean, warnin
 }
 
 const glowStyles: Record<GlowState, React.CSSProperties> = {
-  entrance:     { boxShadow: '0 0 12px 2px rgba(52, 211, 153, 0.5), inset 0 0 8px rgba(52, 211, 153, 0.1)' },
-  processing:   { boxShadow: '0 0 16px 3px rgba(168, 85, 247, 0.5), inset 0 0 8px rgba(168, 85, 247, 0.1)', animation: 'glow-breathe 2s ease-in-out infinite' },
-  'prompt-ready': { boxShadow: '0 0 18px 4px rgba(96, 165, 250, 0.6), inset 0 0 8px rgba(96, 165, 250, 0.1)', animation: 'glow-prompt-ready 0.8s ease-in-out 2' },
-  active:       { boxShadow: '0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08)' },
-  nudge:        { boxShadow: '0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08)', animation: 'glow-nudge 1.5s ease-in-out 3' },
-  warning:      { boxShadow: '0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08)' },
-  urgent:       { boxShadow: '0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08)', animation: 'glow-urgent-pulse 1s ease-in-out infinite' },
-  alert:        { boxShadow: '0 0 18px 4px rgba(248, 113, 113, 0.6), inset 0 0 8px rgba(248, 113, 113, 0.1)' },
-  idle:         { boxShadow: 'none' }
+  entrance:       { boxShadow: '0 0 3px 1px rgba(52, 211, 153, 0.8), inset 0 0 3px rgba(52, 211, 153, 0.15)', borderColor: 'rgba(52, 211, 153, 0.6)' },
+  processing:     { boxShadow: '0 0 4px 1px rgba(168, 85, 247, 0.8), inset 0 0 3px rgba(168, 85, 247, 0.15)', borderColor: 'rgba(168, 85, 247, 0.7)', animation: 'glow-breathe 2s ease-in-out infinite' },
+  'prompt-ready': { boxShadow: '0 0 4px 1px rgba(96, 165, 250, 0.9), inset 0 0 3px rgba(96, 165, 250, 0.15)', borderColor: 'rgba(96, 165, 250, 0.7)', animation: 'glow-prompt-ready 0.8s ease-in-out 2' },
+  active:         { boxShadow: '0 0 3px 1px rgba(52, 211, 153, 0.7), inset 0 0 3px rgba(52, 211, 153, 0.1)', borderColor: 'rgba(52, 211, 153, 0.5)' },
+  nudge:          { boxShadow: '0 0 3px 1px rgba(52, 211, 153, 0.7), inset 0 0 3px rgba(52, 211, 153, 0.1)', borderColor: 'rgba(52, 211, 153, 0.5)', animation: 'glow-nudge 1.5s ease-in-out 3' },
+  warning:        { boxShadow: '0 0 3px 1px rgba(250, 204, 21, 0.7), inset 0 0 3px rgba(250, 204, 21, 0.1)', borderColor: 'rgba(250, 204, 21, 0.6)' },
+  urgent:         { boxShadow: '0 0 3px 1px rgba(250, 204, 21, 0.7), inset 0 0 3px rgba(250, 204, 21, 0.1)', borderColor: 'rgba(250, 204, 21, 0.6)', animation: 'glow-urgent-pulse 1s ease-in-out infinite' },
+  alert:          { boxShadow: '0 0 4px 1px rgba(248, 113, 113, 0.9), inset 0 0 3px rgba(248, 113, 113, 0.15)', borderColor: 'rgba(248, 113, 113, 0.8)' },
+  idle:           { boxShadow: 'none', borderColor: 'rgba(255, 255, 255, 0.08)' }
 }
 
 function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element {
@@ -214,27 +214,31 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
   useEffect(() => {
     document.documentElement.style.backgroundColor = 'transparent'
     document.documentElement.style.overflow = 'hidden'
+    document.documentElement.style.height = '100%'
     document.body.style.backgroundColor = 'transparent'
     document.body.style.overflow = 'hidden'
     document.body.style.margin = '0'
+    document.body.style.height = '100%'
+    const root = document.getElementById('root')
+    if (root) root.style.height = '100%'
 
     const style = document.createElement('style')
     style.textContent = `
       @keyframes glow-breathe {
-        0%, 100% { box-shadow: 0 0 16px 3px rgba(168, 85, 247, 0.3), inset 0 0 8px rgba(168, 85, 247, 0.05); }
-        50% { box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.6), inset 0 0 10px rgba(168, 85, 247, 0.15); }
+        0%, 100% { box-shadow: 0 0 3px 1px rgba(168, 85, 247, 0.5), inset 0 0 3px rgba(168, 85, 247, 0.1); }
+        50% { box-shadow: 0 0 5px 2px rgba(168, 85, 247, 0.9), inset 0 0 4px rgba(168, 85, 247, 0.2); }
       }
       @keyframes glow-nudge {
-        0%, 100% { box-shadow: 0 0 14px 3px rgba(52, 211, 153, 0.45), inset 0 0 6px rgba(52, 211, 153, 0.08); }
-        50% { box-shadow: 0 0 6px 1px rgba(52, 211, 153, 0.15), inset 0 0 2px rgba(52, 211, 153, 0.02); }
+        0%, 100% { box-shadow: 0 0 3px 1px rgba(52, 211, 153, 0.7), inset 0 0 3px rgba(52, 211, 153, 0.1); }
+        50% { box-shadow: 0 0 1px 0px rgba(52, 211, 153, 0.3), inset 0 0 1px rgba(52, 211, 153, 0.02); }
       }
       @keyframes glow-urgent-pulse {
-        0%, 100% { box-shadow: 0 0 14px 3px rgba(250, 204, 21, 0.45), inset 0 0 6px rgba(250, 204, 21, 0.08); }
-        50% { box-shadow: 0 0 22px 6px rgba(250, 204, 21, 0.7), inset 0 0 10px rgba(250, 204, 21, 0.15); }
+        0%, 100% { box-shadow: 0 0 3px 1px rgba(250, 204, 21, 0.7), inset 0 0 3px rgba(250, 204, 21, 0.1); }
+        50% { box-shadow: 0 0 5px 2px rgba(250, 204, 21, 0.9), inset 0 0 4px rgba(250, 204, 21, 0.2); }
       }
       @keyframes glow-prompt-ready {
-        0%, 100% { box-shadow: 0 0 6px 1px rgba(96, 165, 250, 0.15), inset 0 0 2px rgba(96, 165, 250, 0.02); }
-        50% { box-shadow: 0 0 22px 5px rgba(96, 165, 250, 0.7), inset 0 0 10px rgba(96, 165, 250, 0.15); }
+        0%, 100% { box-shadow: 0 0 1px 0px rgba(96, 165, 250, 0.3), inset 0 0 1px rgba(96, 165, 250, 0.02); }
+        50% { box-shadow: 0 0 5px 2px rgba(96, 165, 250, 0.9), inset 0 0 4px rgba(96, 165, 250, 0.2); }
       }
     `
     document.head.appendChild(style)
@@ -275,7 +279,7 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
 
   if (!project) {
     return (
-      <div className="h-full p-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      <div className="h-full p-1.5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         <div className="flex h-full items-center justify-center rounded-lg bg-[var(--background-primary)]/90 text-[10px] text-[var(--text-muted)]">
           Loading...
         </div>
@@ -284,10 +288,10 @@ function WidgetContent({ projectId }: { projectId: number }): React.JSX.Element 
   }
 
   return (
-    <div className="h-full p-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+    <div className="h-full p-1.5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
     <div
-      className="h-full rounded-lg border border-[var(--surface-border)]/30 px-2.5 py-1.5 bg-[var(--background-primary)]/90"
-      style={{ transition: 'box-shadow 0.6s ease', ...glowStyles[glowState] } as React.CSSProperties}
+      className="h-full rounded-lg border px-2.5 py-1.5 bg-[var(--background-primary)]/90"
+      style={{ transition: 'box-shadow 0.6s ease, border-color 0.6s ease', ...glowStyles[glowState] } as React.CSSProperties}
     >
       {/* Row 1: project name + idle timer + bell + close */}
       <div className="flex items-center gap-1">

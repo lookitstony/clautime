@@ -71,7 +71,10 @@ interface AiApi {
     endDate: string
     projectId?: number
     clientId?: number
-  }, useAi?: boolean): Promise<IpcResult<string | null>>
+  }, useAi?: boolean, summaryOptions?: {
+    includeOverall?: boolean
+    includeDailyBreakdown?: boolean
+  }): Promise<IpcResult<string | null>>
 }
 
 interface GitApi {

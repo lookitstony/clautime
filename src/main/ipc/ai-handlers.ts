@@ -112,10 +112,11 @@ export function registerAiHandlers(): void {
     async (
       _event,
       filters: { startDate: string; endDate: string; projectId?: number; clientId?: number },
-      useAi?: boolean
+      useAi?: boolean,
+      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean }
     ): Promise<IpcResult<string | null>> => {
       try {
-        const result = await aiService.generateReportSummary(filters, useAi ?? true)
+        const result = await aiService.generateReportSummary(filters, useAi ?? true, summaryOptions)
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC ai:generateReportSummary failed:', error)

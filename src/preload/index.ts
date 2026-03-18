@@ -109,9 +109,10 @@ const api = {
     ): Promise<IpcResult<number>> => ipcRenderer.invoke('ai:generateBatch', sessionIds),
     generateReportSummary: (
       filters: { startDate: string; endDate: string; projectId?: number; clientId?: number },
-      useAi?: boolean
+      useAi?: boolean,
+      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean }
     ): Promise<IpcResult<string | null>> =>
-      ipcRenderer.invoke('ai:generateReportSummary', filters, useAi)
+      ipcRenderer.invoke('ai:generateReportSummary', filters, useAi, summaryOptions)
   },
   git: {
     scan: (

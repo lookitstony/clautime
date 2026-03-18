@@ -100,7 +100,9 @@ export const gitService = {
         .split('\n')
         .map((line) => {
           const [hash, message, authorName, authorEmail, committedAt] = line.split('|')
-          return { hash, message, authorName, authorEmail, committedAt }
+          // Normalize to UTC ISO string for consistent date comparisons
+          const utcCommittedAt = committedAt ? new Date(committedAt).toISOString() : ''
+          return { hash, message, authorName, authorEmail, committedAt: utcCommittedAt }
         })
         .filter((c) => c.hash && c.committedAt)
     } catch (error) {
@@ -111,30 +113,40 @@ export const gitService = {
 
   /**
    * Auto-detect the user's git identity from git config.
+   * If dirPath is provided, uses the local repo config (falls back to global).
    */
-  async detectGitIdentity(): Promise<{ name: string; email: string } | null> {
+  async detectGitIdentity(dirPath?: string): Promise<{ name: string; email: string } | null> {
     try {
+      const opts = dirPath ? { cwd: dirPath } : undefined
       const [nameResult, emailResult] = await Promise.all([
-        execFileAsync('git', ['config', '--global', 'user.name']),
-        execFileAsync('git', ['config', '--global', 'user.email'])
+        execFileAsync('git', ['config', 'user.name'], opts),
+        execFileAsync('git', ['config', 'user.email'], opts)
       ])
       return {
         name: nameResult.stdout.trim(),
         email: emailResult.stdout.trim()
       }
     } catch {
-      log.warn('Could not detect git identity from global config')
+      log.warn(`Could not detect git identity${dirPath ? ` for ${dirPath}` : ' from global config'}`)
       return null
     }
   },
 
   /**
-   * Get the configured git identity (from settings or auto-detected).
+   * Get the configured git identity for a project directory.
+   * Priority: per-repo local git config → app settings → global git config.
    */
-  async getGitIdentity(): Promise<{ name: string; email: string } | null> {
+  async getGitIdentity(dirPath?: string): Promise<{ name: string; email: string } | null> {
+    // Try per-repo identity first (respects local .git/config)
+    if (dirPath) {
+      const local = await this.detectGitIdentity(dirPath)
+      if (local?.name && local?.email) return local
+    }
+    // Fall back to app settings
     const name = settingsService.getSetting('git_author_name')
     const email = settingsService.getSetting('git_author_email')
     if (name && email) return { name, email }
+    // Fall back to global git config
     return this.detectGitIdentity()
   },
 
@@ -150,12 +162,25 @@ export const gitService = {
     }
 
     const db = getDb()
+
+    // One-time: normalize any committedAt values with timezone offsets to UTC ISO
+    const nonUtcCommits = db.select().from(gitCommits).all()
+      .filter((c) => c.committedAt && !c.committedAt.endsWith('Z'))
+    if (nonUtcCommits.length > 0) {
+      log.info(`Normalizing ${nonUtcCommits.length} commit timestamps to UTC`)
+      for (const c of nonUtcCommits) {
+        db.update(gitCommits)
+          .set({ committedAt: new Date(c.committedAt).toISOString() })
+          .where(eq(gitCommits.id, c.id))
+          .run()
+      }
+    }
+
     const allProjects = db.select().from(projects).all()
     const targetProjects = projectFilter
       ? allProjects.filter((p) => projectFilter.includes(p.id))
       : allProjects
 
-    const identity = await this.getGitIdentity()
     let totalNewCommits = 0
     let projectsScanned = 0
 
@@ -165,6 +190,7 @@ export const gitService = {
         if (!isRepo) continue
 
         projectsScanned++
+        const identity = await this.getGitIdentity(project.directoryPath)
         const commits = await this.readCommits(
           project.directoryPath,
           undefined,

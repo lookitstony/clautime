@@ -31,11 +31,15 @@ export const reportService = {
   generateReport(filters: ReportFilters, format: ReportFormat): ReportResult {
     const startTime = Date.now()
     const db = getDb()
+    const rangeStartMs = new Date(filters.startDate).getTime()
+    const rangeEndMs = new Date(filters.endDate).getTime()
+    log.info(`[DIAG] Report filter: startDate=${filters.startDate} endDate=${filters.endDate}`)
 
-    // Build query conditions
+    // Include any session that overlaps the date range
+    // (started before range end AND ended after range start)
     const conditions: SQL[] = [
-      gte(sessions.startedAt, filters.startDate),
-      lte(sessions.endedAt, filters.endDate)
+      lte(sessions.startedAt, filters.endDate),
+      gte(sessions.endedAt, filters.startDate)
     ]
 
     // Exclude inactive projects
@@ -53,13 +57,35 @@ export const reportService = {
       conditions.push(eq(sessions.projectId, filters.projectId))
     }
 
-    // Fetch sessions
+    // Fetch sessions and pro-rate those that extend beyond the filter range
     let rows = db
       .select()
       .from(sessions)
       .where(and(...conditions))
       .orderBy(sessions.startedAt)
       .all()
+      .map((row) => {
+        const sMs = new Date(row.startedAt).getTime()
+        const eMs = new Date(row.endedAt).getTime()
+        const clampedStart = Math.max(sMs, rangeStartMs)
+        const clampedEnd = Math.min(eMs, rangeEndMs)
+        const clampedMinutes = Math.round(Math.max(0, clampedEnd - clampedStart) / 60_000)
+        // Only modify if session actually extends beyond range
+        if (sMs < rangeStartMs || eMs > rangeEndMs) {
+          const ratio = row.durationMinutes > 0 ? clampedMinutes / row.durationMinutes : 1
+          return {
+            ...row,
+            startedAt: new Date(clampedStart).toISOString(),
+            endedAt: new Date(clampedEnd).toISOString(),
+            durationMinutes: clampedMinutes,
+            // Pro-rate tokens and prompts proportionally
+            promptCount: Math.round(row.promptCount * ratio),
+            inputTokens: Math.round(row.inputTokens * ratio),
+            outputTokens: Math.round(row.outputTokens * ratio)
+          }
+        }
+        return row
+      })
 
     // After-hours filter: exclude sessions starting between 7am–6pm
     if (filters.afterHoursOnly) {
@@ -184,7 +210,7 @@ export const reportService = {
         const items: DailySummaryItem[] = Array.from(dayMap.entries())
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([date, data]) => ({
-            date: formatDateLabel(date + 'T00:00:00Z'),
+            date: formatDateLabel(date + 'T12:00:00'),
             sessionCount: data.sessionCount,
             totalDurationMinutes: data.totalDuration,
             totalPrompts: data.totalPrompts,

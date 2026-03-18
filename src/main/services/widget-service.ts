@@ -15,6 +15,8 @@ const autoHiddenIds = new Set<number>()
 // Widgets hidden because their project went idle (not processing).
 // They'll auto-show when the project starts processing again.
 const idleHiddenIds = new Set<number>()
+// Widgets explicitly opened by the user — don't auto-hide these.
+const userPinnedIds = new Set<number>()
 
 interface WidgetBounds { x: number; y: number; width: number; height: number }
 interface WidgetState { positions: Record<string, WidgetBounds>; openIds: number[] }
@@ -40,7 +42,7 @@ function saveState(): void {
   try {
     mkdirSync(join(stateFile, '..'), { recursive: true })
     // Save both open and auto-hidden widget IDs so they survive restarts
-    savedState.openIds = [...new Set([...widgets.keys(), ...autoHiddenIds, ...idleHiddenIds])]
+    savedState.openIds = [...new Set([...widgets.keys(), ...autoHiddenIds, ...idleHiddenIds, ...userPinnedIds])]
     writeFileSync(stateFile, JSON.stringify(savedState, null, 2))
   } catch {
     // Best effort
@@ -60,6 +62,7 @@ export const widgetService = {
     if (this.isOpen(projectId)) {
       this.close(projectId)
     } else {
+      userPinnedIds.add(projectId)
       this.open(projectId)
     }
   },
@@ -89,14 +92,14 @@ export const widgetService = {
       x = Math.min(cursor.x + 20 + offset, display.workArea.x + display.workArea.width - 220)
       y = Math.min(cursor.y + 20 + offset, display.workArea.y + display.workArea.height - 80)
       width = 240
-      height = 110
+      height = 55
     }
 
     const win = new BrowserWindow({
       width,
       height,
       minWidth: 200,
-      minHeight: 90,
+      minHeight: 45,
       x,
       y,
       frame: false,
@@ -160,6 +163,7 @@ export const widgetService = {
     widgets.delete(projectId)
     autoHiddenIds.delete(projectId) // User explicitly closed — don't auto-show
     idleHiddenIds.delete(projectId)
+    userPinnedIds.delete(projectId)
     if (!isDestroying) saveState()
     if (w && !w.isDestroyed()) {
       w.destroy()
@@ -190,9 +194,9 @@ export const widgetService = {
   },
 
   syncWithActiveProjects(activeProjectIds: Set<number>): void {
-    // Auto-hide open widgets for projects without today activity
+    // Auto-hide open widgets for projects without today activity (skip user-pinned)
     for (const [projectId, w] of widgets) {
-      if (!activeProjectIds.has(projectId)) {
+      if (!activeProjectIds.has(projectId) && !userPinnedIds.has(projectId)) {
         log.info(`Auto-hiding widget for inactive project ${projectId}`)
         autoHiddenIds.add(projectId)
         widgets.delete(projectId)
@@ -211,9 +215,9 @@ export const widgetService = {
 
   /** Hide widgets for idle projects, show them again when processing resumes */
   syncIdleState(processingProjectIds: Set<number>): void {
-    // Hide open widgets for projects that stopped processing
+    // Hide open widgets for projects that stopped processing (skip user-pinned)
     for (const [projectId, w] of widgets) {
-      if (!processingProjectIds.has(projectId)) {
+      if (!processingProjectIds.has(projectId) && !userPinnedIds.has(projectId)) {
         log.info(`Idle-hiding widget for project ${projectId}`)
         idleHiddenIds.add(projectId)
         if (!w.isDestroyed()) w.hide()

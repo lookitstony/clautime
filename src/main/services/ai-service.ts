@@ -172,17 +172,20 @@ export const aiService = {
     endDate: string
     projectId?: number
     clientId?: number
-  }, useAi = true): Promise<string | null> {
+  }, useAi = true, summaryOptions?: {
+    includeOverall?: boolean
+    includeDailyBreakdown?: boolean
+  }): Promise<string | null> {
     const db = getDb()
 
-    const conditions: SQL[] = [
-      gte(gitCommits.committedAt, filters.startDate),
-      lte(gitCommits.committedAt, filters.endDate)
-    ]
+    // Build project filter conditions (without date — we filter dates in JS
+    // because committedAt may have timezone offsets that break string comparison)
+    const conditions: SQL[] = []
+    let clientProjectIds: number[] | null = null
     if (filters.projectId != null) {
       conditions.push(eq(gitCommits.projectId, filters.projectId))
     } else if (filters.clientId != null) {
-      const clientProjectIds = db
+      clientProjectIds = db
         .select({ id: projects.id })
         .from(projects)
         .where(eq(projects.clientId, filters.clientId))
@@ -195,16 +198,28 @@ export const aiService = {
       conditions.push(inArray(gitCommits.projectId, clientProjectIds))
     }
 
+    const rangeStartMs = new Date(filters.startDate).getTime()
+    const rangeEndMs = new Date(filters.endDate).getTime()
+
     const commits = db
       .select()
       .from(gitCommits)
-      .where(and(...conditions))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(gitCommits.committedAt)
       .all()
+      .filter((c) => {
+        const ms = new Date(c.committedAt).getTime()
+        return ms >= rangeStartMs && ms <= rangeEndMs
+      })
 
     if (commits.length === 0) {
       log.info('No commits found for report summary')
       return null
+    }
+
+    const opts = {
+      includeOverall: summaryOptions?.includeOverall ?? true,
+      includeDailyBreakdown: summaryOptions?.includeDailyBreakdown ?? false
     }
 
     // Group commits by project
@@ -223,25 +238,161 @@ export const aiService = {
       grouped.set(projName, existing)
     }
 
+    // Build daily breakdown: attribute commits to every session day
+    // A commit covers all working days back to the previous commit.
+    // For each session day, find the next commit on or after that day.
+    const dailyGrouped = new Map<string, Map<string, string[]>>()
+    if (opts.includeDailyBreakdown) {
+      // Get session days in the range
+      const sessionConditions: SQL[] = [
+        lte(sessions.startedAt, filters.endDate),
+        gte(sessions.endedAt, filters.startDate)
+      ]
+      if (filters.projectId != null) {
+        sessionConditions.push(eq(sessions.projectId, filters.projectId))
+      } else if (filters.clientId != null) {
+        sessionConditions.push(eq(sessions.clientId, filters.clientId))
+      }
+      const rangeSessions = db
+        .select()
+        .from(sessions)
+        .where(and(...sessionConditions))
+        .orderBy(sessions.startedAt)
+        .all()
+
+      // Collect unique session days with their project info
+      const sessionDays = new Map<string, Set<number | null>>() // dateKey -> projectIds
+      for (const s of rangeSessions) {
+        const d = new Date(s.startedAt)
+        const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        if (!sessionDays.has(dateKey)) sessionDays.set(dateKey, new Set())
+        sessionDays.get(dateKey)!.add(s.projectId)
+      }
+
+      // Sort commits by date for efficient lookup
+      const sortedCommits = [...commits].sort((a, b) => a.committedAt.localeCompare(b.committedAt))
+
+      // Build commit date key lookup
+      const commitsByDateKey = new Map<string, typeof commits>()
+      for (const c of sortedCommits) {
+        const d = new Date(c.committedAt)
+        const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        if (!commitsByDateKey.has(dk)) commitsByDateKey.set(dk, [])
+        commitsByDateKey.get(dk)!.push(c)
+      }
+
+      // Get unique commit date keys sorted
+      const commitDateKeys = Array.from(commitsByDateKey.keys()).sort()
+
+      // Group session days by which commit they map to, then spread messages evenly
+      // commitKey -> list of { dateKey, projectIdSet } that share this commit
+      const commitSpans = new Map<string, { dateKey: string; projectIdSet: Set<number | null> }[]>()
+      const inProgressDays: { dateKey: string; projectIdSet: Set<number | null> }[] = []
+
+      for (const [dateKey, projectIdSet] of sessionDays) {
+        const nextCommitDateKey = commitDateKeys.find((ck) => ck >= dateKey)
+        if (nextCommitDateKey) {
+          if (!commitSpans.has(nextCommitDateKey)) commitSpans.set(nextCommitDateKey, [])
+          commitSpans.get(nextCommitDateKey)!.push({ dateKey, projectIdSet })
+        } else {
+          inProgressDays.push({ dateKey, projectIdSet })
+        }
+      }
+
+      // For each commit span, collect messages and split evenly across the days
+      for (const [commitDateKey, spanDays] of commitSpans) {
+        const dayCommits = commitsByDateKey.get(commitDateKey)!
+        // Sort span days chronologically
+        spanDays.sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+
+        // Collect unique messages per project, filtered to relevant projects across all span days
+        const allProjectIds = new Set<number | null>()
+        for (const sd of spanDays) {
+          for (const pid of sd.projectIdSet) allProjectIds.add(pid)
+        }
+
+        const msgsByProject = new Map<string, string[]>()
+        for (const c of dayCommits) {
+          const projName = c.projectId != null ? (projectMap.get(c.projectId) ?? 'Unknown') : 'Unknown'
+          if (c.projectId != null && !allProjectIds.has(c.projectId) && !allProjectIds.has(null)) continue
+          const existing = msgsByProject.get(projName) ?? []
+          if (!existing.includes(c.message)) existing.push(c.message)
+          msgsByProject.set(projName, existing)
+        }
+
+        // Spread messages evenly across span days; if fewer items than days,
+        // duplicate the last item to fill remaining days
+        const numDays = spanDays.length
+        for (const [projName, msgs] of msgsByProject) {
+          const perDay = Math.max(1, Math.ceil(msgs.length / numDays))
+          for (let i = 0; i < numDays; i++) {
+            const slice = msgs.slice(i * perDay, (i + 1) * perDay)
+            // If no items left for this day, carry forward the last message
+            const items = slice.length > 0 ? slice : [msgs[msgs.length - 1]]
+            const sd = spanDays[i]
+            const dateLabel = new Date(sd.dateKey + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+            const key = `${sd.dateKey}|${dateLabel}`
+            if (!dailyGrouped.has(key)) dailyGrouped.set(key, new Map())
+            const dayMap = dailyGrouped.get(key)!
+            const existing = dayMap.get(projName) ?? []
+            for (const m of items) {
+              if (!existing.includes(m)) existing.push(m)
+            }
+            dayMap.set(projName, existing)
+          }
+        }
+      }
+
+      // Days after the last commit — mark as in progress
+      for (const sd of inProgressDays) {
+        const dateLabel = new Date(sd.dateKey + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+        const key = `${sd.dateKey}|${dateLabel}`
+        if (!dailyGrouped.has(key)) dailyGrouped.set(key, new Map())
+        const dayMap = dailyGrouped.get(key)!
+        for (const pid of sd.projectIdSet) {
+          const projName = pid != null ? (projectMap.get(pid) ?? 'Unknown') : 'Unknown'
+          if (!dayMap.has(projName)) dayMap.set(projName, ['(work in progress)'])
+        }
+      }
+    }
+
     // Try AI summarization if requested and API key is available
     if (useAi) {
       const apiKey = credentialService.getApiKey()
       if (apiKey) {
-        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, grouped)
+        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, grouped, opts, dailyGrouped)
         if (aiSummary) return aiSummary
       }
     }
 
-    // Fallback: format git commits directly grouped by project
+    // Fallback: format git commits directly
     log.info(`Building git-only report summary from ${commits.length} commits`)
 
     const lines: string[] = []
-    for (const [projName, msgs] of grouped) {
-      lines.push(`**${projName}**`)
-      for (const msg of msgs) {
-        lines.push(`- ${msg}`)
+
+    if (opts.includeOverall) {
+      if (opts.includeDailyBreakdown) lines.push('## Overall Summary')
+      for (const [projName, msgs] of grouped) {
+        lines.push(`**${projName}**`)
+        for (const msg of msgs) lines.push(`- ${formatCommitWithTicket(msg)}`)
+        lines.push('')
       }
+    }
+
+    if (opts.includeDailyBreakdown) {
+      if (opts.includeOverall) lines.push('')
+      lines.push('## Daily Breakdown')
       lines.push('')
+      const sortedDays = Array.from(dailyGrouped.entries()).sort(([a], [b]) => a.localeCompare(b))
+      for (const [key, dayMap] of sortedDays) {
+        const dateLabel = key.split('|')[1]
+        lines.push(`**${dateLabel}**`)
+        for (const [projName, msgs] of dayMap) {
+          if (dayMap.size > 1) lines.push(`  *${projName}*`)
+          for (const msg of msgs) lines.push(`- ${formatCommitWithTicket(msg)}`)
+        }
+        lines.push('')
+      }
     }
 
     return lines.join('\n').trim()
@@ -252,7 +403,9 @@ export const aiService = {
     apiKey: string,
     filters: { startDate: string; endDate: string },
     totalCount: number,
-    grouped: Map<string, string[]>
+    grouped: Map<string, string[]>,
+    opts: { includeOverall: boolean; includeDailyBreakdown: boolean },
+    dailyGrouped: Map<string, Map<string, string[]>>
   ): Promise<string | null> {
     const startLabel = new Date(filters.startDate).toLocaleDateString()
     const endLabel = new Date(filters.endDate).toLocaleDateString()
@@ -266,20 +419,64 @@ export const aiService = {
       commitLines.push('')
     }
 
+    // Add daily commit data if daily breakdown requested
+    const dailyLines: string[] = []
+    if (opts.includeDailyBreakdown && dailyGrouped.size > 0) {
+      const sortedDays = Array.from(dailyGrouped.entries()).sort(([a], [b]) => a.localeCompare(b))
+      for (const [key, dayMap] of sortedDays) {
+        const dateLabel = key.split('|')[1]
+        dailyLines.push(`Date: ${dateLabel}`)
+        for (const [projName, msgs] of dayMap) {
+          dailyLines.push(`  Project: ${projName}`)
+          for (const msg of msgs) dailyLines.push(`    - ${msg}`)
+        }
+        dailyLines.push('')
+      }
+    }
+
+    const formatInstructions: string[] = []
+    if (opts.includeOverall) {
+      formatInstructions.push(
+        'Write an "## Overall Summary" section:',
+        '1. Start with a 1-2 sentence high-level overview of the work done.',
+        '2. Then break down accomplishments by project, using **Project Name** as headers.',
+        '3. Under each project, list specific accomplishments as bullet points (use "- " prefix).',
+      )
+    }
+    if (opts.includeDailyBreakdown) {
+      formatInstructions.push(
+        '',
+        'Write a "## Daily Breakdown" section:',
+        'For each day, use **Day Label** as a header (e.g. **Mon, Mar 10**).',
+        'Under each day, list what was accomplished as bullet points.',
+        'Group by project if multiple projects were worked on that day.',
+      )
+      if (dailyLines.length > 0) {
+        formatInstructions.push('', 'Commits by date:', ...dailyLines)
+      }
+    }
+
     const prompt = [
       `Summarize the following work done during ${startLabel} to ${endLabel}.`,
       `There were ${totalCount} commits total across ${grouped.size} project${grouped.size !== 1 ? 's' : ''}.`,
       '',
       'Commits by project:',
       ...commitLines,
-      'Write a professional summary of the work accomplished in this format:',
-      '1. Start with a 1-2 sentence high-level overview of the work done.',
-      '2. Then break down accomplishments by project, using **Project Name** as headers.',
-      '3. Under each project, list specific accomplishments as bullet points (use "- " prefix).',
+      ...formatInstructions,
+      '',
+      'IMPORTANT: If any commit messages contain work item numbers, ticket IDs, or issue references (e.g. JIRA-123, #456, FEAT-789, BUG-101):',
+      '- Preserve them in the summary',
+      '- Format each bullet with the ticket ID first: "TICKET-123: description of work done"',
+      '- Group related commits under the same ticket ID when possible',
       'Focus on what was built, fixed, or improved.',
-      'Do not include commit hashes, timestamps, or technical jargon unless relevant.',
-      'Do not include a title or header line — start directly with the overview sentence.'
+      'Do not include commit hashes or timestamps.',
+      opts.includeOverall && !opts.includeDailyBreakdown
+        ? 'Do not include a title or header line — start directly with the overview sentence.'
+        : ''
     ].join('\n')
+
+    // Increase max_tokens for daily breakdown
+    const maxTokens = opts.includeDailyBreakdown ? 1500 : 500
 
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -291,7 +488,7 @@ export const aiService = {
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 500,
+          max_tokens: maxTokens,
           messages: [{ role: 'user', content: prompt }]
         })
       })
@@ -315,6 +512,22 @@ export const aiService = {
       return null
     }
   }
+}
+
+/** Extract ticket/work item ID from a commit message, or return null. */
+function extractTicketId(message: string): string | null {
+  // Match patterns like JIRA-123, FEAT-789, BUG-101, PROJ-1234, #456
+  const match = message.match(/^([A-Z]+-\d+)\b/i) ?? message.match(/\b([A-Z]{2,}-\d+)\b/i) ?? message.match(/^(#\d+)\b/)
+  return match ? match[1].toUpperCase() : null
+}
+
+/** Format a commit message with ticket ID prefix: "TICKET-123: rest of message" */
+function formatCommitWithTicket(message: string): string {
+  const ticket = extractTicketId(message)
+  if (!ticket) return message
+  // Remove the ticket from the message body to avoid duplication, then prepend it
+  const cleaned = message.replace(new RegExp(`\\s*${ticket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[:\\s-]*`, 'i'), '').trim()
+  return cleaned ? `${ticket}: ${cleaned}` : ticket
 }
 
 function buildPrompt(
