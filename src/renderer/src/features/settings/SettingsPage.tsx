@@ -1,13 +1,13 @@
 import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Volume2, VolumeX, LoaderCircle, Shield, X, Plus, Trash2, FlaskConical, AlertTriangle, Pencil } from 'lucide-react'
+import { Volume2, VolumeX, LoaderCircle, Shield, X, Plus, Trash2, FlaskConical, AlertTriangle, Pencil, RotateCcw } from 'lucide-react'
 import type { CustomSecretPattern, PatternTestResult } from '../../../../shared/types/secret-scan'
+import { DEFAULT_AI_SUMMARY_INSTRUCTIONS } from '../../../../shared/constants'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
-import { useDetectGitIdentity, useSetGitIdentity } from '../git/use-git'
 
 const ACCENT_THEMES = [
   { id: 'teal', color: '#14b8a6', label: 'Teal' },
@@ -53,6 +53,9 @@ export function SettingsPage(): React.JSX.Element {
   const [testResult, setTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [confirmRemoveKey, setConfirmRemoveKey] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [aiInstructions, setAiInstructions] = useState(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
+  const [savedAiInstructions, setSavedAiInstructions] = useState(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
+  const [showAiInstructions, setShowAiInstructions] = useState(false)
 
   const storeKey = useMutation({
     mutationFn: async (key: string) => {
@@ -83,13 +86,6 @@ export function SettingsPage(): React.JSX.Element {
     setTestResult(r.success && r.data ? 'success' : 'error')
   }, [])
 
-  // ============= Git Identity =============
-  const { data: detectedIdentity } = useDetectGitIdentity()
-  const setGitIdentity = useSetGitIdentity()
-
-  const [gitName, setGitName] = useState('')
-  const [gitEmail, setGitEmail] = useState('')
-
   // Load settings values
   const { data: settings } = useQuery({
     queryKey: ['settings', 'all'],
@@ -101,15 +97,13 @@ export function SettingsPage(): React.JSX.Element {
 
   useEffect(() => {
     if (settings) {
-      setGitName(settings['git_author_name'] ?? detectedIdentity?.name ?? '')
-      setGitEmail(settings['git_author_email'] ?? detectedIdentity?.email ?? '')
+      const saved = settings['ai_summary_instructions']
+      if (saved) {
+        setAiInstructions(saved)
+        setSavedAiInstructions(saved)
+      }
     }
-  }, [settings, detectedIdentity])
-
-  const saveGitIdentity = useCallback(() => {
-    if (!gitName || !gitEmail) return
-    setGitIdentity.mutate({ name: gitName, email: gitEmail })
-  }, [gitName, gitEmail, setGitIdentity])
+  }, [settings])
 
   // ============= Session Detection =============
   const [idleTimeout, setIdleTimeout] = useState(15)
@@ -455,49 +449,65 @@ export function SettingsPage(): React.JSX.Element {
             )}
           </div>
         </SectionCard>
-      </section>
 
-      {/* Git Identity */}
-      <section>
-        <SectionHeader title="Git Identity" />
         <SectionCard>
-          <p className="mb-3 text-[12px] text-[var(--text-muted)]">
-            Used to filter commits to only your own. Auto-detected from git config.
-          </p>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
-                Name
-              </label>
-              <input
-                type="text"
-                value={gitName}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setGitName(e.target.value)}
-                placeholder="Your Name"
-                className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
-                Email
-              </label>
-              <input
-                type="text"
-                value={gitEmail}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setGitEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-              />
+          <div className="flex items-center justify-between">
+            <label className="text-[12px] font-semibold text-[var(--text-primary)]">
+              AI Summary Instructions
+            </label>
+            <div className="flex gap-1">
+              {showAiInstructions && aiInstructions !== savedAiInstructions && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    saveSetting.mutate({ key: 'ai_summary_instructions', value: aiInstructions })
+                    setSavedAiInstructions(aiInstructions)
+                  }}
+                  className="h-6 bg-[var(--accent)] px-2 text-[11px] text-white hover:brightness-[1.15]"
+                >
+                  Save
+                </Button>
+              )}
+              {showAiInstructions && aiInstructions !== DEFAULT_AI_SUMMARY_INSTRUCTIONS && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setAiInstructions(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
+                    saveSetting.mutate({ key: 'ai_summary_instructions', value: DEFAULT_AI_SUMMARY_INSTRUCTIONS })
+                    setSavedAiInstructions(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
+                    toast.success('Reset to default instructions')
+                  }}
+                  className="h-6 px-2 text-[11px]"
+                >
+                  <RotateCcw className="mr-1 h-3 w-3" />
+                  Reset
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowAiInstructions(!showAiInstructions)}
+                className="h-6 px-2 text-[11px]"
+              >
+                {showAiInstructions ? 'Hide' : 'Configure'}
+              </Button>
             </div>
           </div>
-          <Button
-            size="sm"
-            onClick={saveGitIdentity}
-            disabled={!gitName || !gitEmail}
-            className="mt-3 bg-[var(--accent)] text-white hover:brightness-[1.15]"
-          >
-            Save Identity
-          </Button>
+          {showAiInstructions && (
+            <>
+              <p className="mt-2 mb-2 text-[11px] text-[var(--text-muted)]">
+                Customize the prompt used when generating AI work summaries. Commit data and section
+                formatting are added automatically — these instructions control tone and style.
+              </p>
+              <textarea
+                value={aiInstructions}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setAiInstructions(e.target.value)}
+                rows={8}
+                className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              />
+            </>
+          )}
         </SectionCard>
       </section>
 

@@ -6,6 +6,8 @@ import { sessions } from '../db/schema/sessions'
 import { gitCommits } from '../db/schema/git-commits'
 import { projects } from '../db/schema/projects'
 import { credentialService } from './credential-service'
+import { settingsService } from './settings-service'
+import { DEFAULT_AI_SUMMARY_INSTRUCTIONS } from '../../shared/constants'
 
 interface SummaryResult {
   summary: string
@@ -459,6 +461,9 @@ export const aiService = {
       }
     }
 
+    // Load custom instructions from settings, fall back to default
+    const customInstructions = settingsService.getSetting('ai_summary_instructions') || DEFAULT_AI_SUMMARY_INSTRUCTIONS
+
     const prompt = [
       `Summarize the following work done during ${startLabel} to ${endLabel}.`,
       `There were ${totalCount} commits total${singleProject ? '' : ` across ${grouped.size} projects`}.`,
@@ -467,13 +472,7 @@ export const aiService = {
       ...commitLines,
       ...formatInstructions,
       '',
-      'IMPORTANT: If any commit messages contain work item numbers, ticket IDs, or issue references (e.g. JIRA-123, #456, FEAT-789, BUG-101):',
-      '- Preserve them in the summary',
-      '- Format each bullet with the ticket ID first: "TICKET-123: description of work done"',
-      '- Group related commits under the same ticket ID when possible',
-      'Focus on what was built, fixed, or improved.',
-      'Do not include commit hashes, timestamps, or a top-level title/header.',
-      'Start directly with the ## section headers — do NOT add a # title line.',
+      customInstructions,
       opts.includeOverall && !opts.includeDailyBreakdown
         ? 'Do not include a title or header line — start directly with the overview sentence.'
         : ''
