@@ -201,7 +201,10 @@ export const aiService = {
     }
 
     const rangeStartMs = new Date(filters.startDate).getTime()
-    const rangeEndMs = new Date(filters.endDate).getTime()
+    // Make endDate inclusive of the full day (add 24h minus 1ms)
+    const endDate = new Date(filters.endDate)
+    if (filters.endDate.length === 10) endDate.setHours(23, 59, 59, 999)
+    const rangeEndMs = endDate.getTime()
 
     const commits = db
       .select()
@@ -375,7 +378,7 @@ export const aiService = {
     if (opts.includeOverall) {
       if (opts.includeDailyBreakdown) lines.push('## Overall Summary')
       for (const [, msgs] of grouped) {
-        for (const msg of msgs) lines.push(`- ${formatCommitWithTicket(msg)}`)
+        for (const item of groupByTicket(msgs)) lines.push(`- ${item}`)
       }
       lines.push('')
     }
@@ -389,7 +392,7 @@ export const aiService = {
         const dateLabel = key.split('|')[1]
         lines.push(`**${dateLabel}**`)
         for (const [, msgs] of dayMap) {
-          for (const msg of msgs) lines.push(`- ${formatCommitWithTicket(msg)}`)
+          for (const item of groupByTicket(msgs)) lines.push(`- ${item}`)
         }
         lines.push('')
       }
@@ -414,8 +417,8 @@ export const aiService = {
     const singleProject = grouped.size === 1
     for (const [projName, msgs] of grouped) {
       if (!singleProject) commitLines.push(`Project: ${projName}`)
-      for (const msg of msgs) {
-        commitLines.push(`${singleProject ? '- ' : '  - '}${msg}`)
+      for (const item of groupByTicket(msgs)) {
+        commitLines.push(`${singleProject ? '- ' : '  - '}${item}`)
       }
       if (!singleProject) commitLines.push('')
     }
@@ -429,7 +432,7 @@ export const aiService = {
         dailyLines.push(`Date: ${dateLabel}`)
         for (const [projName, msgs] of dayMap) {
           if (!singleProject) dailyLines.push(`  Project: ${projName}`)
-          for (const msg of msgs) dailyLines.push(`${singleProject ? '  ' : '    '}- ${msg}`)
+          for (const item of groupByTicket(msgs)) dailyLines.push(`${singleProject ? '  ' : '    '}- ${item}`)
         }
         dailyLines.push('')
       }
@@ -441,9 +444,10 @@ export const aiService = {
         'Write an "## Overall Summary" section:',
         '1. Start with a 1-2 sentence high-level overview of the work done.',
         '2. List specific accomplishments as bullet points (use "- " prefix).',
+        '3. Group all work under the same ticket ID into ONE bullet. Summarize the individual commits into a concise description of what was accomplished — do NOT just concatenate commit messages.',
         singleProject
-          ? '3. Do NOT mention the project name anywhere — the reader already knows the project.'
-          : '3. You may mention project names inline if helpful, but do NOT use project name headers or subgroups.',
+          ? '4. Do NOT mention the project name anywhere — the reader already knows the project.'
+          : '4. You may mention project names inline if helpful, but do NOT use project name headers or subgroups.',
       )
     }
     if (opts.includeDailyBreakdown) {
@@ -452,6 +456,7 @@ export const aiService = {
         'Write a "## Daily Breakdown" section:',
         'For each day, use **Day Label** as a header (e.g. **Mon, Mar 10**).',
         'Under each day, list what was accomplished as bullet points (use "- " prefix).',
+        'If a ticket appears multiple times in one day, merge into ONE bullet with a concise summary of what was done — do NOT just list or concatenate the commit messages.',
         singleProject
           ? 'Do NOT mention the project name — just the work item description.'
           : 'You may mention project names inline if helpful, but do NOT use project name headers.',
@@ -465,7 +470,8 @@ export const aiService = {
     const customInstructions = settingsService.getSetting('ai_summary_instructions') || DEFAULT_AI_SUMMARY_INSTRUCTIONS
 
     const prompt = [
-      `Summarize the following work done during ${startLabel} to ${endLabel}.`,
+      `Summarize the following work done by an individual contributor during ${startLabel} to ${endLabel}.`,
+      'Write from a first-person or neutral perspective — do NOT use "the team" or refer to a team. This is one person\'s work.',
       `There were ${totalCount} commits total${singleProject ? '' : ` across ${grouped.size} projects`}.`,
       '',
       `Commits${singleProject ? '' : ' by project'}:`,
@@ -524,13 +530,35 @@ function extractTicketId(message: string): string | null {
   return match ? match[1].toUpperCase() : null
 }
 
-/** Format a commit message with ticket ID prefix: "TICKET-123: rest of message" */
-function formatCommitWithTicket(message: string): string {
-  const ticket = extractTicketId(message)
-  if (!ticket) return message
-  // Remove the ticket from the message body to avoid duplication, then prepend it
-  const cleaned = message.replace(new RegExp(`\\s*${ticket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[:\\s-]*`, 'i'), '').trim()
-  return cleaned ? `${ticket}: ${cleaned}` : ticket
+
+/**
+ * Group commit messages by ticket ID. Messages with the same ticket are merged
+ * into a single entry: "TICKET-123: description1; description2".
+ * Messages without a ticket are returned as-is.
+ */
+function groupByTicket(messages: string[]): string[] {
+  const ticketMap = new Map<string, string[]>()
+  const noTicket: string[] = []
+
+  for (const msg of messages) {
+    const ticket = extractTicketId(msg)
+    if (ticket) {
+      const cleaned = msg.replace(new RegExp(`\\s*${ticket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[:\\s-]*`, 'i'), '').trim()
+      const desc = cleaned || msg
+      const existing = ticketMap.get(ticket) ?? []
+      if (!existing.includes(desc)) existing.push(desc)
+      ticketMap.set(ticket, existing)
+    } else {
+      if (!noTicket.includes(msg)) noTicket.push(msg)
+    }
+  }
+
+  const result: string[] = []
+  for (const [ticket, descs] of ticketMap) {
+    result.push(`${ticket}: ${descs.join('; ')}`)
+  }
+  result.push(...noTicket)
+  return result
 }
 
 function buildPrompt(

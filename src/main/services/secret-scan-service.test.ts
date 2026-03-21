@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm, readFile, stat, utimes } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, stat, utimes } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -32,7 +32,6 @@ vi.mock('./settings-service', () => ({
 }))
 
 // Mock DB
-const mockDbRows: Record<string, unknown[]> = {}
 const mockInsertValues: unknown[] = []
 const mockUpdateSets: unknown[] = []
 

@@ -143,9 +143,9 @@ async function discoverJsonlFiles(claudeDir: string): Promise<string[]> {
   const projectsDir = join(claudeDir, 'projects')
   const files: string[] = []
 
-  let projectDirs: Awaited<ReturnType<typeof readdir>>
+  let projectDirs: import('node:fs').Dirent<string>[]
   try {
-    projectDirs = await readdir(projectsDir, { withFileTypes: true })
+    projectDirs = await readdir(projectsDir, { withFileTypes: true, encoding: 'utf8' })
   } catch {
     log.warn(`secret-scan: Failed to read projects directory: ${projectsDir}`)
     return files
@@ -161,7 +161,7 @@ async function discoverJsonlFiles(claudeDir: string): Promise<string[]> {
 
     const projectPath = join(projectsDir, dir.name)
     try {
-      const entries = await readdir(projectPath, { withFileTypes: true })
+      const entries = await readdir(projectPath, { withFileTypes: true, encoding: 'utf8' })
       for (const entry of entries) {
         if (entry.isFile() && entry.name.endsWith('.jsonl')) {
           files.push(join(projectPath, entry.name))
@@ -169,14 +169,14 @@ async function discoverJsonlFiles(claudeDir: string): Promise<string[]> {
         if (entry.isDirectory()) {
           try {
             const subDir = join(projectPath, entry.name)
-            const subEntries = await readdir(subDir, { withFileTypes: true })
+            const subEntries = await readdir(subDir, { withFileTypes: true, encoding: 'utf8' })
             for (const sub of subEntries) {
               if (sub.isFile() && sub.name.endsWith('.jsonl')) {
                 files.push(join(subDir, sub.name))
               }
               if (sub.isDirectory() && sub.name === 'subagents') {
                 try {
-                  const saEntries = await readdir(join(subDir, 'subagents'), { withFileTypes: true })
+                  const saEntries = await readdir(join(subDir, 'subagents'), { withFileTypes: true, encoding: 'utf8' })
                   for (const sa of saEntries) {
                     if (sa.isFile() && sa.name.endsWith('.jsonl')) {
                       files.push(join(subDir, 'subagents', sa.name))

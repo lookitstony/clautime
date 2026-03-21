@@ -40,13 +40,7 @@ function timeStringToIso(timeStr: string, referenceIso: string): string | null {
   return d.toISOString()
 }
 
-/** Format ISO string to HH:MM:SS for input */
-function isoToTimeInput(isoString: string): string {
-  const d = new Date(isoString)
-  return [d.getHours(), d.getMinutes(), d.getSeconds()]
-    .map((v) => String(v).padStart(2, '0'))
-    .join(':')
-}
+
 
 function formatLatency(seconds: number | null): string {
   if (seconds == null) return '—'
@@ -144,12 +138,6 @@ export function SessionDetailPanel({
   )
 
   // Edit time handlers
-  const startEditTime = useCallback(() => {
-    setEditStart(isoToTimeInput(session.startedAt))
-    setEditEnd(isoToTimeInput(session.endedAt))
-    setEditError(null)
-    setIsEditingTime(true)
-  }, [session.startedAt, session.endedAt])
 
   const computeEditDuration = (): number | null => {
     const startIso = timeStringToIso(editStart, session.startedAt)

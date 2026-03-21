@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Activity, MonitorUp, MonitorOff } from 'lucide-react'
 import {
   Dialog,
@@ -30,7 +30,6 @@ export function LivePage(): React.JSX.Element {
   const [allWidgetsOpen, setAllWidgetsOpen] = useState(false)
   const activeTimer = useLiveStore((s) => s.activeTimer)
   const isStale = useLiveStore((s) => s.isStale)
-  const stopTimer = useLiveStore((s) => s.stopTimer)
   const discardTimer = useLiveStore((s) => s.discardTimer)
   const createSession = useCreateSession()
 

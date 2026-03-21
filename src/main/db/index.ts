@@ -1,6 +1,7 @@
 import { join } from 'path'
 import { existsSync, renameSync } from 'fs'
 import { app } from 'electron'
+import { is } from '@electron-toolkit/utils'
 import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
@@ -63,8 +64,10 @@ export function initializeDatabase(): void {
 
   db = drizzle(sqlite, { schema })
 
-  // Resolve migrations folder — works in both dev and packaged builds
-  const migrationsFolder = join(__dirname, '../../src/main/db/migrations')
+  // Resolve migrations folder — dev uses source path, packaged uses extraResources
+  const migrationsFolder = is.dev
+    ? join(__dirname, '../../src/main/db/migrations')
+    : join(process.resourcesPath, 'migrations')
   log.info(`Running migrations from: ${migrationsFolder}`)
 
   migrate(db, { migrationsFolder })

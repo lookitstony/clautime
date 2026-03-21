@@ -1,5 +1,4 @@
 import { useState, useCallback, type ChangeEvent, type FormEvent } from 'react'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,7 +19,7 @@ import {
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { useCreateSession } from './use-sessions'
-import type { Client, Project } from '../../../../shared/types/client-project'
+import type { Project } from '../../../../shared/types/client-project'
 
 interface ManualBlockFormProps {
   open: boolean

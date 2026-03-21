@@ -9,6 +9,7 @@ const baseProps = {
   totalPrompts: 1234,
   totalTokens: 125000,
   clientCount: 0,
+  commitSessions: 0,
   isLoading: false
 }
 

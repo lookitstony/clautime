@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { GitCommit, GitScanResult, GitIdentity } from '../../../../shared/types/git'
+
 
 export function useGitCommitsForSession(sessionId: number | null) {
   return useQuery({

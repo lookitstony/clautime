@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Minus, Square, X, Copy, Sun, Moon, ArrowDownToLine } from 'lucide-react'
+import appIcon from '../../../../../resources/icon.png'
 
 function getSystemTheme(): string {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -36,6 +37,7 @@ export function TitleBar(): React.JSX.Element {
     >
       {/* Left: app name */}
       <div className="flex items-center gap-2 pl-3">
+        <img src={appIcon} alt="" className="h-4 w-4" />
         <span className="text-[11px] font-medium text-[var(--text-muted)]">
           ClauTime
         </span>

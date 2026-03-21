@@ -7,7 +7,7 @@ log.transports.file.level = 'info'
 log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
 log.transports.console.level = 'debug'
 
-import { app, shell, BrowserWindow, ipcMain, dialog, globalShortcut } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -56,7 +56,7 @@ function createWindow(): void {
     show: false,
     frame: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       // sandbox: false required for @electron-toolkit/preload Node.js APIs

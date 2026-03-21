@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access, constants } from 'node:fs/promises'
 import { join } from 'node:path'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { gitCommits } from '../db/schema/git-commits'
@@ -117,7 +117,7 @@ export const gitService = {
    */
   async detectGitIdentity(dirPath?: string): Promise<{ name: string; email: string } | null> {
     try {
-      const opts = dirPath ? { cwd: dirPath } : undefined
+      const opts = dirPath ? { cwd: dirPath, encoding: 'utf8' as const } : { encoding: 'utf8' as const }
       const [nameResult, emailResult] = await Promise.all([
         execFileAsync('git', ['config', 'user.name'], opts),
         execFileAsync('git', ['config', 'user.email'], opts)

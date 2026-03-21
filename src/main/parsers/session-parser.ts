@@ -76,9 +76,9 @@ export async function discoverSessionFiles(
   const projectsDir = join(claudeDir, 'projects')
   const files: string[] = []
 
-  let projectDirs: Awaited<ReturnType<typeof readdir>>
+  let projectDirs: import('node:fs').Dirent<string>[]
   try {
-    projectDirs = await readdir(projectsDir, { withFileTypes: true })
+    projectDirs = await readdir(projectsDir, { withFileTypes: true, encoding: 'utf8' })
   } catch (err) {
     log.warn(`Failed to read projects directory: ${projectsDir}`, err)
     return files
@@ -92,7 +92,7 @@ export async function discoverSessionFiles(
 
     const projectPath = join(projectsDir, dir.name)
     try {
-      const entries = await readdir(projectPath, { withFileTypes: true })
+      const entries = await readdir(projectPath, { withFileTypes: true, encoding: 'utf8' })
       for (const entry of entries) {
         if (entry.isFile() && entry.name.endsWith('.jsonl')) {
           files.push(join(projectPath, entry.name))
@@ -233,9 +233,9 @@ async function collectSubagentData(mainFilePath: string, sessionId: string): Pro
   const progressTimestamps: string[] = []
   const sessionDir = join(dirname(mainFilePath), sessionId, 'subagents')
 
-  let entries: Awaited<ReturnType<typeof readdir>>
+  let entries: import('node:fs').Dirent<string>[]
   try {
-    entries = await readdir(sessionDir, { withFileTypes: true })
+    entries = await readdir(sessionDir, { withFileTypes: true, encoding: 'utf8' })
   } catch {
     return { tokenUsage, messages, progressTimestamps }
   }

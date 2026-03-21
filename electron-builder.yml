@@ -10,16 +10,22 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{drizzle.config.ts,components.json}'
+extraResources:
+  - from: src/main/db/migrations
+    to: migrations
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**
 win:
   executableName: ClauTime
+  icon: build/icon.ico
+  signAndEditExecutable: false
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  runAfterFinish: true
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false

@@ -13,7 +13,7 @@ import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
-import { decodeProjectPath, encodeProjectPath } from './session-detector'
+import { encodeProjectPath } from './session-detector'
 import { widgetService } from './widget-service'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../shared/types/live'
 
@@ -295,9 +295,9 @@ export const liveMonitorService = {
     log.debug(`getLatestPromptTimestamps: scanning ${projectsDir}`)
     const result = new Map<string, { lastPromptAt: string; isProcessing: boolean }>()
 
-    let projectDirs: Awaited<ReturnType<typeof readdir>>
+    let projectDirs: import('node:fs').Dirent<string>[]
     try {
-      projectDirs = await readdir(projectsDir, { withFileTypes: true })
+      projectDirs = await readdir(projectsDir, { withFileTypes: true, encoding: 'utf8' })
     } catch {
       return result
     }
@@ -321,7 +321,7 @@ export const liveMonitorService = {
 
       const projectPath = join(projectsDir, dir.name)
       try {
-        const entries = await readdir(projectPath, { withFileTypes: true })
+        const entries = await readdir(projectPath, { withFileTypes: true, encoding: 'utf8' })
         const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
 
         // Also scan subagent JSONL files (in {conversation-id}/subagents/ dirs).
@@ -331,7 +331,7 @@ export const liveMonitorService = {
           if (!entry.isDirectory()) continue
           try {
             const subagentsDir = join(projectPath, entry.name, 'subagents')
-            const subEntries = await readdir(subagentsDir, { withFileTypes: true })
+            const subEntries = await readdir(subagentsDir, { withFileTypes: true, encoding: 'utf8' })
             for (const sub of subEntries) {
               if (sub.isFile() && sub.name.endsWith('.jsonl')) {
                 const composedName = join(entry.name, 'subagents', sub.name)

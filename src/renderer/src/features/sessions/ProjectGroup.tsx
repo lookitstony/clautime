@@ -5,7 +5,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from '@/components/ui/collapsible'
-import { Badge } from '@/components/ui/badge'
 import { formatDuration, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 

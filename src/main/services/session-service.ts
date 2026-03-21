@@ -876,8 +876,6 @@ export const sessionService = {
     const dailyMap = new Map<string, { workMinutes: number; idleMinutes: number; totalMinutes: number }>()
 
     for (const session of sessionRows) {
-      const startMs = new Date(session.startedAt).getTime()
-      const endMs = new Date(session.endedAt).getTime()
       const date = session.startedAt.slice(0, 10)
 
       // Get messages for this session's time window and source file
