@@ -361,11 +361,50 @@ export const aiService = {
       }
     }
 
+    // Check for cached session AI summaries to reduce token usage
+    const sessionConditionsForCache: SQL[] = [
+      lte(sessions.startedAt, filters.endDate + 'T23:59:59.999Z'),
+      gte(sessions.endedAt, filters.startDate)
+    ]
+    if (filters.projectId != null) {
+      sessionConditionsForCache.push(eq(sessions.projectId, filters.projectId))
+    } else if (filters.clientId != null) {
+      sessionConditionsForCache.push(eq(sessions.clientId, filters.clientId))
+    }
+    const rangeSessions2 = db
+      .select({ id: sessions.id, projectId: sessions.projectId })
+      .from(sessions)
+      .where(and(...sessionConditionsForCache))
+      .all()
+
+    // Collect cached summaries keyed by project
+    const cachedByProject = new Map<string, string[]>()
+    if (rangeSessions2.length > 0) {
+      const sessionIds = rangeSessions2.map((s) => s.id)
+      const cached = db
+        .select()
+        .from(aiSummaries)
+        .where(inArray(aiSummaries.sessionId, sessionIds))
+        .all()
+
+      if (cached.length > 0) {
+        const sessionProjectMap = new Map(rangeSessions2.map((s) => [s.id, s.projectId]))
+        for (const c of cached) {
+          const projId = sessionProjectMap.get(c.sessionId)
+          const projName = projId != null ? (projectMap.get(projId) ?? 'Unknown') : 'Unknown'
+          const existing = cachedByProject.get(projName) ?? []
+          if (!existing.includes(c.summary)) existing.push(c.summary)
+          cachedByProject.set(projName, existing)
+        }
+        log.info(`Report summary: using ${cached.length} cached session summaries (${rangeSessions2.length} total sessions)`)
+      }
+    }
+
     // Try AI summarization if requested and API key is available
     if (useAi) {
       const apiKey = credentialService.getApiKey()
       if (apiKey) {
-        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, grouped, opts, dailyGrouped)
+        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, grouped, opts, dailyGrouped, cachedByProject)
         if (aiSummary) return aiSummary
       }
     }
@@ -408,13 +447,29 @@ export const aiService = {
     totalCount: number,
     grouped: Map<string, string[]>,
     opts: { includeOverall: boolean; includeDailyBreakdown: boolean },
-    dailyGrouped: Map<string, Map<string, string[]>>
+    dailyGrouped: Map<string, Map<string, string[]>>,
+    cachedByProject?: Map<string, string[]>
   ): Promise<string | null> {
     const startLabel = new Date(filters.startDate).toLocaleDateString()
     const endLabel = new Date(filters.endDate).toLocaleDateString()
 
+    const hasCached = cachedByProject && cachedByProject.size > 0
     const commitLines: string[] = []
     const singleProject = grouped.size === 1
+
+    // If we have cached session summaries, include them as pre-summarized context
+    if (hasCached) {
+      commitLines.push('Previously generated session summaries:')
+      for (const [projName, summaries] of cachedByProject) {
+        if (!singleProject) commitLines.push(`Project: ${projName}`)
+        for (const s of summaries) {
+          commitLines.push(`${singleProject ? '- ' : '  - '}${s}`)
+        }
+      }
+      commitLines.push('')
+      commitLines.push('Raw commits (for any sessions not yet summarized):')
+    }
+
     for (const [projName, msgs] of grouped) {
       if (!singleProject) commitLines.push(`Project: ${projName}`)
       for (const item of groupByTicket(msgs)) {
@@ -473,6 +528,7 @@ export const aiService = {
       `Summarize the following work done by an individual contributor during ${startLabel} to ${endLabel}.`,
       'Write from a first-person or neutral perspective — do NOT use "the team" or refer to a team. This is one person\'s work.',
       `There were ${totalCount} commits total${singleProject ? '' : ` across ${grouped.size} projects`}.`,
+      hasCached ? 'Some sessions already have AI-generated summaries — prefer those over raw commits when available, but use commits to fill gaps.' : '',
       '',
       `Commits${singleProject ? '' : ' by project'}:`,
       ...commitLines,
