@@ -7,6 +7,8 @@ export const clients = sqliteTable(
     name: text('name').notNull().unique(),
     color: text('color').notNull(),
     billableRate: real('billable_rate'),
+    email: text('email'),
+    stripeCustomerId: text('stripe_customer_id'),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at')
       .notNull()

@@ -85,6 +85,13 @@
       "when": 1773184569763,
       "tag": "0011_cultured_unicorn",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1774400000000,
+      "tag": "0012_stripe_invoicing",
+      "breakpoints": true
     }
   ]
 }

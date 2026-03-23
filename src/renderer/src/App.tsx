@@ -15,6 +15,7 @@ import { SettingsPage } from '@/features/settings/SettingsPage'
 import { ReportsPage } from '@/features/reports/ReportsPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { LivePage } from '@/features/live/LivePage'
+import { InvoicingPage } from '@/features/invoicing/InvoicingPage'
 import { useIsFirstLaunch } from '@/features/onboarding/use-onboarding'
 import { queryClient } from '@/lib/query-client'
 import { useLiveStore } from '@/stores/use-live-store'
@@ -146,6 +147,10 @@ const router = createMemoryRouter([
       {
         path: 'clients',
         element: <ClientsPage />
+      },
+      {
+        path: 'invoicing',
+        element: <InvoicingPage />
       },
       {
         path: 'settings',

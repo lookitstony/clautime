@@ -110,7 +110,7 @@ const api = {
     generateReportSummary: (
       filters: { startDate: string; endDate: string; projectId?: number; clientId?: number },
       useAi?: boolean,
-      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean }
+      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean; brief?: boolean }
     ): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('ai:generateReportSummary', filters, useAi, summaryOptions)
   },
@@ -201,6 +201,28 @@ const api = {
     onOpenStopDialog: (callback: (projectId: number) => void) => {
       ipcRenderer.on('live:openStopDialog', (_event, projectId) => callback(projectId))
     }
+  },
+  invoice: {
+    hasStripeKey: (): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('invoice:hasStripeKey'),
+    isTestMode: (): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('invoice:isTestMode'),
+    storeStripeKey: (key: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('invoice:storeStripeKey', key),
+    removeStripeKey: (): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('invoice:removeStripeKey'),
+    testConnection: (): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('invoice:testConnection'),
+    syncCustomer: (clientId: number): Promise<IpcResult<import('../shared/types/invoice').StripeCustomerInfo>> =>
+      ipcRenderer.invoke('invoice:syncCustomer', clientId),
+    createDraftInvoice: (request: import('../shared/types/invoice').CreateInvoiceRequest): Promise<IpcResult<import('../shared/types/invoice').DraftInvoice>> =>
+      ipcRenderer.invoke('invoice:createDraftInvoice', request),
+    sendInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
+      ipcRenderer.invoke('invoice:sendInvoice', invoiceId),
+    getInvoiceStatus: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
+      ipcRenderer.invoke('invoice:getInvoiceStatus', invoiceId),
+    voidInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
+      ipcRenderer.invoke('invoice:voidInvoice', invoiceId)
   },
   secretScan: {
     run: (): Promise<IpcResult<import('../shared/types/secret-scan').SecretScanResult>> =>

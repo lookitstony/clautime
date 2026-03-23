@@ -5,6 +5,10 @@ export interface Client {
   color: string
   /** Hourly rate in dollars. Null = no rate set. */
   billableRate: number | null
+  /** Client email for invoicing. */
+  email: string | null
+  /** Stripe Customer ID — managed by stripe-service. */
+  stripeCustomerId: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -17,6 +21,8 @@ export interface NewClient {
   color?: string
   /** Hourly rate in dollars. */
   billableRate?: number | null
+  /** Client email for invoicing. */
+  email?: string | null
 }
 
 /** Data for updating an existing client. All fields optional. */
@@ -24,6 +30,7 @@ export interface UpdateClient {
   name?: string
   color?: string
   billableRate?: number | null
+  email?: string | null
   isActive?: boolean
 }
 

@@ -23,6 +23,8 @@ function toClient(row: typeof clients.$inferSelect): Client {
     name: row.name,
     color: row.color,
     billableRate: row.billableRate ?? null,
+    email: row.email ?? null,
+    stripeCustomerId: row.stripeCustomerId ?? null,
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
@@ -80,6 +82,7 @@ export const clientProjectService = {
         name: data.name,
         color,
         billableRate: data.billableRate ?? null,
+        email: data.email ?? null,
         createdAt: now,
         updatedAt: now
       })
@@ -104,6 +107,7 @@ export const clientProjectService = {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.color !== undefined && { color: data.color }),
         ...(data.billableRate !== undefined && { billableRate: data.billableRate }),
+        ...(data.email !== undefined && { email: data.email }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         updatedAt: now
       })

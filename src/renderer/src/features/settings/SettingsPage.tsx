@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Volume2, VolumeX, LoaderCircle, Shield, X, Plus, Trash2, FlaskConical, AlertTriangle, Pencil, RotateCcw } from 'lucide-react'
 import type { CustomSecretPattern, PatternTestResult } from '../../../../shared/types/secret-scan'
-import { DEFAULT_AI_SUMMARY_INSTRUCTIONS } from '../../../../shared/constants'
+import { DEFAULT_AI_SUMMARY_INSTRUCTIONS, DEFAULT_AI_BRIEF_INSTRUCTIONS } from '../../../../shared/constants'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -56,6 +56,9 @@ export function SettingsPage(): React.JSX.Element {
   const [aiInstructions, setAiInstructions] = useState(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
   const [savedAiInstructions, setSavedAiInstructions] = useState(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
   const [showAiInstructions, setShowAiInstructions] = useState(false)
+  const [aiBriefInstructions, setAiBriefInstructions] = useState(DEFAULT_AI_BRIEF_INSTRUCTIONS)
+  const [savedAiBriefInstructions, setSavedAiBriefInstructions] = useState(DEFAULT_AI_BRIEF_INSTRUCTIONS)
+  const [showAiBriefInstructions, setShowAiBriefInstructions] = useState(false)
 
   const storeKey = useMutation({
     mutationFn: async (key: string) => {
@@ -86,6 +89,57 @@ export function SettingsPage(): React.JSX.Element {
     setTestResult(r.success && r.data ? 'success' : 'error')
   }, [])
 
+  // ============= Stripe Configuration =============
+  const { data: hasStripeKey } = useQuery({
+    queryKey: ['stripe', 'hasKey'],
+    queryFn: async () => {
+      const r = await window.api.invoice.hasStripeKey()
+      return r.success ? r.data : false
+    }
+  })
+
+  const { data: isStripeTestMode } = useQuery({
+    queryKey: ['stripe', 'testMode'],
+    queryFn: async () => {
+      const r = await window.api.invoice.isTestMode()
+      return r.success ? r.data : false
+    },
+    enabled: !!hasStripeKey
+  })
+
+  const [stripeKeyInput, setStripeKeyInput] = useState('')
+  const [stripeTestResult, setStripeTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [confirmRemoveStripeKey, setConfirmRemoveStripeKey] = useState(false)
+
+  const storeStripeKey = useMutation({
+    mutationFn: async (key: string) => {
+      const r = await window.api.invoice.storeStripeKey(key)
+      if (!r.success) throw new Error(r.error.message)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stripe'] })
+      setStripeKeyInput('')
+      toast.success('Stripe API key saved securely')
+    }
+  })
+
+  const removeStripeKey = useMutation({
+    mutationFn: async () => {
+      const r = await window.api.invoice.removeStripeKey()
+      if (!r.success) throw new Error(r.error.message)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stripe'] })
+      toast.success('Stripe API key removed')
+    }
+  })
+
+  const testStripeConnection = useCallback(async () => {
+    setStripeTestResult('testing')
+    const r = await window.api.invoice.testConnection()
+    setStripeTestResult(r.success && r.data ? 'success' : 'error')
+  }, [])
+
   // Load settings values
   const { data: settings } = useQuery({
     queryKey: ['settings', 'all'],
@@ -101,6 +155,11 @@ export function SettingsPage(): React.JSX.Element {
       if (saved) {
         setAiInstructions(saved)
         setSavedAiInstructions(saved)
+      }
+      const savedBrief = settings['ai_brief_instructions']
+      if (savedBrief) {
+        setAiBriefInstructions(savedBrief)
+        setSavedAiBriefInstructions(savedBrief)
       }
     }
   }, [settings])
@@ -508,6 +567,134 @@ export function SettingsPage(): React.JSX.Element {
               />
             </>
           )}
+        </SectionCard>
+
+        <SectionCard>
+          <div className="flex items-center justify-between">
+            <label className="text-[12px] font-semibold text-[var(--text-primary)]">
+              AI Brief Instructions
+            </label>
+            <div className="flex gap-1">
+              {showAiBriefInstructions && aiBriefInstructions !== savedAiBriefInstructions && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    saveSetting.mutate({ key: 'ai_brief_instructions', value: aiBriefInstructions })
+                    setSavedAiBriefInstructions(aiBriefInstructions)
+                  }}
+                  className="h-6 bg-[var(--accent)] px-2 text-[11px] text-white hover:brightness-[1.15]"
+                >
+                  Save
+                </Button>
+              )}
+              {showAiBriefInstructions && aiBriefInstructions !== DEFAULT_AI_BRIEF_INSTRUCTIONS && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setAiBriefInstructions(DEFAULT_AI_BRIEF_INSTRUCTIONS)
+                    saveSetting.mutate({ key: 'ai_brief_instructions', value: DEFAULT_AI_BRIEF_INSTRUCTIONS })
+                    setSavedAiBriefInstructions(DEFAULT_AI_BRIEF_INSTRUCTIONS)
+                    toast.success('Reset to default brief instructions')
+                  }}
+                  className="h-6 px-2 text-[11px]"
+                >
+                  <RotateCcw className="mr-1 h-3 w-3" />
+                  Reset
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowAiBriefInstructions(!showAiBriefInstructions)}
+                className="h-6 px-2 text-[11px]"
+              >
+                {showAiBriefInstructions ? 'Hide' : 'Configure'}
+              </Button>
+            </div>
+          </div>
+          {showAiBriefInstructions && (
+            <>
+              <p className="mt-2 mb-2 text-[11px] text-[var(--text-muted)]">
+                Customize the prompt used when generating brief summaries for timesheets.
+                Controls audience, tone, and how work is described to non-technical readers.
+              </p>
+              <textarea
+                value={aiBriefInstructions}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setAiBriefInstructions(e.target.value)}
+                rows={8}
+                className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              />
+            </>
+          )}
+        </SectionCard>
+      </section>
+
+      {/* Stripe Invoicing */}
+      <section>
+        <SectionHeader title="Invoicing" />
+        <SectionCard>
+          <p className="mb-3 text-[12px] text-[var(--text-muted)]">
+            Add a Stripe secret key to enable invoicing directly from ClauTime.
+            Uses Stripe Invoicing to create, send, and track invoice payments.
+          </p>
+          <div className="space-y-2">
+            <label className="text-[12px] font-semibold text-[var(--text-primary)]">
+              Stripe Secret Key
+            </label>
+            {hasStripeKey ? (
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[13px] text-[var(--text-secondary)]">
+                  {isStripeTestMode ? 'sk_test_' : 'sk_live_'}•••••••••••••••
+                </span>
+                {isStripeTestMode && (
+                  <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                    TEST MODE
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={testStripeConnection}
+                  className="text-[11px]"
+                >
+                  {stripeTestResult === 'testing' ? 'Testing...' : 'Test Connection'}
+                </Button>
+                {stripeTestResult === 'success' && (
+                  <span className="text-[11px] text-[var(--accent)]">Valid</span>
+                )}
+                {stripeTestResult === 'error' && (
+                  <span className="text-[11px] text-[var(--destructive)]">Invalid</span>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setConfirmRemoveStripeKey(true)}
+                  className="text-[11px] text-[var(--destructive)]"
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={stripeKeyInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setStripeKeyInput(e.target.value)}
+                  placeholder="sk_live_... or sk_test_..."
+                  className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => stripeKeyInput && storeStripeKey.mutate(stripeKeyInput)}
+                  disabled={!stripeKeyInput || !stripeKeyInput.startsWith('sk_')}
+                  className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                >
+                  Save Key
+                </Button>
+              </div>
+            )}
+          </div>
         </SectionCard>
       </section>
 
@@ -1340,6 +1527,20 @@ export function SettingsPage(): React.JSX.Element {
           </div>
         </SectionCard>
       </section>
+
+      <ConfirmDialog
+        open={confirmRemoveStripeKey}
+        title="Remove Stripe Key"
+        description="Remove your Stripe API key? You will need to re-enter it to send invoices."
+        confirmLabel="Remove"
+        cancelLabel="Keep"
+        variant="destructive"
+        onConfirm={() => {
+          setConfirmRemoveStripeKey(false)
+          removeStripeKey.mutate()
+        }}
+        onCancel={() => setConfirmRemoveStripeKey(false)}
+      />
 
       <ConfirmDialog
         open={confirmRemoveKey}

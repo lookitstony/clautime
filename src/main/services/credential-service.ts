@@ -85,5 +85,70 @@ export const credentialService = {
    */
   setAiMethod(method: string): void {
     settingsService.setSetting('ai_method', method)
+  },
+
+  // ── Stripe API Key ──
+
+  /**
+   * Store a Stripe secret key securely.
+   */
+  storeStripeKey(key: string): void {
+    if (!key.startsWith('sk_live_') && !key.startsWith('sk_test_')) {
+      throw new Error('Stripe key must start with sk_live_ or sk_test_')
+    }
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(key)
+      const base64 = encrypted.toString('base64')
+      settingsService.setSetting('stripe_api_key', `${ENCRYPTED_KEY_PREFIX}${base64}`)
+      log.info('Stripe API key stored securely via safeStorage')
+    } else {
+      settingsService.setSetting('stripe_api_key', key)
+      log.warn('safeStorage unavailable — Stripe API key stored without encryption')
+    }
+  },
+
+  /**
+   * Retrieve the stored Stripe secret key.
+   */
+  getStripeKey(): string | null {
+    const stored = settingsService.getSetting('stripe_api_key')
+    if (!stored) return null
+
+    if (stored.startsWith(ENCRYPTED_KEY_PREFIX)) {
+      try {
+        const base64 = stored.slice(ENCRYPTED_KEY_PREFIX.length)
+        const buffer = Buffer.from(base64, 'base64')
+        return safeStorage.decryptString(buffer)
+      } catch (error) {
+        log.error('Failed to decrypt Stripe API key:', error)
+        return null
+      }
+    }
+
+    return stored
+  },
+
+  /**
+   * Remove the stored Stripe API key.
+   */
+  removeStripeKey(): void {
+    settingsService.setSetting('stripe_api_key', '')
+    log.info('Stripe API key removed')
+  },
+
+  /**
+   * Check if a Stripe API key is stored.
+   */
+  hasStripeKey(): boolean {
+    const stored = settingsService.getSetting('stripe_api_key')
+    return !!stored
+  },
+
+  /**
+   * Check if the stored Stripe key is a test mode key.
+   */
+  isStripeTestMode(): boolean {
+    const key = this.getStripeKey()
+    return key ? key.startsWith('sk_test_') : false
   }
 }

@@ -4,8 +4,8 @@ import { SessionFilterBar } from './SessionFilterBar'
 import { useFilterStore } from '@/stores/use-filter-store'
 
 const mockClients = [
-  { id: 1, name: 'Acme Corp', color: 'var(--project-1)', billableRate: null, isActive: true, createdAt: '', updatedAt: '' },
-  { id: 2, name: 'Beta Inc', color: 'var(--project-2)', billableRate: null, isActive: true, createdAt: '', updatedAt: '' }
+  { id: 1, name: 'Acme Corp', color: 'var(--project-1)', billableRate: null, email: null, stripeCustomerId: null, isActive: true, createdAt: '', updatedAt: '' },
+  { id: 2, name: 'Beta Inc', color: 'var(--project-2)', billableRate: null, email: null, stripeCustomerId: null, isActive: true, createdAt: '', updatedAt: '' }
 ]
 
 const mockProjects = [

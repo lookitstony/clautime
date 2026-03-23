@@ -21,6 +21,7 @@ function renderWithRouter(initialPath = '/') {
           { path: 'reports', element: <div>Reports</div> },
           { path: 'analytics', element: <div>Analytics</div> },
           { path: 'clients', element: <div>Clients</div> },
+          { path: 'invoicing', element: <div>Invoicing</div> },
           { path: 'settings', element: <div>Settings</div> }
         ]
       }
@@ -37,10 +38,10 @@ describe('ActivityBar', () => {
     expect(nav).toBeInTheDocument()
   })
 
-  it('renders all 6 navigation buttons', () => {
+  it('renders all 7 navigation buttons', () => {
     renderWithRouter()
     const buttons = screen.getAllByRole('button')
-    expect(buttons).toHaveLength(6)
+    expect(buttons).toHaveLength(7)
   })
 
   it('renders buttons with correct labels', () => {
@@ -50,6 +51,7 @@ describe('ActivityBar', () => {
     expect(screen.getByLabelText('Reports')).toBeInTheDocument()
     expect(screen.getByLabelText('Analytics')).toBeInTheDocument()
     expect(screen.getByLabelText('Projects')).toBeInTheDocument()
+    expect(screen.getByLabelText('Invoicing')).toBeInTheDocument()
     expect(screen.getByLabelText('Settings')).toBeInTheDocument()
   })
 

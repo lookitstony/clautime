@@ -13,6 +13,7 @@ import type {
 import type { ReportFilters, ReportFormat, ReportResult } from '../shared/types/report'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../shared/types/live'
 import type { SecretScanResult, SecretFinding, SecretScanSummary, CustomSecretPattern, PatternTestResult } from '../shared/types/secret-scan'
+import type { StripeCustomerInfo, CreateInvoiceRequest, DraftInvoice, InvoiceStatus } from '../shared/types/invoice'
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
@@ -74,6 +75,7 @@ interface AiApi {
   }, useAi?: boolean, summaryOptions?: {
     includeOverall?: boolean
     includeDailyBreakdown?: boolean
+    brief?: boolean
   }): Promise<IpcResult<string | null>>
 }
 
@@ -146,6 +148,19 @@ interface ProjectsApi {
   attributeSessions(): Promise<IpcResult<number>>
 }
 
+interface InvoiceApi {
+  hasStripeKey(): Promise<IpcResult<boolean>>
+  isTestMode(): Promise<IpcResult<boolean>>
+  storeStripeKey(key: string): Promise<IpcResult<void>>
+  removeStripeKey(): Promise<IpcResult<void>>
+  testConnection(): Promise<IpcResult<boolean>>
+  syncCustomer(clientId: number): Promise<IpcResult<StripeCustomerInfo>>
+  createDraftInvoice(request: CreateInvoiceRequest): Promise<IpcResult<DraftInvoice>>
+  sendInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
+  getInvoiceStatus(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
+  voidInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
+}
+
 interface SecretScanApi {
   run(): Promise<IpcResult<SecretScanResult>>
   cancel(): Promise<IpcResult<void>>
@@ -171,6 +186,7 @@ interface Api {
   updater: UpdaterApi
   git: GitApi
   ai: AiApi
+  invoice: InvoiceApi
   secretScan: SecretScanApi
   window: WindowApi
 }

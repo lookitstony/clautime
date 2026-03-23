@@ -6,6 +6,7 @@ import {
   FileBarChart,
   BarChart3,
   FolderKanban,
+  Receipt,
   Settings,
   type LucideIcon
 } from 'lucide-react'
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { icon: FileBarChart, label: 'Reports', route: '/reports' },
   { icon: BarChart3, label: 'Analytics', route: '/analytics' },
   { icon: FolderKanban, label: 'Projects', route: '/clients' },
+  { icon: Receipt, label: 'Invoicing', route: '/invoicing' },
   { icon: Settings, label: 'Settings', route: '/settings' }
 ]
 
