@@ -158,9 +158,8 @@ export const stripeService = {
         customer: customer.stripeCustomerId,
         invoice: invoice.id,
         description: item.description,
-        amount: item.amountCents,
-        currency: 'usd',
-        quantity: item.quantity
+        amount: item.amountCents * item.quantity,
+        currency: 'usd'
       })
     }
 
