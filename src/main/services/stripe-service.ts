@@ -147,7 +147,7 @@ export const stripeService = {
       collection_method: 'send_invoice',
       days_until_due: request.daysUntilDue ?? 30,
       payment_settings: {
-        payment_method_types: ['ach_debit', 'card']
+        payment_method_types: request.achOnly ? ['us_bank_account'] : ['ach_debit', 'card']
       },
       ...(request.memo && { description: request.memo })
     })

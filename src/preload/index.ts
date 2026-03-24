@@ -223,7 +223,7 @@ const api = {
       ipcRenderer.invoke('invoice:getInvoiceStatus', invoiceId),
     voidInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
       ipcRenderer.invoke('invoice:voidInvoice', invoiceId),
-    generateLineItems: (request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<import('../shared/types/invoice').GeneratedLineItem[]>> =>
+    generateLineItems: (request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<import('../shared/types/invoice').GeneratedLineItem[]>> =>
       ipcRenderer.invoke('invoice:generateLineItems', request),
     getAll: (filters?: { clientId?: number; status?: string }): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice[]>> =>
       ipcRenderer.invoke('invoice:getAll', filters),

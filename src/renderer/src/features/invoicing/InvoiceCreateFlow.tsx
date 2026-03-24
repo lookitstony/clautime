@@ -1,16 +1,18 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ArrowLeft, Sparkles, Plus, Trash2, Send, LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import type { Client } from '../../../../shared/types/client-project'
+import type { Client, Project } from '../../../../shared/types/client-project'
 import type { GeneratedLineItem, InvoiceOverlap } from '../../../../shared/types/invoice'
 
 interface EditableLineItem {
   id: number
   lineDate: string
   description: string
+  hours: string
   amount: string
   durationMinutes: number
   sessionIds: number[]
@@ -26,10 +28,13 @@ interface InvoiceCreateFlowProps {
 export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX.Element {
   const queryClient = useQueryClient()
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [lineItems, setLineItems] = useState<EditableLineItem[]>([])
   const [memo, setMemo] = useState('')
+  const [achOnly, setAchOnly] = useState(() => localStorage.getItem('invoice-ach-only') === 'true')
+  const [showAchError, setShowAchError] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
   const [overlaps, setOverlaps] = useState<InvoiceOverlap[]>([])
   const [showOverlapWarning, setShowOverlapWarning] = useState(false)
@@ -42,6 +47,17 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
     }
   })
 
+  const { data: allProjects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      const r = await window.api.projects.getAll()
+      return r.success ? r.data : []
+    }
+  })
+
+  // Projects for the selected client
+  const clientProjects = allProjects.filter((p: Project) => p.clientId === selectedClientId)
+
   const invoiceableClients = clients.filter((c: Client) => c.email && c.billableRate && c.isActive)
   const selectedClient = clients.find((c: Client) => c.id === selectedClientId) ?? null
 
@@ -49,9 +65,45 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
     const val = parseFloat(item.amount)
     return sum + (isNaN(val) ? 0 : val)
   }, 0)
+  const totalHours = lineItems.reduce((sum, item) => {
+    const h = parseFloat(item.hours)
+    return sum + (isNaN(h) ? 0 : h)
+  }, 0).toFixed(2)
 
   const isGenerateReady = selectedClientId !== null && startDate && endDate && startDate <= endDate
   const isSendReady = lineItems.length > 0 && lineItems.every((item) => item.description.trim() && parseFloat(item.amount) > 0)
+
+  const doGenerate = useCallback(async () => {
+    if (!selectedClientId || !startDate || !endDate) return null
+    const r = await window.api.invoice.generateLineItems({
+      clientId: selectedClientId,
+      startDate,
+      endDate,
+      projectId: selectedProjectId ?? undefined
+    })
+    if (!r.success) throw new Error(r.error.message)
+    if (r.data.length === 0) {
+      toast.info('No billable sessions found for this period')
+      return null
+    }
+
+    const items: EditableLineItem[] = r.data.map((item: GeneratedLineItem) => ({
+      id: nextId++,
+      lineDate: item.lineDate,
+      description: item.description,
+      hours: (item.durationMinutes / 60).toFixed(2),
+      amount: (item.amountCents / 100).toFixed(2),
+      durationMinutes: item.durationMinutes,
+      sessionIds: item.sessionIds
+    }))
+    setLineItems(items)
+    toast.success(`Generated ${items.length} line item${items.length > 1 ? 's' : ''}`)
+    return items
+  }, [selectedClientId, selectedProjectId, startDate, endDate])
+
+  // Keep a ref so the mutation always calls the latest doGenerate
+  const doGenerateRef = useRef(doGenerate)
+  doGenerateRef.current = doGenerate
 
   // Generate line items from sessions
   const generate = useMutation({
@@ -70,36 +122,10 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
         return null // Will continue after user confirms
       }
 
-      return doGenerate()
+      return doGenerateRef.current()
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Generation failed')
   })
-
-  const doGenerate = useCallback(async () => {
-    if (!selectedClientId || !startDate || !endDate) return null
-    const r = await window.api.invoice.generateLineItems({
-      clientId: selectedClientId,
-      startDate,
-      endDate
-    })
-    if (!r.success) throw new Error(r.error.message)
-    if (r.data.length === 0) {
-      toast.info('No billable sessions found for this period')
-      return null
-    }
-
-    const items: EditableLineItem[] = r.data.map((item: GeneratedLineItem) => ({
-      id: nextId++,
-      lineDate: item.lineDate,
-      description: item.description,
-      amount: (item.amountCents / 100).toFixed(2),
-      durationMinutes: item.durationMinutes,
-      sessionIds: item.sessionIds
-    }))
-    setLineItems(items)
-    toast.success(`Generated ${items.length} line item${items.length > 1 ? 's' : ''}`)
-    return items
-  }, [selectedClientId, startDate, endDate])
 
   const handleOverlapContinue = useCallback(async () => {
     setShowOverlapWarning(false)
@@ -115,6 +141,7 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
       id: nextId++,
       lineDate: '',
       description: '',
+      hours: '',
       amount: '',
       durationMinutes: 0,
       sessionIds: []
@@ -125,9 +152,18 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
     setLineItems((prev) => prev.filter((item) => item.id !== id))
   }, [])
 
-  const updateLineItem = useCallback((id: number, field: 'description' | 'amount', value: string) => {
-    setLineItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)))
-  }, [])
+  const updateLineItem = useCallback((id: number, field: 'description' | 'amount' | 'hours', value: string) => {
+    setLineItems((prev) => prev.map((item) => {
+      if (item.id !== id) return item
+      if (field === 'hours') {
+        const hrs = parseFloat(value)
+        const rate = selectedClient?.billableRate ?? 0
+        const newAmount = !isNaN(hrs) && rate > 0 ? (hrs * rate).toFixed(2) : item.amount
+        return { ...item, hours: value, amount: newAmount, durationMinutes: !isNaN(hrs) ? Math.round(hrs * 60) : item.durationMinutes }
+      }
+      return { ...item, [field]: value }
+    }))
+  }, [selectedClient])
 
   // Create draft + send
   const sendInvoice = useMutation({
@@ -153,6 +189,7 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
         memo: memo.trim() || undefined,
         periodStart: startDate || undefined,
         periodEnd: endDate || undefined,
+        achOnly: achOnly || undefined,
         lineMeta
       })
       if (!draftResult.success) throw new Error(draftResult.error.message)
@@ -168,7 +205,14 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
       toast.success('Invoice sent!')
       onBack()
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to send invoice')
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : 'Failed to send invoice'
+      if (msg.toLowerCase().includes('us_bank_account') || msg.toLowerCase().includes('ach') || msg.toLowerCase().includes('payment_method')) {
+        setShowAchError(true)
+      } else {
+        toast.error(msg)
+      }
+    }
   })
 
   // Date presets
@@ -224,7 +268,10 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
           <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">Client</label>
           <select
             value={selectedClientId ?? ''}
-            onChange={(e) => setSelectedClientId(e.target.value ? Number(e.target.value) : null)}
+            onChange={(e) => {
+              setSelectedClientId(e.target.value ? Number(e.target.value) : null)
+              setSelectedProjectId(null)
+            }}
             className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
           >
             <option value="">Select a client...</option>
@@ -233,6 +280,22 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
             ))}
           </select>
         </div>
+
+        {selectedClientId && clientProjects.length > 0 && (
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">Project</label>
+            <select
+              value={selectedProjectId ?? ''}
+              onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            >
+              <option value="">All projects</option>
+              {clientProjects.map((p: Project) => (
+                <option key={p.id} value={p.id}>{p.invoiceName ?? p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex gap-3">
           <div className="flex-1">
@@ -288,36 +351,47 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
             </Button>
           </div>
 
+          {/* Column headers */}
+          <div className="mb-2 flex items-center gap-3 px-1">
+            <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Description</span>
+            <span className="w-16 text-right text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Hours</span>
+            <span className="w-28 text-right text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Amount</span>
+            <span className="w-8" />
+          </div>
+
           <div className="space-y-2">
             {lineItems.map((item) => (
-              <div key={item.id} className="flex items-start gap-2">
-                <textarea
-                  value={item.description}
-                  onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                  rows={2}
-                  className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-none"
-                />
-                <div className="flex items-center gap-1 pt-1">
-                  <span className="text-[13px] text-[var(--text-muted)]">$</span>
+                <div key={item.id} className="flex items-start gap-3">
+                  <textarea
+                    value={item.description}
+                    onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
+                    rows={3}
+                    className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-vertical"
+                  />
                   <input
                     type="number"
                     min="0"
                     step="0.01"
-                    value={item.amount}
-                    onChange={(e) => updateLineItem(item.id, 'amount', e.target.value)}
-                    className="w-24 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                    value={item.hours}
+                    onChange={(e) => updateLineItem(item.id, 'hours', e.target.value)}
+                    className="w-16 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1.5 text-right text-[13px] tabular-nums text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                   />
+                  <div className="flex w-28 items-center justify-end gap-0.5 pt-1">
+                    <span className="text-[13px] text-[var(--text-muted)]">$</span>
+                    <span className="text-right text-[13px] tabular-nums text-[var(--text-primary)]">
+                      {parseFloat(item.amount).toFixed(2)}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeLineItem(item.id)}
+                    className="mt-1.5 h-7 w-8 p-0 text-[var(--text-muted)] hover:text-[var(--destructive)]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => removeLineItem(item.id)}
-                  className="mt-1 h-9 w-9 p-0 text-[var(--text-muted)] hover:text-[var(--destructive)]"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
+              ))}
           </div>
 
           <div className="mt-3">
@@ -330,21 +404,38 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
             />
           </div>
 
-          <div className="mt-4 flex items-center justify-between border-t border-[var(--surface-border)] pt-3">
-            <div className="text-[14px] font-semibold text-[var(--text-primary)]">
-              Total: ${totalAmount.toFixed(2)}
+          <div className="mt-4 border-t border-[var(--surface-border)] pt-3">
+            <div className="flex items-center gap-3">
+              <span className="flex-1 text-right text-[13px] font-semibold text-[var(--text-primary)]">Total</span>
+              <span className="w-16 text-right text-[13px] font-semibold tabular-nums text-[var(--text-primary)]">{totalHours}h</span>
+              <span className="w-28 text-right text-[14px] font-semibold tabular-nums text-[var(--text-primary)]">${totalAmount.toFixed(2)}</span>
+              <span className="w-8" />
             </div>
-            <Button
-              onClick={() => setConfirmSend(true)}
-              disabled={!isSendReady || sendInvoice.isPending}
-              className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-            >
-              {sendInvoice.isPending ? (
-                <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
-              ) : (
-                <><Send className="mr-2 h-4 w-4" /> Send Invoice</>
-              )}
-            </Button>
+            <div className="mt-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="achOnly"
+                  checked={achOnly}
+                  onChange={(e) => { setAchOnly(e.target.checked); localStorage.setItem('invoice-ach-only', String(e.target.checked)) }}
+                  className="h-4 w-4 rounded border-[var(--surface-border)] accent-[var(--accent)]"
+                />
+                <label htmlFor="achOnly" className="text-[12px] text-[var(--text-secondary)] select-none">
+                  ACH only
+                </label>
+              </div>
+              <Button
+                onClick={() => setConfirmSend(true)}
+                disabled={!isSendReady || sendInvoice.isPending}
+                className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+              >
+                {sendInvoice.isPending ? (
+                  <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
+                ) : (
+                  <><Send className="mr-2 h-4 w-4" /> Send Invoice</>
+                )}
+              </Button>
+            </div>
           </div>
         </section>
       )}
@@ -373,6 +464,35 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
         }}
         onCancel={() => setConfirmSend(false)}
       />
+
+      {/* ACH Not Enabled Error */}
+      <Dialog open={showAchError} onOpenChange={setShowAchError}>
+        <DialogContent className="max-w-md bg-[var(--background-elevated)] border-[var(--surface-border)]">
+          <DialogHeader>
+            <DialogTitle className="text-[var(--text-primary)]">ACH Payments Not Enabled</DialogTitle>
+            <DialogDescription className="text-[var(--text-secondary)]">
+              Your Stripe account doesn&apos;t have ACH Direct Debit enabled. You need to enable it in your Stripe dashboard before sending ACH-only invoices.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Button
+              onClick={() => {
+                window.open('https://dashboard.stripe.com/settings/payment_methods', '_blank')
+              }}
+              className="w-full bg-[var(--accent)] text-white hover:brightness-[1.15]"
+            >
+              Open Stripe Payment Settings
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setShowAchError(false)}
+              className="w-full"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

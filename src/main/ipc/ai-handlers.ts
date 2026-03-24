@@ -113,7 +113,7 @@ export function registerAiHandlers(): void {
       _event,
       filters: { startDate: string; endDate: string; projectId?: number; clientId?: number },
       useAi?: boolean,
-      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean }
+      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean; brief?: boolean }
     ): Promise<IpcResult<string | null>> => {
       try {
         const result = await aiService.generateReportSummary(filters, useAi ?? true, summaryOptions)

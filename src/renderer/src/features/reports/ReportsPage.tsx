@@ -369,7 +369,7 @@ function ReportFooter({
 }: {
   summary: ReportSummary
   workSummary: string | null
-  onGenerateSummary: (useAi: boolean, options: { includeOverall: boolean; includeDailyBreakdown: boolean }) => void
+  onGenerateSummary: (useAi: boolean, options: { includeOverall: boolean; includeDailyBreakdown: boolean; brief?: boolean }) => void
   isGenerating: boolean
   hasApiKey: boolean
 }): React.JSX.Element {
@@ -482,6 +482,18 @@ function ReportFooter({
                 >
                   <Sparkles className="mr-1 h-3 w-3" />
                   AI Summary
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(true, { includeOverall, includeDailyBreakdown, brief: true }) }}
+                  disabled={isGenerating || !hasApiKey || (!includeOverall && !includeDailyBreakdown)}
+                  title={hasApiKey ? 'Generate a single-sentence brief for timesheets' : 'Add an API key in Settings to enable'}
+                  className="h-6 px-2 text-[11px]"
+                >
+                  <Sparkles className="mr-1 h-3 w-3" />
+                  Brief
                 </Button>
               </div>
             </div>
@@ -914,7 +926,7 @@ ${tableHtml}${billingHtml}${summaryHtml}
 
 type ExportContentType = 'timesheet' | 'full'
 type ExportFormat = 'csv' | 'markdown' | 'pdf'
-type SummaryOption = 'none' | 'git' | 'ai'
+type SummaryOption = 'none' | 'git' | 'ai' | 'ai-brief'
 
 function RadioOption({
   selected,
@@ -969,6 +981,8 @@ function ExportModal({
   const [summaryOption, setSummaryOption] = useState<SummaryOption>('none')
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf')
   const [includeBilling, setIncludeBilling] = useState(true)
+  const [includeOverall, setIncludeOverall] = useState(true)
+  const [includeDailyBreakdown, setIncludeDailyBreakdown] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
 
   const { data: hasApiKey } = useQuery({
@@ -979,10 +993,11 @@ function ExportModal({
     }
   })
 
-  const generateSummary = useCallback(async (useAi: boolean): Promise<string | null> => {
-    const result = await window.api.ai.generateReportSummary(report.filters, useAi)
+  const generateSummary = useCallback(async (useAi: boolean, brief?: boolean): Promise<string | null> => {
+    const opts = { includeOverall, includeDailyBreakdown, ...(brief ? { brief: true } : {}) }
+    const result = await window.api.ai.generateReportSummary(report.filters, useAi, opts)
     return result.success ? result.data : null
-  }, [report.filters])
+  }, [report.filters, includeOverall, includeDailyBreakdown])
 
   const handleExport = useCallback(async () => {
     setIsExporting(true)
@@ -992,6 +1007,9 @@ function ExportModal({
       if (summaryOption === 'ai') {
         summary = await generateSummary(true)
         if (!summary) toast.error('AI summary failed. Exporting without it.')
+      } else if (summaryOption === 'ai-brief') {
+        summary = await generateSummary(true, true)
+        if (!summary) toast.error('AI brief summary failed. Exporting without it.')
       } else if (summaryOption === 'git') {
         summary = await generateSummary(false)
         if (!summary) toast.error('No git commits found for summary.')
@@ -1136,6 +1154,15 @@ function ExportModal({
                   : 'Add an API key in Settings to enable'}
                 disabled={!hasApiKey}
               />
+              <RadioOption
+                selected={summaryOption === 'ai-brief'}
+                onClick={() => !hasApiKey ? undefined : setSummaryOption('ai-brief')}
+                label="AI Brief"
+                description={hasApiKey
+                  ? 'Single sentence summary for timesheets'
+                  : 'Add an API key in Settings to enable'}
+                disabled={!hasApiKey}
+              />
             </div>
             {exportFormat === 'csv' && summaryOption !== 'none' && (
               <p className="text-[11px] text-[var(--text-muted)]">
@@ -1143,6 +1170,35 @@ function ExportModal({
               </p>
             )}
           </div>
+
+          {/* Summary Sections */}
+          {summaryOption !== 'none' && (
+            <div className="space-y-2">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Summary Sections
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={includeOverall}
+                    onChange={(e) => setIncludeOverall(e.target.checked)}
+                    className="h-3 w-3 rounded border-[var(--surface-border)]"
+                  />
+                  Overall Summary
+                </label>
+                <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={includeDailyBreakdown}
+                    onChange={(e) => setIncludeDailyBreakdown(e.target.checked)}
+                    className="h-3 w-3 rounded border-[var(--surface-border)]"
+                  />
+                  Daily Breakdown
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* Format */}
           <div className="space-y-2">
@@ -1314,7 +1370,7 @@ export function ReportsPage(): React.JSX.Element {
     }
   })
 
-  const handleGenerateSummary = useCallback(async (useAi: boolean, summaryOptions?: { includeOverall: boolean; includeDailyBreakdown: boolean }): Promise<string | null> => {
+  const handleGenerateSummary = useCallback(async (useAi: boolean, summaryOptions?: { includeOverall: boolean; includeDailyBreakdown: boolean; brief?: boolean }): Promise<string | null> => {
     if (!report) return null
     setIsGeneratingAi(true)
     try {

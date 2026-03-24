@@ -1,6 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
-import { Plus, RefreshCw, ExternalLink } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Plus, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { LocalInvoice } from '../../../../shared/types/invoice'
@@ -27,27 +26,15 @@ interface InvoiceListViewProps {
 }
 
 export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListViewProps): React.JSX.Element {
-  const queryClient = useQueryClient()
-
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['invoices'],
     queryFn: async () => {
+      // Auto-sync non-terminal invoice statuses from Stripe, then fetch all
+      await window.api.invoice.syncAllStatuses().catch(() => {})
       const r = await window.api.invoice.getAll()
       return r.success ? r.data : []
-    }
-  })
-
-  const syncAll = useMutation({
-    mutationFn: async () => {
-      const r = await window.api.invoice.syncAllStatuses()
-      if (!r.success) throw new Error(r.error.message)
-      return r.data
     },
-    onSuccess: (count) => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success(count > 0 ? `Updated ${count} invoice${count > 1 ? 's' : ''}` : 'All invoices up to date')
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Sync failed')
+    staleTime: 30_000  // Re-sync at most every 30s
   })
 
   if (isLoading) {
@@ -59,16 +46,6 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
       <div className="flex items-center justify-between">
         <h2 className="text-[16px] font-semibold text-[var(--text-primary)]">Invoices</h2>
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => syncAll.mutate()}
-            disabled={syncAll.isPending}
-            className="text-[11px]"
-          >
-            <RefreshCw className={cn('mr-1 h-3 w-3', syncAll.isPending && 'animate-spin')} />
-            Sync All
-          </Button>
           <Button
             size="sm"
             onClick={onCreateNew}

@@ -3,6 +3,9 @@ import log from 'electron-log/main.js'
 import { credentialService } from '../services/credential-service'
 import { stripeService, clearStripeCache } from '../services/stripe-service'
 import { invoiceService } from '../services/invoice-service'
+import { getDb } from '../db'
+import { invoices } from '../db/schema/invoices'
+import { eq } from 'drizzle-orm'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type {
   StripeCustomerInfo,
@@ -141,10 +144,7 @@ export function registerInvoiceHandlers(): void {
         const result = await stripeService.sendInvoice(invoiceId)
 
         // Update local status
-        const db = (await import('../db')).getDb()
-        const { invoices } = await import('../db/schema/invoices')
-        const { eq } = await import('drizzle-orm')
-        db.update(invoices)
+        getDb().update(invoices)
           .set({
             status: result.status,
             hostedUrl: result.hostedUrl,
@@ -182,10 +182,7 @@ export function registerInvoiceHandlers(): void {
         const result = await stripeService.voidInvoice(invoiceId)
 
         // Update local status
-        const db = (await import('../db')).getDb()
-        const { invoices } = await import('../db/schema/invoices')
-        const { eq } = await import('drizzle-orm')
-        db.update(invoices)
+        getDb().update(invoices)
           .set({ status: result.status, updatedAt: new Date().toISOString() })
           .where(eq(invoices.stripeInvoiceId, invoiceId))
           .run()
@@ -204,13 +201,14 @@ export function registerInvoiceHandlers(): void {
     'invoice:generateLineItems',
     async (
       _event,
-      request: { clientId: number; startDate: string; endDate: string }
+      request: { clientId: number; startDate: string; endDate: string; projectId?: number }
     ): Promise<IpcResult<GeneratedLineItem[]>> => {
       try {
         const result = await invoiceService.generateLineItems(
           request.clientId,
           request.startDate,
-          request.endDate
+          request.endDate,
+          request.projectId
         )
         return ipcSuccess(result)
       } catch (error) {

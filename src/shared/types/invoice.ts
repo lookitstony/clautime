@@ -26,6 +26,8 @@ export interface CreateInvoiceRequest {
   periodStart?: string
   /** Billing period end (YYYY-MM-DD) */
   periodEnd?: string
+  /** Restrict payment to ACH only */
+  achOnly?: boolean
   /** Metadata for each line item (parallel array to lineItems) */
   lineMeta?: Array<{
     lineDate?: string
@@ -64,6 +66,7 @@ export interface GenerateLineItemsRequest {
   clientId: number
   startDate: string  // YYYY-MM-DD
   endDate: string    // YYYY-MM-DD
+  projectId?: number
 }
 
 /** A generated line item (before sending to Stripe) */

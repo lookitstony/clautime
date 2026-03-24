@@ -159,7 +159,7 @@ interface InvoiceApi {
   sendInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   getInvoiceStatus(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   voidInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
-  generateLineItems(request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<GeneratedLineItem[]>>
+  generateLineItems(request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<GeneratedLineItem[]>>
   getAll(filters?: { clientId?: number; status?: string }): Promise<IpcResult<LocalInvoice[]>>
   getById(localId: number): Promise<IpcResult<LocalInvoiceDetail | null>>
   syncLocalStatus(localId: number): Promise<IpcResult<LocalInvoice>>

@@ -5,6 +5,7 @@ import { invoices, invoiceLineItems } from '../db/schema/invoices'
 import { sessions } from '../db/schema/sessions'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
+import { gitCommits } from '../db/schema/git-commits'
 import { clientProjectService } from './client-project-service'
 import { stripeService } from './stripe-service'
 import { aiService } from './ai-service'
@@ -16,18 +17,17 @@ import type {
   InvoiceOverlap
 } from '../../shared/types/invoice'
 
-/** Format a date string as MM/DD/YY */
+/** Format a date string (YYYY-MM-DD) as MM/DD/YY */
 function formatDateShort(dateStr: string): string {
-  const d = new Date(dateStr)
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const yy = String(d.getFullYear()).slice(-2)
-  return `${mm}/${dd}/${yy}`
+  // Parse YYYY-MM-DD directly to avoid UTC→local shift
+  const [y, m, d] = dateStr.split('-')
+  return `${m}/${d}/${y.slice(-2)}`
 }
 
-/** Extract YYYY-MM-DD from an ISO timestamp */
+/** Extract YYYY-MM-DD from an ISO timestamp in LOCAL time */
 function toDateKey(isoTimestamp: string): string {
-  return isoTimestamp.slice(0, 10)
+  const d = new Date(isoTimestamp)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export const invoiceService = {
@@ -38,7 +38,8 @@ export const invoiceService = {
   async generateLineItems(
     clientId: number,
     startDate: string,
-    endDate: string
+    endDate: string,
+    projectId?: number
   ): Promise<GeneratedLineItem[]> {
     const client = clientProjectService.getClientById(clientId)
     if (!client) throw new AppError('CLIENT_NOT_FOUND', `Client ${clientId} not found`)
@@ -48,20 +49,33 @@ export const invoiceService = {
 
     const db = getDb()
 
-    // Query sessions for this client in the date range
-    const sessionRows = db
+    // Query sessions for this client — fetch all completed, then filter by local date
+    const conditions = [
+      eq(sessions.clientId, clientId),
+      eq(sessions.status, 'completed')
+    ]
+    if (projectId != null) {
+      conditions.push(eq(sessions.projectId, projectId))
+    }
+
+    const allRows = db
       .select()
       .from(sessions)
-      .where(
-        and(
-          eq(sessions.clientId, clientId),
-          gte(sessions.startedAt, startDate),
-          lte(sessions.startedAt, endDate + 'T23:59:59.999Z'),
-          eq(sessions.status, 'completed')
-        )
-      )
+      .where(and(...conditions))
       .orderBy(sessions.startedAt)
       .all()
+
+    // Filter by local date to handle UTC→local timezone differences
+    const sessionRows = allRows.filter((s) => {
+      const localDate = toDateKey(s.startedAt)
+      return localDate >= startDate && localDate <= endDate
+    })
+
+    log.info(`Invoice generateLineItems: ${allRows.length} total sessions for client, ${sessionRows.length} in ${startDate} to ${endDate}`)
+    if (sessionRows.length > 0) {
+      const dates = [...new Set(sessionRows.map((s) => toDateKey(s.startedAt)))].sort()
+      log.info(`Invoice date range found: ${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`)
+    }
 
     if (sessionRows.length === 0) return []
 
@@ -69,73 +83,143 @@ export const invoiceService = {
     const projectRows = db.select().from(projects).all()
     const projectMap = new Map(projectRows.map((p) => [p.id, p.invoiceName ?? p.name]))
 
-    // Group sessions by calendar day
-    const dayGroups = new Map<
+    // Group sessions by calendar day + project for separate line items
+    const groupKey = (dateKey: string, projId: number | null) => `${dateKey}::${projId ?? 0}`
+    const dayProjectGroups = new Map<
       string,
-      { sessions: typeof sessionRows; totalMinutes: number; projectSessions: Map<string, typeof sessionRows> }
+      { dateKey: string; projectId: number | null; projectName: string; sessions: typeof sessionRows; totalMinutes: number }
     >()
 
     for (const session of sessionRows) {
       const dateKey = toDateKey(session.startedAt)
-      if (!dayGroups.has(dateKey)) {
-        dayGroups.set(dateKey, { sessions: [], totalMinutes: 0, projectSessions: new Map() })
+      const key = groupKey(dateKey, session.projectId)
+      if (!dayProjectGroups.has(key)) {
+        const projectName = session.projectId ? projectMap.get(session.projectId) ?? 'Unknown' : 'Unknown'
+        dayProjectGroups.set(key, { dateKey, projectId: session.projectId, projectName, sessions: [], totalMinutes: 0 })
       }
-      const group = dayGroups.get(dateKey)!
+      const group = dayProjectGroups.get(key)!
       group.sessions.push(session)
       group.totalMinutes += session.durationMinutes
-
-      const projectName = session.projectId ? projectMap.get(session.projectId) ?? 'Unknown' : 'Unknown'
-      if (!group.projectSessions.has(projectName)) {
-        group.projectSessions.set(projectName, [])
-      }
-      group.projectSessions.get(projectName)!.push(session)
     }
 
-    // Generate line items per day
-    const lineItems: GeneratedLineItem[] = []
-    const sortedDays = Array.from(dayGroups.keys()).sort()
+    // ── Attribute commits to session days (same logic as reports) ──
+    // For each unique projectId, get all commits and build commit-span attribution.
+    // Result: commitsByDayProject maps "dateKey::projectId" → commit messages for that day.
+    const commitsByDayProject = new Map<string, string[]>()
+    const uniqueProjectIds = [...new Set(
+      Array.from(dayProjectGroups.values())
+        .map((g) => g.projectId)
+        .filter((id): id is number => id != null)
+    )]
 
-    for (const dateKey of sortedDays) {
-      const group = dayGroups.get(dateKey)!
+    for (const projId of uniqueProjectIds) {
+      // Get all commits for this project, sorted
+      const allCommits = db.select().from(gitCommits)
+        .where(eq(gitCommits.projectId, projId))
+        .orderBy(gitCommits.committedAt)
+        .all()
+
+      if (allCommits.length === 0) continue
+
+      // Build commit date key lookup
+      const commitsByDateKey = new Map<string, string[]>()
+      for (const c of allCommits) {
+        const dk = toDateKey(c.committedAt)
+        if (!commitsByDateKey.has(dk)) commitsByDateKey.set(dk, [])
+        const msgs = commitsByDateKey.get(dk)!
+        if (!msgs.includes(c.message)) msgs.push(c.message)
+      }
+      const commitDateKeys = Array.from(commitsByDateKey.keys()).sort()
+
+      // Get session days for this project
+      const sessionDays = [...new Set(
+        Array.from(dayProjectGroups.values())
+          .filter((g) => g.projectId === projId)
+          .map((g) => g.dateKey)
+      )].sort()
+
+      // Map each session day → next commit date on or after
+      const commitSpans = new Map<string, string[]>() // commitDateKey → session days
+      for (const day of sessionDays) {
+        const nextCommitDate = commitDateKeys.find((ck) => ck >= day)
+        if (nextCommitDate) {
+          if (!commitSpans.has(nextCommitDate)) commitSpans.set(nextCommitDate, [])
+          commitSpans.get(nextCommitDate)!.push(day)
+        }
+      }
+
+      // Spread commit messages evenly across the session days in each span
+      for (const [commitDate, spanDays] of commitSpans) {
+        const msgs = commitsByDateKey.get(commitDate)!
+        spanDays.sort()
+        const numDays = spanDays.length
+        const perDay = Math.max(1, Math.ceil(msgs.length / numDays))
+
+        for (let i = 0; i < numDays; i++) {
+          const slice = msgs.slice(i * perDay, (i + 1) * perDay)
+          // If no items left for this day, carry forward the last message
+          const items = slice.length > 0 ? slice : [msgs[msgs.length - 1]]
+          const key = `${spanDays[i]}::${projId}`
+          const existing = commitsByDayProject.get(key) ?? []
+          for (const m of items) {
+            if (!existing.includes(m)) existing.push(m)
+          }
+          commitsByDayProject.set(key, existing)
+        }
+      }
+    }
+
+    // Generate line items per day+project
+    const lineItems: GeneratedLineItem[] = []
+    const sortedGroups = Array.from(dayProjectGroups.values()).sort(
+      (a, b) => a.dateKey.localeCompare(b.dateKey) || a.projectName.localeCompare(b.projectName)
+    )
+
+    for (const group of sortedGroups) {
       const hours = group.totalMinutes / 60
       const amountCents = Math.round(hours * client.billableRate! * 100)
       const sessionIds = group.sessions.map((s) => s.id)
-      const projectNames = Array.from(group.projectSessions.keys())
-      const dateFormatted = formatDateShort(dateKey)
+      const dateFormatted = formatDateShort(group.dateKey)
 
-      // Try AI description for this day
+      // Get the attributed commit messages for this day+project
+      const dayCommitMsgs = commitsByDayProject.get(`${group.dateKey}::${group.projectId ?? 0}`) ?? []
+
+      // Try AI description
       let description = ''
       try {
-        const aiSummary = await aiService.generateReportSummary(
-          { startDate: dateKey, endDate: dateKey, clientId },
-          true,
-          { includeOverall: true, includeDailyBreakdown: false, brief: true }
-        )
-        if (aiSummary) {
-          // Prefix with date and project names
-          const projectPrefix = projectNames.join(', ')
-          description = `${dateFormatted} ${projectPrefix}: ${aiSummary.trim()}`
+        const result = await aiService.summarizeSessionGroup(sessionIds, group.projectName, dayCommitMsgs)
+        if (result && result.lines.length > 0) {
+          const header = `${dateFormatted} ${group.projectName}:`
+          if (result.lines.length === 1) {
+            const line = result.lines[0]
+            const ticketPart = line.ticket ? `${line.ticket}: ` : ''
+            description = `${header} ${ticketPart}${line.description}`
+          } else {
+            // Multiple tickets — each on its own line, indented under the header
+            const ticketLines = result.lines.map((line) => {
+              const ticketPart = line.ticket ? `${line.ticket}: ` : ''
+              return `  ${ticketPart}${line.description}`
+            })
+            description = `${header}\n${ticketLines.join('\n')}`
+          }
         }
       } catch (err) {
-        log.warn(`AI description failed for ${dateKey}, using fallback:`, err)
+        log.warn(`AI description failed for ${group.dateKey}/${group.projectName}, using fallback:`, err)
       }
 
       // Fallback if AI unavailable
       if (!description) {
-        const parts = projectNames.map((pn) => {
-          const count = group.projectSessions.get(pn)!.length
-          return `${pn}: Development work (${count} session${count > 1 ? 's' : ''}, ${hours.toFixed(1)}h)`
-        })
-        description = `${dateFormatted} ${parts.join('; ')}`
+        const count = group.sessions.length
+        description = `${dateFormatted} ${group.projectName}: Development work (${count} session${count > 1 ? 's' : ''}, ${hours.toFixed(1)}h)`
       }
 
       lineItems.push({
-        lineDate: dateKey,
+        lineDate: group.dateKey,
         description,
         amountCents,
         durationMinutes: group.totalMinutes,
         sessionIds,
-        projectNames
+        projectNames: [group.projectName]
       })
     }
 
