@@ -67,7 +67,7 @@ export const invoiceService = {
 
     // Load project names
     const projectRows = db.select().from(projects).all()
-    const projectMap = new Map(projectRows.map((p) => [p.id, p.name]))
+    const projectMap = new Map(projectRows.map((p) => [p.id, p.invoiceName ?? p.name]))
 
     // Group sessions by calendar day
     const dayGroups = new Map<

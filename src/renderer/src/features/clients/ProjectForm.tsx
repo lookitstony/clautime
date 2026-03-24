@@ -41,6 +41,7 @@ export function ProjectForm({
   const { data: allClients } = useClients()
 
   const [name, setName] = useState('')
+  const [invoiceName, setInvoiceName] = useState('')
   const [directoryPath, setDirectoryPath] = useState('')
   const [isBillable, setIsBillable] = useState(true)
   const [isExcluded, setIsExcluded] = useState(false)
@@ -51,12 +52,14 @@ export function ProjectForm({
     if (open) {
       if (project) {
         setName(project.name)
+        setInvoiceName(project.invoiceName ?? '')
         setDirectoryPath(project.directoryPath)
         setIsBillable(project.isBillable)
         setIsExcluded(!project.isActive)
         setSelectedClientId(project.clientId)
       } else {
         setName('')
+        setInvoiceName('')
         setDirectoryPath('')
         setIsBillable(true)
         setIsExcluded(false)
@@ -85,7 +88,7 @@ export function ProjectForm({
       if (isEdit && project) {
         await updateProject.mutateAsync({
           id: project.id,
-          data: { name: trimmedName, directoryPath: trimmedPath, isBillable, isActive: !isExcluded, clientId: selectedClientId }
+          data: { name: trimmedName, invoiceName: invoiceName.trim() || null, directoryPath: trimmedPath, isBillable, isActive: !isExcluded, clientId: selectedClientId }
         })
         toast.success('Project updated')
       } else {
@@ -146,6 +149,27 @@ export function ProjectForm({
                 'border-[var(--surface-border)]'
               )}
             />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="project-invoice-name" className="text-[13px] font-medium">
+              Invoice Name
+            </label>
+            <input
+              id="project-invoice-name"
+              type="text"
+              value={invoiceName}
+              onChange={(e) => setInvoiceName(e.target.value)}
+              placeholder={name || 'Same as project name'}
+              className={cn(
+                'w-full rounded-md border px-3 py-2 text-[13px]',
+                'bg-[var(--background-secondary)] text-[var(--text-primary)]',
+                'placeholder:text-[var(--text-muted)]',
+                'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
+                'border-[var(--surface-border)]'
+              )}
+            />
+            <p className="text-[11px] text-[var(--text-muted)]">Display name on invoices. Leave blank to use project name.</p>
           </div>
 
           <div className="space-y-2">

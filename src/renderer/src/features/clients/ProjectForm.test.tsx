@@ -9,6 +9,7 @@ const mockProject: Project = {
   id: 1,
   clientId: 1,
   name: 'ClauTime',
+  invoiceName: null,
   directoryPath: 'C:\\apps\\ClauTime',
   isBillable: true,
   isActive: true,

@@ -39,6 +39,8 @@ export interface Project {
   id: number
   clientId: number
   name: string
+  /** Display name on invoices. Falls back to `name` if null. */
+  invoiceName: string | null
   directoryPath: string
   isBillable: boolean
   isActive: boolean
@@ -58,6 +60,7 @@ export interface NewProject {
 /** Data for updating an existing project. All fields optional. */
 export interface UpdateProject {
   name?: string
+  invoiceName?: string | null
   directoryPath?: string
   isBillable?: boolean
   isActive?: boolean

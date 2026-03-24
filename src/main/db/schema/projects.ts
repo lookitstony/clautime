@@ -10,6 +10,7 @@ export const projects = sqliteTable(
       .references(() => clients.id),
     name: text('name').notNull(),
     directoryPath: text('directory_path').notNull().unique(),
+    invoiceName: text('invoice_name'),
     isBillable: integer('is_billable', { mode: 'boolean' }).notNull().default(true),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at')

@@ -92,7 +92,7 @@ const mockClients = [
   { id: 1, name: 'Acme Corp', color: 'var(--project-1)', billableRate: null, email: null, stripeCustomerId: null, isActive: true, createdAt: '', updatedAt: '' }
 ]
 const mockProjects = [
-  { id: 1, clientId: 1, name: 'ClauTime', directoryPath: 'C:\\apps\\ClauTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
+  { id: 1, clientId: 1, name: 'ClauTime', invoiceName: null, directoryPath: 'C:\\apps\\ClauTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
 ]
 
 function stubApi(sessionsData: Session[] = [], clientsData = [] as typeof mockClients, projectsData = [] as typeof mockProjects) {

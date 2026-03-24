@@ -37,6 +37,7 @@ function toProject(row: typeof projects.$inferSelect): Project {
     id: row.id,
     clientId: row.clientId,
     name: row.name,
+    invoiceName: row.invoiceName ?? null,
     directoryPath: row.directoryPath,
     isBillable: row.isBillable,
     isActive: row.isActive,
@@ -243,6 +244,7 @@ export const clientProjectService = {
         ...(data.directoryPath !== undefined && {
           directoryPath: normalizePath(data.directoryPath)
         }),
+        ...(data.invoiceName !== undefined && { invoiceName: data.invoiceName }),
         ...(data.isBillable !== undefined && { isBillable: data.isBillable }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         ...(data.clientId !== undefined && { clientId: data.clientId }),
