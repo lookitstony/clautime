@@ -42,7 +42,15 @@ export function InvoicingPage(): React.JSX.Element {
 
   return (
     <div className="mx-auto max-w-2xl p-6">
-      <h1 className="mb-4 text-[18px] font-bold text-[var(--text-primary)]">Invoicing</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-[18px] font-bold text-[var(--text-primary)]">Invoicing</h1>
+        <button
+          onClick={() => window.open('https://donate.stripe.com/3cI8wH4fJ2N86AQdZp4Vy00', '_blank')}
+          className="flex items-center gap-1.5 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-1.5 text-[12px] text-green-400 transition-colors hover:bg-green-500/20"
+        >
+          🥭 Saved Money?
+        </button>
+      </div>
 
       {view.type === 'list' && (
         <InvoiceListView

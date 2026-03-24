@@ -10,6 +10,11 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{drizzle.config.ts,components.json}'
+  - '!CLAUDE.md'
+  - '!.claude'
+  - '!_bmad'
+  - '!_bmad-output'
+  - '!gen-images'
 extraResources:
   - from: src/main/db/migrations
     to: migrations
