@@ -222,7 +222,19 @@ const api = {
     getInvoiceStatus: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
       ipcRenderer.invoke('invoice:getInvoiceStatus', invoiceId),
     voidInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
-      ipcRenderer.invoke('invoice:voidInvoice', invoiceId)
+      ipcRenderer.invoke('invoice:voidInvoice', invoiceId),
+    generateLineItems: (request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<import('../shared/types/invoice').GeneratedLineItem[]>> =>
+      ipcRenderer.invoke('invoice:generateLineItems', request),
+    getAll: (filters?: { clientId?: number; status?: string }): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice[]>> =>
+      ipcRenderer.invoke('invoice:getAll', filters),
+    getById: (localId: number): Promise<IpcResult<import('../shared/types/invoice').LocalInvoiceDetail | null>> =>
+      ipcRenderer.invoke('invoice:getById', localId),
+    syncLocalStatus: (localId: number): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice>> =>
+      ipcRenderer.invoke('invoice:syncLocalStatus', localId),
+    syncAllStatuses: (): Promise<IpcResult<number>> =>
+      ipcRenderer.invoke('invoice:syncAllStatuses'),
+    checkOverlap: (request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<import('../shared/types/invoice').InvoiceOverlap[]>> =>
+      ipcRenderer.invoke('invoice:checkOverlap', request)
   },
   secretScan: {
     run: (): Promise<IpcResult<import('../shared/types/secret-scan').SecretScanResult>> =>

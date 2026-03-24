@@ -92,6 +92,13 @@
       "when": 1774400000000,
       "tag": "0012_stripe_invoicing",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1774500000000,
+      "tag": "0013_invoice_history",
+      "breakpoints": true
     }
   ]
 }
