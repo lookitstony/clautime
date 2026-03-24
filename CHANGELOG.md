@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Removed manual sync button from invoice list (auto-syncs now)
 - Hours display uses 2 decimal precision
 
-## [0.1.0] - 2026-03-22
+## [1.0.0] - 2026-03-24
 
 ### Added
 - **Session Detection** — Automatic discovery of Claude Code sessions from JSONL conversation files with tool-type-aware gap detection (5/10/30 min idle limits)
