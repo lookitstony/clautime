@@ -6,11 +6,12 @@ import { clientProjectService } from './client-project-service'
 import { getDb } from '../db'
 import { clients } from '../db/schema/clients'
 import { AppError } from '../../shared/types/ipc'
-import type {
-  StripeCustomerInfo,
-  CreateInvoiceRequest,
-  DraftInvoice,
-  InvoiceStatus
+import {
+  INVOICE_STATUSES,
+  type StripeCustomerInfo,
+  type CreateInvoiceRequest,
+  type DraftInvoice,
+  type InvoiceStatus
 } from '../../shared/types/invoice'
 
 let cachedStripe: Stripe | null = null
@@ -33,7 +34,7 @@ export function clearStripeCache(): void {
   cachedKey = null
 }
 
-const KNOWN_STATUSES = new Set<InvoiceStatus['status']>(['draft', 'open', 'paid', 'void', 'uncollectible'])
+
 
 function validateInvoiceId(invoiceId: string): void {
   if (!invoiceId || !/^in_[a-zA-Z0-9]+$/.test(invoiceId)) {
@@ -42,7 +43,7 @@ function validateInvoiceId(invoiceId: string): void {
 }
 
 function mapInvoiceStatus(inv: Stripe.Invoice): InvoiceStatus {
-  const status = KNOWN_STATUSES.has(inv.status as InvoiceStatus['status'])
+  const status = INVOICE_STATUSES.has(inv.status as InvoiceStatus['status'])
     ? (inv.status as InvoiceStatus['status'])
     : 'draft'
   return {
@@ -82,24 +83,33 @@ export const stripeService = {
       throw new AppError('CLIENT_EMAIL_REQUIRED', 'Client email is required for invoicing')
     }
 
+    // In test mode, override email with test email if configured
+    const effectiveEmail = credentialService.isStripeTestMode()
+      ? (credentialService.getStripeTestEmail() || client.email)
+      : client.email
+
     const stripe = getStripeClient()
 
     // If we already have a Stripe customer ID, retrieve it
     if (client.stripeCustomerId) {
-      const existing = await stripe.customers.retrieve(client.stripeCustomerId)
-      if (!existing.deleted) {
-        return {
-          stripeCustomerId: existing.id,
-          email: (existing as Stripe.Customer).email ?? client.email,
-          name: (existing as Stripe.Customer).name ?? client.name
+      try {
+        const existing = await stripe.customers.retrieve(client.stripeCustomerId)
+        if (!existing.deleted) {
+          return {
+            stripeCustomerId: existing.id,
+            email: (existing as Stripe.Customer).email ?? client.email,
+            name: (existing as Stripe.Customer).name ?? client.name
+          }
         }
+        log.warn(`Stripe customer ${client.stripeCustomerId} was deleted, creating new one`)
+      } catch (err: unknown) {
+        // Customer doesn't exist (e.g. switching from test to live mode)
+        log.warn(`Stripe customer ${client.stripeCustomerId} not found, creating new one`)
       }
-      // Customer was deleted in Stripe, create a new one
-      log.warn(`Stripe customer ${client.stripeCustomerId} was deleted, creating new one`)
     }
 
     // Search by email first to avoid duplicates
-    const existing = await stripe.customers.list({ email: client.email, limit: 1 })
+    const existing = await stripe.customers.list({ email: effectiveEmail, limit: 1 })
     let customerId: string
 
     if (existing.data.length > 0) {
@@ -107,7 +117,7 @@ export const stripeService = {
       log.info(`Found existing Stripe customer ${customerId} for client ${clientId}`)
     } else {
       const created = await stripe.customers.create({
-        email: client.email,
+        email: effectiveEmail,
         name: client.name
       })
       customerId = created.id
@@ -123,7 +133,7 @@ export const stripeService = {
 
     return {
       stripeCustomerId: customerId,
-      email: client.email,
+      email: effectiveEmail,
       name: client.name
     }
   },
@@ -132,7 +142,7 @@ export const stripeService = {
    * Create a draft invoice with line items.
    * Does NOT finalize or send — call sendInvoice to finalize and send.
    */
-  async createDraftInvoice(request: CreateInvoiceRequest): Promise<DraftInvoice> {
+  async createDraftInvoice(request: CreateInvoiceRequest): Promise<Omit<DraftInvoice, 'localId'>> {
     if (request.lineItems.length === 0) {
       throw new AppError('INVOICE_NO_ITEMS', 'At least one line item is required')
     }
@@ -149,18 +159,31 @@ export const stripeService = {
       payment_settings: {
         payment_method_types: request.achOnly ? ['us_bank_account'] : ['ach_debit', 'card']
       },
-      ...(request.memo && { description: request.memo })
+      ...(request.memo && { description: request.memo.slice(0, 500) })
     })
 
     // Add line items
     for (const item of request.lineItems) {
-      await stripe.invoiceItems.create({
-        customer: customer.stripeCustomerId,
-        invoice: invoice.id,
-        description: item.description,
-        amount: item.amountCents * item.quantity,
-        currency: 'usd'
-      })
+      if (item.hours && item.rateCents && item.hours > 0 && item.rateCents > 0 && isFinite(item.hours) && isFinite(item.rateCents)) {
+        // Decimal qty (hours) × unit rate (hourly rate in cents)
+        // quantity_decimal exists in Stripe API but not yet in SDK v20 types — remove cast when upgraded
+        await stripe.invoiceItems.create({
+          customer: customer.stripeCustomerId,
+          invoice: invoice.id,
+          description: item.description,
+          quantity_decimal: String(item.hours),
+          unit_amount_decimal: String(item.rateCents),
+          currency: 'usd'
+        } as Parameters<typeof stripe.invoiceItems.create>[0])
+      } else {
+        await stripe.invoiceItems.create({
+          customer: customer.stripeCustomerId,
+          invoice: invoice.id,
+          description: item.description,
+          amount: item.amountCents,
+          currency: 'usd'
+        })
+      }
     }
 
     // Retrieve the updated invoice to get totals
@@ -171,7 +194,7 @@ export const stripeService = {
     return {
       invoiceId: updated.id,
       stripeCustomerId: customer.stripeCustomerId,
-      status: (KNOWN_STATUSES.has(updated.status as InvoiceStatus['status'])
+      status: (INVOICE_STATUSES.has(updated.status as InvoiceStatus['status'])
         ? updated.status
         : 'draft') as InvoiceStatus['status'],
       amountDueCents: updated.amount_due,
@@ -217,5 +240,17 @@ export const stripeService = {
     const invoice = await stripe.invoices.voidInvoice(invoiceId)
     log.info(`Voided invoice ${invoiceId}`)
     return mapInvoiceStatus(invoice)
+  },
+
+  /**
+   * List recent invoices from Stripe (up to 100).
+   */
+  async listInvoices(limit = 100): Promise<Stripe.Invoice[]> {
+    const stripe = getStripeClient()
+    const result = await stripe.invoices.list({ limit, expand: ['data.lines'] })
+    if (result.has_more) {
+      log.warn(`Stripe has more than ${limit} invoices — only the most recent ${limit} were fetched`)
+    }
+    return result.data
   }
 }

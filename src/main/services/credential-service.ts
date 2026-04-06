@@ -87,68 +87,123 @@ export const credentialService = {
     settingsService.setSetting('ai_method', method)
   },
 
-  // ── Stripe API Key ──
+  // ── Stripe API Keys (live + test) ──
 
-  /**
-   * Store a Stripe secret key securely.
-   */
-  storeStripeKey(key: string): void {
-    if (!key.startsWith('sk_live_') && !key.startsWith('sk_test_')) {
-      throw new Error('Stripe key must start with sk_live_ or sk_test_')
-    }
+  storeEncrypted(settingKey: string, value: string): void {
     if (safeStorage.isEncryptionAvailable()) {
-      const encrypted = safeStorage.encryptString(key)
+      const encrypted = safeStorage.encryptString(value)
       const base64 = encrypted.toString('base64')
-      settingsService.setSetting('stripe_api_key', `${ENCRYPTED_KEY_PREFIX}${base64}`)
-      log.info('Stripe API key stored securely via safeStorage')
+      settingsService.setSetting(settingKey, `${ENCRYPTED_KEY_PREFIX}${base64}`)
     } else {
-      settingsService.setSetting('stripe_api_key', key)
-      log.warn('safeStorage unavailable — Stripe API key stored without encryption')
+      settingsService.setSetting(settingKey, value)
+      log.warn(`safeStorage unavailable — ${settingKey} stored without encryption`)
     }
   },
 
-  /**
-   * Retrieve the stored Stripe secret key.
-   */
-  getStripeKey(): string | null {
-    const stored = settingsService.getSetting('stripe_api_key')
+  getEncrypted(settingKey: string): string | null {
+    const stored = settingsService.getSetting(settingKey)
     if (!stored) return null
-
     if (stored.startsWith(ENCRYPTED_KEY_PREFIX)) {
       try {
         const base64 = stored.slice(ENCRYPTED_KEY_PREFIX.length)
         const buffer = Buffer.from(base64, 'base64')
         return safeStorage.decryptString(buffer)
       } catch (error) {
-        log.error('Failed to decrypt Stripe API key:', error)
+        log.error(`Failed to decrypt ${settingKey}:`, error)
         return null
       }
     }
-
     return stored
   },
 
   /**
-   * Remove the stored Stripe API key.
+   * Store a Stripe secret key securely. Automatically routes to live or test slot.
    */
-  removeStripeKey(): void {
-    settingsService.setSetting('stripe_api_key', '')
-    log.info('Stripe API key removed')
+  storeStripeKey(key: string): void {
+    if (key.startsWith('sk_live_')) {
+      this.storeEncrypted('stripe_api_key_live', key)
+      log.info('Stripe live API key stored')
+    } else if (key.startsWith('sk_test_')) {
+      this.storeEncrypted('stripe_api_key_test', key)
+      log.info('Stripe test API key stored')
+    } else {
+      throw new Error('Stripe key must start with sk_live_ or sk_test_')
+    }
+    // Migrate: clear old single-key setting if present
+    if (settingsService.getSetting('stripe_api_key')) {
+      settingsService.setSetting('stripe_api_key', '')
+    }
   },
 
   /**
-   * Check if a Stripe API key is stored.
+   * Get the active Stripe key based on current mode.
+   */
+  getStripeKey(): string | null {
+    const mode = this.getStripeMode()
+    const key = this.getEncrypted(mode === 'test' ? 'stripe_api_key_test' : 'stripe_api_key_live')
+    if (key) return key
+    // Fallback: try old single-key setting for migration
+    return this.getEncrypted('stripe_api_key')
+  },
+
+  /**
+   * Remove the Stripe API key for a specific mode.
+   */
+  removeStripeKey(mode?: 'live' | 'test'): void {
+    const target = mode ?? this.getStripeMode()
+    settingsService.setSetting(target === 'test' ? 'stripe_api_key_test' : 'stripe_api_key_live', '')
+    log.info(`Stripe ${target} API key removed`)
+  },
+
+  /**
+   * Check if a Stripe API key is stored for the current mode.
    */
   hasStripeKey(): boolean {
-    const stored = settingsService.getSetting('stripe_api_key')
-    return !!stored
+    return !!this.getStripeKey()
+  },
+
+  /**
+   * Check if a specific mode has a key stored.
+   */
+  hasStripeKeyForMode(mode: 'live' | 'test'): boolean {
+    return !!this.getEncrypted(mode === 'test' ? 'stripe_api_key_test' : 'stripe_api_key_live')
+  },
+
+  /**
+   * Get the current Stripe mode: 'live' or 'test'.
+   */
+  getStripeMode(): 'live' | 'test' {
+    const mode = settingsService.getSetting('stripe_mode')
+    return mode === 'test' ? 'test' : 'live'
+  },
+
+  /**
+   * Set the Stripe mode.
+   */
+  setStripeMode(mode: 'live' | 'test'): void {
+    settingsService.setSetting('stripe_mode', mode)
+    log.info(`Stripe mode set to ${mode}`)
   },
 
   /**
    * Check if the stored Stripe key is a test mode key.
    */
   isStripeTestMode(): boolean {
-    const key = this.getStripeKey()
-    return key ? key.startsWith('sk_test_') : false
+    return this.getStripeMode() === 'test'
+  },
+
+  /**
+   * Get the test email override for sandbox mode.
+   */
+  getStripeTestEmail(): string | null {
+    return settingsService.getSetting('stripe_test_email') || null
+  },
+
+  /**
+   * Set the test email override for sandbox mode.
+   */
+  setStripeTestEmail(email: string): void {
+    settingsService.setSetting('stripe_test_email', email)
+    log.info('Stripe test email updated')
   }
 }

@@ -12,7 +12,7 @@ import type {
   CreateInvoiceRequest,
   DraftInvoice,
   InvoiceStatus,
-  GeneratedLineItem,
+  GenerateLineItemsResult,
   LocalInvoice,
   LocalInvoiceDetail,
   InvoiceOverlap
@@ -86,6 +86,93 @@ export function registerInvoiceHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    'invoice:getStripeMode',
+    async (): Promise<IpcResult<'live' | 'test'>> => {
+      try {
+        return ipcSuccess(credentialService.getStripeMode())
+      } catch (error) {
+        log.error('IPC invoice:getStripeMode failed:', error)
+        return ipcError('STRIPE_MODE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:setStripeMode',
+    async (_event, mode: 'live' | 'test'): Promise<IpcResult<void>> => {
+      try {
+        if (mode !== 'live' && mode !== 'test') {
+          return ipcError('INVALID_MODE', 'Mode must be "live" or "test"')
+        }
+        credentialService.setStripeMode(mode)
+        clearStripeCache()
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC invoice:setStripeMode failed:', error)
+        return ipcError('STRIPE_SET_MODE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:hasStripeKeyForMode',
+    async (_event, mode: 'live' | 'test'): Promise<IpcResult<boolean>> => {
+      try {
+        if (mode !== 'live' && mode !== 'test') {
+          return ipcError('INVALID_MODE', 'Mode must be "live" or "test"')
+        }
+        return ipcSuccess(credentialService.hasStripeKeyForMode(mode))
+      } catch (error) {
+        log.error('IPC invoice:hasStripeKeyForMode failed:', error)
+        return ipcError('STRIPE_HAS_KEY_MODE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:removeStripeKeyForMode',
+    async (_event, mode: 'live' | 'test'): Promise<IpcResult<void>> => {
+      try {
+        if (mode !== 'live' && mode !== 'test') {
+          return ipcError('INVALID_MODE', 'Mode must be "live" or "test"')
+        }
+        credentialService.removeStripeKey(mode)
+        clearStripeCache()
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC invoice:removeStripeKeyForMode failed:', error)
+        return ipcError('STRIPE_REMOVE_KEY_MODE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:getStripeTestEmail',
+    async (): Promise<IpcResult<string | null>> => {
+      try {
+        return ipcSuccess(credentialService.getStripeTestEmail())
+      } catch (error) {
+        log.error('IPC invoice:getStripeTestEmail failed:', error)
+        return ipcError('STRIPE_TEST_EMAIL_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:setStripeTestEmail',
+    async (_event, email: string): Promise<IpcResult<void>> => {
+      try {
+        credentialService.setStripeTestEmail(email)
+        clearStripeCache()
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC invoice:setStripeTestEmail failed:', error)
+        return ipcError('STRIPE_SET_TEST_EMAIL_ERROR', String(error))
+      }
+    }
+  )
+
   // ── Customer & Invoice Operations ──
 
   ipcMain.handle(
@@ -108,7 +195,7 @@ export function registerInvoiceHandlers(): void {
         const result = await stripeService.createDraftInvoice(request)
 
         // Persist locally
-        invoiceService.saveInvoice({
+        const localId = invoiceService.saveInvoice({
           clientId: request.clientId,
           stripeInvoiceId: result.invoiceId,
           status: result.status,
@@ -119,17 +206,20 @@ export function registerInvoiceHandlers(): void {
           hostedUrl: result.hostedUrl,
           periodStart: request.periodStart,
           periodEnd: request.periodEnd,
+          testMode: credentialService.isStripeTestMode(),
           lineItems: request.lineItems.map((item, i) => ({
             lineDate: request.lineMeta?.[i]?.lineDate,
             description: item.description,
-            amountCents: item.amountCents * item.quantity,
+            amountCents: item.hours && item.rateCents
+              ? Math.round(item.hours * item.rateCents)
+              : item.amountCents,
             durationMinutes: request.lineMeta?.[i]?.durationMinutes,
             sessionIds: request.lineMeta?.[i]?.sessionIds,
             sortOrder: i
           }))
         })
 
-        return ipcSuccess(result)
+        return ipcSuccess({ ...result, localId })
       } catch (error) {
         log.error('IPC invoice:createDraftInvoice failed:', error)
         return ipcError('STRIPE_CREATE_INVOICE_ERROR', String(error))
@@ -202,7 +292,7 @@ export function registerInvoiceHandlers(): void {
     async (
       _event,
       request: { clientId: number; startDate: string; endDate: string; projectId?: number }
-    ): Promise<IpcResult<GeneratedLineItem[]>> => {
+    ): Promise<IpcResult<GenerateLineItemsResult>> => {
       try {
         const result = await invoiceService.generateLineItems(
           request.clientId,
@@ -222,10 +312,15 @@ export function registerInvoiceHandlers(): void {
     'invoice:getAll',
     async (
       _event,
-      filters?: { clientId?: number; status?: string }
+      filters?: { clientId?: number; status?: string; testMode?: boolean }
     ): Promise<IpcResult<LocalInvoice[]>> => {
       try {
-        return ipcSuccess(invoiceService.getAll(filters))
+        // Default to filtering by current mode
+        const effectiveFilters = {
+          ...filters,
+          testMode: filters?.testMode ?? credentialService.isStripeTestMode()
+        }
+        return ipcSuccess(invoiceService.getAll(effectiveFilters))
       } catch (error) {
         log.error('IPC invoice:getAll failed:', error)
         return ipcError('INVOICE_GET_ALL_ERROR', String(error))
@@ -267,6 +362,35 @@ export function registerInvoiceHandlers(): void {
       } catch (error) {
         log.error('IPC invoice:syncAllStatuses failed:', error)
         return ipcError('INVOICE_SYNC_ALL_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:delete',
+    async (_event, localId: number): Promise<IpcResult<void>> => {
+      try {
+        if (typeof localId !== 'number' || localId <= 0) {
+          return ipcError('INVALID_ID', 'Invalid invoice ID')
+        }
+        invoiceService.deleteInvoice(localId)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC invoice:delete failed:', error)
+        return ipcError('INVOICE_DELETE_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'invoice:importFromStripe',
+    async (): Promise<IpcResult<number>> => {
+      try {
+        const count = await invoiceService.importFromStripe()
+        return ipcSuccess(count)
+      } catch (error) {
+        log.error('IPC invoice:importFromStripe failed:', error)
+        return ipcError('INVOICE_IMPORT_ERROR', String(error))
       }
     }
   )

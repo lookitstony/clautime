@@ -8,10 +8,12 @@ export interface StripeCustomerInfo {
 /** A single line item for an invoice */
 export interface InvoiceLineItem {
   description: string
-  /** Amount in cents (integer) */
+  /** Total amount in cents (integer) — fallback when no hours/rate */
   amountCents: number
-  /** Quantity — defaults to 1 */
-  quantity: number
+  /** Hours worked (decimal, e.g. 5.82) */
+  hours?: number
+  /** Hourly rate in cents (e.g. 9250 = $92.50/hr) */
+  rateCents?: number
 }
 
 /** Request to create a draft invoice */
@@ -38,6 +40,7 @@ export interface CreateInvoiceRequest {
 
 /** A draft invoice returned after creation */
 export interface DraftInvoice {
+  localId: number
   invoiceId: string
   stripeCustomerId: string
   status: InvoiceStatus['status']
@@ -58,6 +61,9 @@ export interface InvoiceStatus {
   dueDate: string | null
   paidAt: string | null
 }
+
+/** Valid invoice statuses — shared between services */
+export const INVOICE_STATUSES = new Set<InvoiceStatus['status']>(['draft', 'open', 'paid', 'void', 'uncollectible'])
 
 // ── Phase 2: Local invoice history & generation ──
 
@@ -85,6 +91,13 @@ export interface GeneratedLineItem {
   projectNames: string[]
 }
 
+/** Result of generating line items — includes items + auto-generated memo */
+export interface GenerateLineItemsResult {
+  lineItems: GeneratedLineItem[]
+  /** AI-generated summary memo for the invoice */
+  memo: string | null
+}
+
 /** Local invoice record (from DB, not Stripe) */
 export interface LocalInvoice {
   id: number
@@ -101,6 +114,7 @@ export interface LocalInvoice {
   paidAt: string | null
   periodStart: string | null
   periodEnd: string | null
+  testMode: boolean
   createdAt: string
 }
 

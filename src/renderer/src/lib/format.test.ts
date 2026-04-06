@@ -124,21 +124,39 @@ describe('getDateRangeForPreset', () => {
     expect(end.getMinutes()).toBe(59)
   })
 
-  it('this-week starts on Monday', () => {
+  it('this-week starts on Monday by default', () => {
     const { startDate } = getDateRangeForPreset('this-week')
     const start = new Date(startDate)
-    // Monday = 1
     expect(start.getDay()).toBe(1)
   })
 
-  it('last-week returns Mon–Sun range', () => {
+  it('this-week starts on Sunday when weekStartDay=0', () => {
+    const { startDate } = getDateRangeForPreset('this-week', 0)
+    const start = new Date(startDate)
+    expect(start.getDay()).toBe(0)
+  })
+
+  it('this-week starts on Saturday when weekStartDay=6', () => {
+    const { startDate } = getDateRangeForPreset('this-week', 6)
+    const start = new Date(startDate)
+    expect(start.getDay()).toBe(6)
+  })
+
+  it('last-week returns Mon–Sun range by default', () => {
     const { startDate, endDate } = getDateRangeForPreset('last-week')
     const start = new Date(startDate)
     const end = new Date(endDate)
     expect(start.getDay()).toBe(1) // Monday
     expect(end.getDay()).toBe(0) // Sunday
-    // End date should be same calendar week — 6 calendar days after start
     expect(end.getDate() - start.getDate() === 6 || end.getDate() < start.getDate()).toBe(true)
+  })
+
+  it('last-week returns Sun–Sat range when weekStartDay=0', () => {
+    const { startDate, endDate } = getDateRangeForPreset('last-week', 0)
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    expect(start.getDay()).toBe(0) // Sunday
+    expect(end.getDay()).toBe(6) // Saturday
   })
 
   it('this-month starts on 1st of current month', () => {

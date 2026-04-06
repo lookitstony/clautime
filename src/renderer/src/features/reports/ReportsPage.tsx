@@ -1304,6 +1304,7 @@ export function ReportsPage(): React.JSX.Element {
   const [format, setFormat] = useState<ReportFormat>('session-breakdown')
   const [clientId, setClientId] = useState<string>('__all__')
   const [projectId, setProjectId] = useState<string>('__all__')
+  const [billableFilter, setBillableFilter] = useState<'all' | 'billable' | 'non-billable'>('all')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
   const [report, setReport] = useState<ReportResult | null>(null)
@@ -1323,6 +1324,7 @@ export function ReportsPage(): React.JSX.Element {
     }
   })
   const afterHoursMode = settingsData?.['after_hours_mode'] === 'true'
+  const weekStartDay = parseInt(settingsData?.['week_start_day'] ?? '1', 10)
 
   const dateRange = useMemo(() => {
     if (datePreset === 'all-time') {
@@ -1339,8 +1341,8 @@ export function ReportsPage(): React.JSX.Element {
         endDate: new Date(customEnd + 'T23:59:59.999').toISOString()
       }
     }
-    return getDateRangeForPreset(datePreset as DatePreset)
-  }, [datePreset, customStart, customEnd])
+    return getDateRangeForPreset(datePreset as DatePreset, weekStartDay)
+  }, [datePreset, customStart, customEnd, weekStartDay])
 
   const handleGenerate = useCallback(() => {
     if (!dateRange) return
@@ -1349,7 +1351,8 @@ export function ReportsPage(): React.JSX.Element {
       endDate: dateRange.endDate,
       ...(clientId !== '__all__' ? { clientId: Number(clientId) } : {}),
       ...(projectId !== '__all__' ? { projectId: Number(projectId) } : {}),
-      ...(afterHoursMode ? { afterHoursOnly: true } : {})
+      ...(afterHoursMode ? { afterHoursOnly: true } : {}),
+      ...(billableFilter !== 'all' ? { billableFilter } : {})
     }
     generateMutation.mutate(
       { filters, format },
@@ -1360,7 +1363,7 @@ export function ReportsPage(): React.JSX.Element {
         }
       }
     )
-  }, [dateRange, clientId, projectId, format, afterHoursMode, generateMutation])
+  }, [dateRange, clientId, projectId, format, afterHoursMode, billableFilter, generateMutation])
 
   const { data: hasApiKey } = useQuery({
     queryKey: ['ai', 'hasKey'],
@@ -1458,6 +1461,17 @@ export function ReportsPage(): React.JSX.Element {
             </SelectContent>
           </Select>
         )}
+
+        <Select value={billableFilter} onValueChange={(v) => setBillableFilter(v as 'all' | 'billable' | 'non-billable')}>
+          <SelectTrigger size="sm" className="h-8 w-[130px] text-[12px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            <SelectItem value="all">All Sessions</SelectItem>
+            <SelectItem value="billable">Billable</SelectItem>
+            <SelectItem value="non-billable">Non-billable</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Button
           size="sm"

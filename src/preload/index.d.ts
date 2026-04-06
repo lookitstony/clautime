@@ -13,7 +13,7 @@ import type {
 import type { ReportFilters, ReportFormat, ReportResult } from '../shared/types/report'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../shared/types/live'
 import type { SecretScanResult, SecretFinding, SecretScanSummary, CustomSecretPattern, PatternTestResult } from '../shared/types/secret-scan'
-import type { StripeCustomerInfo, CreateInvoiceRequest, DraftInvoice, InvoiceStatus, GeneratedLineItem, LocalInvoice, LocalInvoiceDetail, InvoiceOverlap } from '../shared/types/invoice'
+import type { StripeCustomerInfo, CreateInvoiceRequest, DraftInvoice, InvoiceStatus, GeneratedLineItem, GenerateLineItemsResult, LocalInvoice, LocalInvoiceDetail, InvoiceOverlap } from '../shared/types/invoice'
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
@@ -159,11 +159,19 @@ interface InvoiceApi {
   sendInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   getInvoiceStatus(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   voidInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
-  generateLineItems(request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<GeneratedLineItem[]>>
+  generateLineItems(request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<GenerateLineItemsResult>>
   getAll(filters?: { clientId?: number; status?: string }): Promise<IpcResult<LocalInvoice[]>>
   getById(localId: number): Promise<IpcResult<LocalInvoiceDetail | null>>
   syncLocalStatus(localId: number): Promise<IpcResult<LocalInvoice>>
   syncAllStatuses(): Promise<IpcResult<number>>
+  delete(localId: number): Promise<IpcResult<void>>
+  getStripeMode(): Promise<IpcResult<'live' | 'test'>>
+  setStripeMode(mode: 'live' | 'test'): Promise<IpcResult<void>>
+  hasStripeKeyForMode(mode: 'live' | 'test'): Promise<IpcResult<boolean>>
+  removeStripeKeyForMode(mode: 'live' | 'test'): Promise<IpcResult<void>>
+  importFromStripe(): Promise<IpcResult<number>>
+  getStripeTestEmail(): Promise<IpcResult<string | null>>
+  setStripeTestEmail(email: string): Promise<IpcResult<void>>
   checkOverlap(request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<InvoiceOverlap[]>>
 }
 

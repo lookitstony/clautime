@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { AlertTriangle, LayoutList, ArrowRight, ChevronDown, ChevronUp, ChevronRight, Plus } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -37,9 +37,10 @@ export function SessionsPage(): React.JSX.Element {
   const endDate = useFilterStore((s) => s.endDate)
   const filterClientId = useFilterStore((s) => s.clientId)
   const filterProjectId = useFilterStore((s) => s.projectId)
+  const storeWeekStartDay = useFilterStore((s) => s.weekStartDay)
   const filters = useMemo(
     () => useFilterStore.getState().toSessionFilters(),
-    [datePreset, startDate, endDate, filterClientId, filterProjectId]
+    [datePreset, startDate, endDate, filterClientId, filterProjectId, storeWeekStartDay]
   )
   const { data: rawSessions, isLoading, error } = useSessions(filters)
   const { data: clients } = useClients()
@@ -53,6 +54,10 @@ export function SessionsPage(): React.JSX.Element {
     }
   })
   const afterHoursMode = settingsData?.['after_hours_mode'] === 'true'
+  const weekStartDay = parseInt(settingsData?.['week_start_day'] ?? '1', 10)
+  useEffect(() => {
+    useFilterStore.getState().setWeekStartDay(weekStartDay)
+  }, [weekStartDay])
 
   const sessions = useMemo(() => {
     if (!rawSessions || !afterHoursMode) return rawSessions

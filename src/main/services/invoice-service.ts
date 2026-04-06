@@ -7,15 +7,61 @@ import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { gitCommits } from '../db/schema/git-commits'
 import { clientProjectService } from './client-project-service'
+import { credentialService } from './credential-service'
 import { stripeService } from './stripe-service'
 import { aiService } from './ai-service'
 import { AppError } from '../../shared/types/ipc'
-import type {
-  GeneratedLineItem,
-  LocalInvoice,
-  LocalInvoiceDetail,
-  InvoiceOverlap
+import {
+  INVOICE_STATUSES,
+  type GeneratedLineItem,
+  type GenerateLineItemsResult,
+  type InvoiceStatus,
+  type LocalInvoice,
+  type LocalInvoiceDetail,
+  type InvoiceOverlap
 } from '../../shared/types/invoice'
+
+/** Map a Stripe Invoice object to local saveInvoice format */
+function mapStripeInvoiceToLocal(inv: import('stripe').Stripe.Invoice, clientId: number, isTest: boolean) {
+  const status = INVOICE_STATUSES.has(inv.status as InvoiceStatus['status'])
+    ? (inv.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible')
+    : 'draft'
+
+  const lineItems = (inv.lines?.data ?? []).map((line, i) => ({
+    description: line.description ?? 'Line item',
+    amountCents: line.amount,
+    sortOrder: i
+  }))
+
+  // Derive period from line item date ranges
+  let periodStart: string | null = null
+  let periodEnd: string | null = null
+  if (inv.lines?.data?.length) {
+    const starts = inv.lines.data.map((l) => l.period?.start).filter((s): s is number => !!s)
+    const ends = inv.lines.data.map((l) => l.period?.end).filter((e): e is number => !!e)
+    if (starts.length > 0) periodStart = new Date(Math.min(...starts) * 1000).toISOString().split('T')[0]
+    if (ends.length > 0) periodEnd = new Date(Math.max(...ends) * 1000).toISOString().split('T')[0]
+  }
+
+  return {
+    clientId,
+    stripeInvoiceId: inv.id,
+    status,
+    amountDueCents: inv.amount_due,
+    amountPaidCents: inv.amount_paid,
+    currency: inv.currency,
+    memo: inv.description ?? null,
+    hostedUrl: inv.hosted_invoice_url ?? null,
+    dueDate: inv.due_date ? new Date(inv.due_date * 1000).toISOString() : null,
+    paidAt: inv.status_transitions?.paid_at
+      ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
+      : null,
+    periodStart,
+    periodEnd,
+    testMode: isTest,
+    lineItems
+  }
+}
 
 /** Format a date string (YYYY-MM-DD) as MM/DD/YY */
 function formatDateShort(dateStr: string): string {
@@ -40,7 +86,7 @@ export const invoiceService = {
     startDate: string,
     endDate: string,
     projectId?: number
-  ): Promise<GeneratedLineItem[]> {
+  ): Promise<GenerateLineItemsResult> {
     const client = clientProjectService.getClientById(clientId)
     if (!client) throw new AppError('CLIENT_NOT_FOUND', `Client ${clientId} not found`)
     if (!client.billableRate) {
@@ -52,7 +98,8 @@ export const invoiceService = {
     // Query sessions for this client — fetch all completed, then filter by local date
     const conditions = [
       eq(sessions.clientId, clientId),
-      eq(sessions.status, 'completed')
+      eq(sessions.status, 'completed'),
+      eq(sessions.billable, 1)
     ]
     if (projectId != null) {
       conditions.push(eq(sessions.projectId, projectId))
@@ -77,7 +124,7 @@ export const invoiceService = {
       log.info(`Invoice date range found: ${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`)
     }
 
-    if (sessionRows.length === 0) return []
+    if (sessionRows.length === 0) return { lineItems: [], memo: null }
 
     // Load project names
     const projectRows = db.select().from(projects).all()
@@ -176,6 +223,9 @@ export const invoiceService = {
     )
 
     for (const group of sortedGroups) {
+      // Skip days with negligible time (under 3 minutes = rounds to 0.0h)
+      if (group.totalMinutes < 3) continue
+
       const hours = group.totalMinutes / 60
       const amountCents = Math.round(hours * client.billableRate! * 100)
       const sessionIds = group.sessions.map((s) => s.id)
@@ -223,7 +273,67 @@ export const invoiceService = {
       })
     }
 
-    return lineItems
+    // ── Generate overall memo summary ──
+    const totalMinutes = lineItems.reduce((sum, li) => sum + li.durationMinutes, 0)
+    const totalHours = (totalMinutes / 60).toFixed(1)
+    const uniqueProjects = [...new Set(lineItems.flatMap((li) => li.projectNames))]
+    const periodLabel = `${formatDateShort(startDate)} – ${formatDateShort(endDate)}`
+
+    // Collect all tickets mentioned in descriptions
+    const ticketPattern = /\b[A-Z]{2,10}-\d{1,6}\b/g
+    const allTickets = [...new Set(lineItems.flatMap((li) => li.description.match(ticketPattern) ?? []))]
+
+    let memo: string | null = null
+    const apiKey = credentialService.getApiKey()
+    if (apiKey && lineItems.length > 1) {
+      try {
+        const summaryContext = lineItems.map((li) => li.description).join('\n')
+        const prompt = [
+          `Summarize the following invoice line items into a brief overall memo (2-3 sentences, under 400 characters total) for a client.`,
+          `This is a ${totalHours}h invoice covering ${periodLabel} for: ${uniqueProjects.join(', ')}.`,
+          allTickets.length > 0 ? `Tickets worked: ${allTickets.join(', ')}.` : '',
+          `CRITICAL: Only describe work that is explicitly mentioned in the line items below. Do NOT infer or invent work based on project names.`,
+          `Use business-friendly language but stay accurate to what was actually done. Do NOT list individual days.`,
+          `NEVER use "we" or "our" — this is a solo contractor. Omit the subject or use passive voice.`,
+          `Output plain text only — no markdown, no bullets, no asterisks, no formatting.`,
+          `Start with the period and hours, then summarize what was accomplished.`,
+          '',
+          'Line items:',
+          summaryContext
+        ].filter(Boolean).join('\n')
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          const aiMemo = data.content?.[0]?.type === 'text' ? data.content[0].text?.trim() : null
+          if (aiMemo) memo = aiMemo
+        }
+      } catch (err) {
+        log.warn('AI invoice memo generation failed:', err)
+      }
+    }
+
+    // Fallback memo if AI unavailable
+    if (!memo) {
+      const parts = [`${periodLabel} · ${totalHours}h · ${uniqueProjects.join(', ')}`]
+      if (allTickets.length > 0) parts.push(`Tickets: ${allTickets.join(', ')}`)
+      memo = parts.join('\n')
+    }
+
+    return { lineItems, memo }
   },
 
   /**
@@ -242,6 +352,7 @@ export const invoiceService = {
     paidAt?: string | null
     periodStart?: string | null
     periodEnd?: string | null
+    testMode?: boolean
     lineItems: Array<{
       lineDate?: string | null
       description: string
@@ -254,50 +365,56 @@ export const invoiceService = {
     const db = getDb()
     const now = new Date().toISOString()
 
-    const invoice = db
-      .insert(invoices)
-      .values({
-        clientId: data.clientId,
-        stripeInvoiceId: data.stripeInvoiceId,
-        status: data.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible',
-        amountDueCents: data.amountDueCents,
-        amountPaidCents: data.amountPaidCents,
-        currency: data.currency,
-        memo: data.memo ?? null,
-        hostedUrl: data.hostedUrl ?? null,
-        dueDate: data.dueDate ?? null,
-        paidAt: data.paidAt ?? null,
-        periodStart: data.periodStart ?? null,
-        periodEnd: data.periodEnd ?? null,
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning()
-      .get()
-
-    for (const item of data.lineItems) {
-      db.insert(invoiceLineItems)
+    let invoiceId = 0
+    db.transaction((tx) => {
+      const invoice = tx
+        .insert(invoices)
         .values({
-          invoiceId: invoice.id,
-          lineDate: item.lineDate ?? null,
-          description: item.description,
-          amountCents: item.amountCents,
-          durationMinutes: item.durationMinutes ?? null,
-          sessionIds: item.sessionIds ? item.sessionIds.join(',') : null,
-          sortOrder: item.sortOrder,
-          createdAt: now
+          clientId: data.clientId,
+          stripeInvoiceId: data.stripeInvoiceId,
+          status: data.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible',
+          amountDueCents: data.amountDueCents,
+          amountPaidCents: data.amountPaidCents,
+          currency: data.currency,
+          memo: data.memo ?? null,
+          hostedUrl: data.hostedUrl ?? null,
+          dueDate: data.dueDate ?? null,
+          paidAt: data.paidAt ?? null,
+          periodStart: data.periodStart ?? null,
+          periodEnd: data.periodEnd ?? null,
+          testMode: data.testMode ? 1 : 0,
+          createdAt: now,
+          updatedAt: now
         })
-        .run()
-    }
+        .returning()
+        .get()
 
-    log.info(`Saved invoice locally: id=${invoice.id}, stripe=${data.stripeInvoiceId}`)
-    return invoice.id
+      invoiceId = invoice.id
+
+      for (const item of data.lineItems) {
+        tx.insert(invoiceLineItems)
+          .values({
+            invoiceId: invoice.id,
+            lineDate: item.lineDate ?? null,
+            description: item.description,
+            amountCents: item.amountCents,
+            durationMinutes: item.durationMinutes ?? null,
+            sessionIds: item.sessionIds ? item.sessionIds.join(',') : null,
+            sortOrder: item.sortOrder,
+            createdAt: now
+          })
+          .run()
+      }
+    })
+
+    log.info(`Saved invoice locally: id=${invoiceId}, stripe=${data.stripeInvoiceId}`)
+    return invoiceId
   },
 
   /**
    * Get all local invoices, optionally filtered.
    */
-  getAll(filters?: { clientId?: number; status?: string }): LocalInvoice[] {
+  getAll(filters?: { clientId?: number; status?: string; testMode?: boolean }): LocalInvoice[] {
     const db = getDb()
     const conditions: ReturnType<typeof eq>[] = []
 
@@ -306,6 +423,9 @@ export const invoiceService = {
     }
     if (filters?.status) {
       conditions.push(eq(invoices.status, filters.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible'))
+    }
+    if (filters?.testMode != null) {
+      conditions.push(eq(invoices.testMode, filters.testMode ? 1 : 0))
     }
 
     const rows = conditions.length > 0
@@ -331,6 +451,7 @@ export const invoiceService = {
       paidAt: row.paidAt,
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
+      testMode: !!row.testMode,
       createdAt: row.createdAt
     }))
   },
@@ -366,6 +487,7 @@ export const invoiceService = {
       paidAt: row.paidAt,
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
+      testMode: !!row.testMode,
       createdAt: row.createdAt,
       lineItems: items.map((item) => ({
         id: item.id,
@@ -454,16 +576,74 @@ export const invoiceService = {
   },
 
   /**
+   * Delete a local invoice and its line items. Does NOT affect Stripe.
+   */
+  deleteInvoice(localId: number): void {
+    const db = getDb()
+    const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
+    if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
+
+    db.transaction((tx) => {
+      tx.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, localId)).run()
+      tx.delete(invoices).where(eq(invoices.id, localId)).run()
+    })
+    log.info(`Deleted local invoice id=${localId}, stripe=${row.stripeInvoiceId}`)
+  },
+
+  /**
+   * Import invoices from Stripe that aren't already in the local DB.
+   * Matches clients by stripeCustomerId. Returns count imported.
+   */
+  async importFromStripe(): Promise<number> {
+    const db = getDb()
+
+    const existingIds = new Set(
+      db.select({ sid: invoices.stripeInvoiceId }).from(invoices).all().map((r) => r.sid)
+    )
+
+    // Build client lookup by stripeCustomerId
+    const clientRows = db.select().from(clients).all()
+    const clientByStripeId = new Map<string, number>()
+    for (const c of clientRows) {
+      if (c.stripeCustomerId) clientByStripeId.set(c.stripeCustomerId, c.id)
+    }
+
+    const stripeInvoices = await stripeService.listInvoices()
+    const isTest = credentialService.isStripeTestMode()
+    let imported = 0
+
+    for (const inv of stripeInvoices) {
+      if (existingIds.has(inv.id)) continue
+
+      const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id
+      const clientId = customerId ? clientByStripeId.get(customerId) : undefined
+      if (!clientId) {
+        log.info(`Skipping Stripe invoice ${inv.id} — no matching local client for customer ${customerId}`)
+        continue
+      }
+
+      this.saveInvoice(mapStripeInvoiceToLocal(inv, clientId, isTest))
+      imported++
+      log.info(`Imported Stripe invoice ${inv.id} for client ${clientId}`)
+    }
+
+    log.info(`Imported ${imported} invoices from Stripe`)
+    return imported
+  },
+
+  /**
    * Check for overlapping invoices for a client in a date range.
    */
   checkOverlap(clientId: number, startDate: string, endDate: string): InvoiceOverlap[] {
     const db = getDb()
+    const isTest = credentialService.isStripeTestMode()
     const rows = db
       .select()
       .from(invoices)
       .where(
         and(
           eq(invoices.clientId, clientId),
+          eq(invoices.testMode, isTest ? 1 : 0),
           ne(invoices.status, 'void'),
           lte(invoices.periodStart, endDate),
           gte(invoices.periodEnd, startDate)

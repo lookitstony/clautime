@@ -230,26 +230,29 @@ export const aiService = {
             ticketList.push(`(no ticket): ${unticketedCommits.join('; ')}`)
           }
           prompt = [
-            `Summarize the following work on project "${projectName}" for an invoice. This goes to a business owner — describe VALUE delivered, not technical details.`,
-            `There are ${ticketList.length} work items. Write ONE short sentence per work item (under 80 chars each).`,
-            'Use business language. Do NOT mention the project name or ticket IDs — those are added separately.',
-            'Do NOT start lines with "I" — start with an action verb.',
-            `Return EXACTLY ${ticketList.length} lines, one per work item, in the same order as listed below.`,
+            `You are writing invoice line descriptions. Write ONE short sentence per work item (under 80 chars each).`,
+            'Rules:',
+            '- Describe ONLY what the commits and summaries say was done. Do NOT guess or invent work.',
+            '- Use business-friendly language. Start each line with an action verb.',
+            '- Do NOT mention the project name or ticket IDs — those are added separately.',
+            '- Do NOT use "I" or "We". Plain text only, no markdown.',
+            '- If the data is vague, write a general but honest description.',
+            `- Return EXACTLY ${ticketList.length} lines, one per work item, in order.`,
             '',
             'Work items:',
             ...ticketList,
             '',
-            'Additional context:',
             ...contextLines
           ].join('\n')
         } else {
           prompt = [
-            `Summarize the following work on project "${projectName}" into a SINGLE concise sentence suitable for an invoice line item.`,
-            'This invoice goes to a business owner — describe the VALUE delivered, not technical implementation details.',
-            'Use business language (e.g. "Added new client showcase to website" not "Updated React component with new portfolio entry").',
-            'Do NOT mention the project name or any ticket IDs — those will be added as prefixes.',
-            'Do NOT start with "I" — start with an action verb.',
-            'Keep it under 100 characters.',
+            `You are writing a one-line invoice description. Summarize the work below into a SINGLE concise sentence (under 100 chars).`,
+            'Rules:',
+            '- Describe ONLY what the commits and summaries say was done. Do NOT guess or invent work.',
+            '- Use business-friendly language. Start with an action verb.',
+            '- Do NOT mention the project name, ticket IDs, "I", or "We".',
+            '- Plain text only, no markdown.',
+            '- If the data is vague, write a general but honest description like "Development and maintenance work".',
             '',
             ...contextLines
           ].join('\n')
@@ -272,7 +275,15 @@ export const aiService = {
         if (response.ok) {
           const data = await response.json()
           const summary = data.content?.[0]?.type === 'text' ? data.content[0].text?.trim() : null
-          if (summary) {
+          // Reject AI refusals or overly long responses that look like explanations
+          const looksLikeRefusal = summary && (
+            summary.toLowerCase().includes("i don't have access") ||
+            summary.toLowerCase().includes("i don't have") ||
+            summary.toLowerCase().includes('please provide') ||
+            summary.toLowerCase().includes('i cannot') ||
+            summary.length > 300
+          )
+          if (summary && !looksLikeRefusal) {
             if (hasMultipleTickets) {
               // Parse multi-line response — one line per ticket
               const aiLines = summary.split('\n').map((l: string) => l.replace(/^[-•*]\s*/, '').trim()).filter((l: string) => l)

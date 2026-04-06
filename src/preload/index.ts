@@ -223,7 +223,7 @@ const api = {
       ipcRenderer.invoke('invoice:getInvoiceStatus', invoiceId),
     voidInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
       ipcRenderer.invoke('invoice:voidInvoice', invoiceId),
-    generateLineItems: (request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<import('../shared/types/invoice').GeneratedLineItem[]>> =>
+    generateLineItems: (request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<import('../shared/types/invoice').GenerateLineItemsResult>> =>
       ipcRenderer.invoke('invoice:generateLineItems', request),
     getAll: (filters?: { clientId?: number; status?: string }): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice[]>> =>
       ipcRenderer.invoke('invoice:getAll', filters),
@@ -233,6 +233,22 @@ const api = {
       ipcRenderer.invoke('invoice:syncLocalStatus', localId),
     syncAllStatuses: (): Promise<IpcResult<number>> =>
       ipcRenderer.invoke('invoice:syncAllStatuses'),
+    delete: (localId: number): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('invoice:delete', localId),
+    getStripeMode: (): Promise<IpcResult<'live' | 'test'>> =>
+      ipcRenderer.invoke('invoice:getStripeMode'),
+    setStripeMode: (mode: 'live' | 'test'): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('invoice:setStripeMode', mode),
+    hasStripeKeyForMode: (mode: 'live' | 'test'): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('invoice:hasStripeKeyForMode', mode),
+    removeStripeKeyForMode: (mode: 'live' | 'test'): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('invoice:removeStripeKeyForMode', mode),
+    importFromStripe: (): Promise<IpcResult<number>> =>
+      ipcRenderer.invoke('invoice:importFromStripe'),
+    getStripeTestEmail: (): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('invoice:getStripeTestEmail'),
+    setStripeTestEmail: (email: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('invoice:setStripeTestEmail', email),
     checkOverlap: (request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<import('../shared/types/invoice').InvoiceOverlap[]>> =>
       ipcRenderer.invoke('invoice:checkOverlap', request)
   },

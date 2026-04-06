@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send } from 'lucide-react'
+import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
@@ -32,6 +32,7 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
   const queryClient = useQueryClient()
   const [confirmVoid, setConfirmVoid] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoices', invoiceId],
@@ -82,11 +83,25 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Send failed')
   })
 
+  const deleteInvoice = useMutation({
+    mutationFn: async () => {
+      const r = await window.api.invoice.delete(invoiceId)
+      if (!r.success) throw new Error(r.error.message)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      toast.success('Invoice deleted')
+      onBack()
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Delete failed')
+  })
+
   if (isLoading || !invoice) {
     return <div className="p-6 text-center text-[var(--text-muted)]">Loading invoice...</div>
   }
 
   const displayStatus = getDisplayStatus(invoice)
+  const totalHours = invoice.lineItems.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0) / 60
 
   return (
     <div className="space-y-4">
@@ -116,6 +131,12 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
             <span className="text-[var(--text-muted)]">Amount</span>
             <p className="text-[var(--text-primary)] font-semibold">${(invoice.amountDueCents / 100).toFixed(2)}</p>
           </div>
+          {totalHours > 0 && (
+            <div>
+              <span className="text-[var(--text-muted)]">Hours</span>
+              <p className="text-[var(--text-primary)] font-semibold">{totalHours.toFixed(2)}h</p>
+            </div>
+          )}
           {invoice.amountPaidCents > 0 && (
             <div>
               <span className="text-[var(--text-muted)]">Paid</span>
@@ -172,7 +193,7 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
               <RefreshCw className={cn('mr-1 h-3 w-3', syncStatus.isPending && 'animate-spin')} /> Refresh
             </Button>
           )}
-          {invoice.hostedUrl && (
+          {invoice.hostedUrl ? (
             <Button
               size="sm"
               variant="ghost"
@@ -185,7 +206,22 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
             >
               <ExternalLink className="mr-1 h-3 w-3" /> View on Stripe
             </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const prefix = invoice.testMode ? 'https://dashboard.stripe.com/test' : 'https://dashboard.stripe.com'
+                window.open(`${prefix}/invoices/${invoice.stripeInvoiceId}`, '_blank')
+              }}
+            >
+              <ExternalLink className="mr-1 h-3 w-3" /> View on Stripe
+            </Button>
           )}
+          <div className="flex-1" />
+          <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} disabled={deleteInvoice.isPending} className="text-[var(--destructive)]">
+            <Trash2 className="mr-1 h-3 w-3" /> Delete
+          </Button>
         </div>
       </section>
 
@@ -200,10 +236,11 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
               <div key={item.id} className="flex items-start justify-between rounded border border-[var(--surface-border)] bg-[var(--background-primary)] p-3">
                 <div className="flex-1">
                   <p className="text-[13px] text-[var(--text-primary)]">{item.description}</p>
-                  {item.lineDate && (
+                  {(item.lineDate || item.durationMinutes) && (
                     <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                      {new Date(item.lineDate).toLocaleDateString()}
-                      {item.durationMinutes ? ` · ${(item.durationMinutes / 60).toFixed(1)}h` : ''}
+                      {item.lineDate ? new Date(item.lineDate + 'T00:00:00').toLocaleDateString() : ''}
+                      {item.lineDate && item.durationMinutes ? ' · ' : ''}
+                      {item.durationMinutes ? `${(item.durationMinutes / 60).toFixed(1)}h` : ''}
                     </p>
                   )}
                 </div>
@@ -230,11 +267,22 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
       <ConfirmDialog
         open={confirmSend}
         title="Send Invoice"
-        description={`Send this invoice for $${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName}?`}
+        description={`Send this invoice for ${totalHours > 0 ? `${totalHours.toFixed(2)}h · ` : ''}$${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName}?`}
         confirmLabel="Send"
         cancelLabel="Cancel"
         onConfirm={() => { setConfirmSend(false); sendInvoice.mutate() }}
         onCancel={() => setConfirmSend(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Invoice"
+        description={`Permanently delete this invoice record for $${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName}? This removes it from ClauTime but does not affect Stripe.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={() => { setConfirmDelete(false); deleteInvoice.mutate() }}
+        onCancel={() => setConfirmDelete(false)}
       />
     </div>
   )

@@ -88,9 +88,9 @@ export type DatePreset = 'today' | 'this-week' | 'last-week' | 'this-month'
 
 /**
  * Compute start/end ISO date strings for a date preset.
- * Week starts on Monday.
+ * @param weekStartDay 0 = Sunday, 1 = Monday (default)
  */
-export function getDateRangeForPreset(preset: DatePreset): { startDate: string; endDate: string } {
+export function getDateRangeForPreset(preset: DatePreset, weekStartDay: number = 1): { startDate: string; endDate: string } {
   const now = new Date()
   const startOfDay = (d: Date): string => {
     const s = new Date(d.getFullYear(), d.getMonth(), d.getDate())
@@ -101,26 +101,25 @@ export function getDateRangeForPreset(preset: DatePreset): { startDate: string; 
     return e.toISOString()
   }
 
+  // Calculate days since the start of the current week
+  const daysSinceWeekStart = (now.getDay() - weekStartDay + 7) % 7
+
   switch (preset) {
     case 'today':
       return { startDate: startOfDay(now), endDate: endOfDay(now) }
     case 'this-week': {
-      const day = now.getDay()
-      const diff = day === 0 ? 6 : day - 1 // Monday = 0
-      const monday = new Date(now)
-      monday.setDate(now.getDate() - diff)
-      return { startDate: startOfDay(monday), endDate: endOfDay(now) }
+      const weekStart = new Date(now)
+      weekStart.setDate(now.getDate() - daysSinceWeekStart)
+      return { startDate: startOfDay(weekStart), endDate: endOfDay(now) }
     }
     case 'last-week': {
-      const day = now.getDay()
-      const diff = day === 0 ? 6 : day - 1
-      const thisMonday = new Date(now)
-      thisMonday.setDate(now.getDate() - diff)
-      const lastMonday = new Date(thisMonday)
-      lastMonday.setDate(thisMonday.getDate() - 7)
-      const lastSunday = new Date(thisMonday)
-      lastSunday.setDate(thisMonday.getDate() - 1)
-      return { startDate: startOfDay(lastMonday), endDate: endOfDay(lastSunday) }
+      const thisWeekStart = new Date(now)
+      thisWeekStart.setDate(now.getDate() - daysSinceWeekStart)
+      const lastWeekStart = new Date(thisWeekStart)
+      lastWeekStart.setDate(thisWeekStart.getDate() - 7)
+      const lastWeekEnd = new Date(thisWeekStart)
+      lastWeekEnd.setDate(thisWeekStart.getDate() - 1)
+      return { startDate: startOfDay(lastWeekStart), endDate: endOfDay(lastWeekEnd) }
     }
     case 'this-month': {
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)

@@ -5,6 +5,7 @@ import { ArrowLeft, Sparkles, Plus, Trash2, Send, LoaderCircle } from 'lucide-re
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { getDateRangeForPreset, type DatePreset } from '@/lib/format'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import type { GeneratedLineItem, InvoiceOverlap } from '../../../../shared/types/invoice'
 
@@ -22,20 +23,28 @@ let nextId = 1
 
 interface InvoiceCreateFlowProps {
   onBack: () => void
-  onInvoiceCreated?: (localId: number) => void
+  onInvoiceCreated?: (draft: import('../../../../shared/types/invoice').DraftInvoice) => void
 }
 
-export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX.Element {
+export function InvoiceCreateFlow({ onBack, onInvoiceCreated }: InvoiceCreateFlowProps): React.JSX.Element {
   const queryClient = useQueryClient()
+  const { data: settingsData } = useQuery({
+    queryKey: ['settings', 'all'],
+    queryFn: async () => {
+      const r = await window.api.settings.getAll()
+      return r.success ? r.data : {}
+    }
+  })
+  const weekStartDay = parseInt(settingsData?.['week_start_day'] ?? '1', 10)
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [lineItems, setLineItems] = useState<EditableLineItem[]>([])
   const [memo, setMemo] = useState('')
+  const [daysUntilDue, setDaysUntilDue] = useState(30)
   const [achOnly, setAchOnly] = useState(() => localStorage.getItem('invoice-ach-only') === 'true')
   const [showAchError, setShowAchError] = useState(false)
-  const [confirmSend, setConfirmSend] = useState(false)
   const [overlaps, setOverlaps] = useState<InvoiceOverlap[]>([])
   const [showOverlapWarning, setShowOverlapWarning] = useState(false)
 
@@ -82,12 +91,16 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
       projectId: selectedProjectId ?? undefined
     })
     if (!r.success) throw new Error(r.error.message)
-    if (r.data.length === 0) {
+    // Handle both new { lineItems, memo } and legacy array format
+    const result = r.data
+    const generated = 'lineItems' in result ? result.lineItems : (result as unknown as GeneratedLineItem[])
+    const generatedMemo = 'memo' in result ? result.memo : null
+    if (generated.length === 0) {
       toast.info('No billable sessions found for this period')
       return null
     }
 
-    const items: EditableLineItem[] = r.data.map((item: GeneratedLineItem) => ({
+    const items: EditableLineItem[] = generated.map((item: GeneratedLineItem) => ({
       id: nextId++,
       lineDate: item.lineDate,
       description: item.description,
@@ -97,6 +110,7 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
       sessionIds: item.sessionIds
     }))
     setLineItems(items)
+    if (generatedMemo) setMemo(generatedMemo)
     toast.success(`Generated ${items.length} line item${items.length > 1 ? 's' : ''}`)
     return items
   }, [selectedClientId, selectedProjectId, startDate, endDate])
@@ -127,12 +141,16 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Generation failed')
   })
 
+  const [isGenerating, setIsGenerating] = useState(false)
   const handleOverlapContinue = useCallback(async () => {
     setShowOverlapWarning(false)
+    setIsGenerating(true)
     try {
       await doGenerate()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setIsGenerating(false)
     }
   }, [doGenerate])
 
@@ -165,16 +183,22 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
     }))
   }, [selectedClient])
 
-  // Create draft + send
-  const sendInvoice = useMutation({
+  // Create draft (for preview)
+  const createDraft = useMutation({
     mutationFn: async () => {
       if (!selectedClientId) throw new Error('No client selected')
 
-      const stripeLineItems = lineItems.map((item) => ({
-        description: item.description.trim(),
-        amountCents: Math.round(parseFloat(item.amount) * 100),
-        quantity: 1
-      }))
+      const rateCents = selectedClient?.billableRate ? Math.round(selectedClient.billableRate * 100) : 0
+      const stripeLineItems = lineItems.map((item) => {
+        const hours = parseFloat(item.hours)
+        const hasHours = !isNaN(hours) && hours > 0 && rateCents > 0
+        return {
+          description: item.description.trim(),
+          amountCents: Math.round(parseFloat(item.amount) * 100),
+          hours: hasHours ? hours : undefined,
+          rateCents: hasHours ? rateCents : undefined
+        }
+      })
 
       const lineMeta = lineItems.map((item) => ({
         lineDate: item.lineDate || undefined,
@@ -182,31 +206,26 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
         sessionIds: item.sessionIds.length > 0 ? item.sessionIds : undefined
       }))
 
-      // Create draft with local persistence
       const draftResult = await window.api.invoice.createDraftInvoice({
         clientId: selectedClientId,
         lineItems: stripeLineItems,
         memo: memo.trim() || undefined,
+        daysUntilDue,
         periodStart: startDate || undefined,
         periodEnd: endDate || undefined,
         achOnly: achOnly || undefined,
         lineMeta
       })
       if (!draftResult.success) throw new Error(draftResult.error.message)
-
-      // Send it
-      const sendResult = await window.api.invoice.sendInvoice(draftResult.data.invoiceId)
-      if (!sendResult.success) throw new Error(sendResult.error.message)
-
-      return { draft: draftResult.data, status: sendResult.data }
+      return draftResult.data
     },
-    onSuccess: () => {
+    onSuccess: (draft) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Invoice sent!')
-      onBack()
+      // Navigate to the detail view for review before sending
+      if (onInvoiceCreated) onInvoiceCreated(draft)
     },
     onError: (err) => {
-      const msg = err instanceof Error ? err.message : 'Failed to send invoice'
+      const msg = err instanceof Error ? err.message : 'Failed to create draft'
       if (msg.toLowerCase().includes('us_bank_account') || msg.toLowerCase().includes('ach') || msg.toLowerCase().includes('payment_method')) {
         setShowAchError(true)
       } else {
@@ -217,41 +236,27 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
 
   // Date presets
   const setPreset = useCallback((preset: string) => {
-    const now = new Date()
-    let start: Date
-    let end: Date
-
-    switch (preset) {
-      case 'thisWeek': {
-        start = new Date(now)
-        start.setDate(now.getDate() - now.getDay())
-        end = now
-        break
-      }
-      case 'lastWeek': {
-        start = new Date(now)
-        start.setDate(now.getDate() - now.getDay() - 7)
-        end = new Date(start)
-        end.setDate(start.getDate() + 6)
-        break
-      }
-      case 'thisMonth': {
-        start = new Date(now.getFullYear(), now.getMonth(), 1)
-        end = now
-        break
-      }
-      case 'lastMonth': {
-        start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        end = new Date(now.getFullYear(), now.getMonth(), 0)
-        break
-      }
-      default:
-        return
+    const presetMap: Record<string, DatePreset> = {
+      thisWeek: 'this-week',
+      lastWeek: 'last-week',
+      thisMonth: 'this-month'
     }
 
-    setStartDate(start.toISOString().slice(0, 10))
-    setEndDate(end.toISOString().slice(0, 10))
-  }, [])
+    if (preset === 'lastMonth') {
+      const now = new Date()
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const end = new Date(now.getFullYear(), now.getMonth(), 0)
+      setStartDate(start.toISOString().slice(0, 10))
+      setEndDate(end.toISOString().slice(0, 10))
+      return
+    }
+
+    const mapped = presetMap[preset]
+    if (!mapped) return
+    const range = getDateRangeForPreset(mapped, weekStartDay)
+    setStartDate(new Date(range.startDate).toISOString().slice(0, 10))
+    setEndDate(new Date(range.endDate).toISOString().slice(0, 10))
+  }, [weekStartDay])
 
   return (
     <div className="space-y-4">
@@ -328,10 +333,10 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
 
         <Button
           onClick={() => generate.mutate()}
-          disabled={!isGenerateReady || generate.isPending}
+          disabled={!isGenerateReady || generate.isPending || isGenerating}
           className="w-full bg-[var(--accent)] text-white hover:brightness-[1.15]"
         >
-          {generate.isPending ? (
+          {(generate.isPending || isGenerating) ? (
             <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
           ) : (
             <><Sparkles className="mr-2 h-4 w-4" /> Generate Line Items</>
@@ -395,12 +400,13 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
           </div>
 
           <div className="mt-3">
-            <input
-              type="text"
+            <label className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">Memo</label>
+            <textarea
+              rows={3}
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              placeholder="Invoice memo (optional)"
-              className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+              placeholder="Invoice memo (auto-generated with line items)"
+              className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-vertical"
             />
           </div>
 
@@ -412,27 +418,42 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
               <span className="w-8" />
             </div>
             <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="achOnly"
-                  checked={achOnly}
-                  onChange={(e) => { setAchOnly(e.target.checked); localStorage.setItem('invoice-ach-only', String(e.target.checked)) }}
-                  className="h-4 w-4 rounded border-[var(--surface-border)] accent-[var(--accent)]"
-                />
-                <label htmlFor="achOnly" className="text-[12px] text-[var(--text-secondary)] select-none">
-                  ACH only
-                </label>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="daysUntilDue" className="text-[12px] text-[var(--text-secondary)] select-none">Due in</label>
+                  <input
+                    id="daysUntilDue"
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={daysUntilDue}
+                    onChange={(e) => setDaysUntilDue(Math.max(1, parseInt(e.target.value, 10) || 30))}
+                    className="w-14 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 text-center text-[12px] tabular-nums text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                  />
+                  <span className="text-[12px] text-[var(--text-muted)]">days</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="achOnly"
+                    checked={achOnly}
+                    onChange={(e) => { setAchOnly(e.target.checked); localStorage.setItem('invoice-ach-only', String(e.target.checked)) }}
+                    className="h-4 w-4 rounded border-[var(--surface-border)] accent-[var(--accent)]"
+                  />
+                  <label htmlFor="achOnly" className="text-[12px] text-[var(--text-secondary)] select-none">
+                    ACH only
+                  </label>
+                </div>
               </div>
               <Button
-                onClick={() => setConfirmSend(true)}
-                disabled={!isSendReady || sendInvoice.isPending}
+                onClick={() => createDraft.mutate()}
+                disabled={!isSendReady || createDraft.isPending}
                 className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
               >
-                {sendInvoice.isPending ? (
-                  <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Sending...</>
+                {createDraft.isPending ? (
+                  <><LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Creating Draft...</>
                 ) : (
-                  <><Send className="mr-2 h-4 w-4" /> Send Invoice</>
+                  <><Send className="mr-2 h-4 w-4" /> Review Draft</>
                 )}
               </Button>
             </div>
@@ -449,20 +470,6 @@ export function InvoiceCreateFlow({ onBack }: InvoiceCreateFlowProps): React.JSX
         cancelLabel="Cancel"
         onConfirm={handleOverlapContinue}
         onCancel={() => setShowOverlapWarning(false)}
-      />
-
-      {/* Send Confirmation */}
-      <ConfirmDialog
-        open={confirmSend}
-        title="Send Invoice"
-        description={`Send invoice for $${totalAmount.toFixed(2)} to ${selectedClient?.name ?? 'client'}? This will email a real invoice via Stripe.`}
-        confirmLabel="Send"
-        cancelLabel="Cancel"
-        onConfirm={() => {
-          setConfirmSend(false)
-          sendInvoice.mutate()
-        }}
-        onCancel={() => setConfirmSend(false)}
       />
 
       {/* ACH Not Enabled Error */}

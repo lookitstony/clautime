@@ -90,21 +90,61 @@ export function SettingsPage(): React.JSX.Element {
   }, [])
 
   // ============= Stripe Configuration =============
-  const { data: hasStripeKey } = useQuery({
-    queryKey: ['stripe', 'hasKey'],
+  const { data: stripeMode = 'live' } = useQuery({
+    queryKey: ['stripe', 'mode'],
     queryFn: async () => {
-      const r = await window.api.invoice.hasStripeKey()
+      const r = await window.api.invoice.getStripeMode()
+      return r.success ? r.data : 'live' as const
+    }
+  })
+
+  const { data: hasStripeLiveKey = false } = useQuery({
+    queryKey: ['stripe', 'hasKey', 'live'],
+    queryFn: async () => {
+      const r = await window.api.invoice.hasStripeKeyForMode('live')
       return r.success ? r.data : false
     }
   })
 
-  const { data: isStripeTestMode } = useQuery({
-    queryKey: ['stripe', 'testMode'],
+  const { data: hasStripeTestKey = false } = useQuery({
+    queryKey: ['stripe', 'hasKey', 'test'],
     queryFn: async () => {
-      const r = await window.api.invoice.isTestMode()
+      const r = await window.api.invoice.hasStripeKeyForMode('test')
       return r.success ? r.data : false
+    }
+  })
+
+  const hasStripeKey = stripeMode === 'test' ? hasStripeTestKey : hasStripeLiveKey
+  const isStripeTestMode = stripeMode === 'test'
+
+  const { data: stripeTestEmail = '' } = useQuery({
+    queryKey: ['stripe', 'testEmail'],
+    queryFn: async () => {
+      const r = await window.api.invoice.getStripeTestEmail()
+      return r.success ? (r.data ?? '') : ''
+    }
+  })
+  const [testEmailInput, setTestEmailInput] = useState('')
+  const [testEmailDirty, setTestEmailDirty] = useState(false)
+  useEffect(() => {
+    if (stripeTestEmail && !testEmailDirty) {
+      setTestEmailInput(stripeTestEmail)
+    }
+  }, [stripeTestEmail, testEmailDirty])
+
+  const saveTestEmail = useMutation({
+    mutationFn: async (email: string) => {
+      const r = await window.api.invoice.setStripeTestEmail(email)
+      if (!r.success) throw new Error(r.error.message)
     },
-    enabled: !!hasStripeKey
+    onSuccess: () => {
+      setTestEmailDirty(false)
+      queryClient.invalidateQueries({ queryKey: ['stripe', 'testEmail'] })
+      toast.success('Test email saved')
+    },
+    onError: (err) => {
+      toast.error(`Failed to save test email: ${err.message}`)
+    }
   })
 
   const [stripeKeyInput, setStripeKeyInput] = useState('')
@@ -124,13 +164,25 @@ export function SettingsPage(): React.JSX.Element {
   })
 
   const removeStripeKey = useMutation({
-    mutationFn: async () => {
-      const r = await window.api.invoice.removeStripeKey()
+    mutationFn: async (mode: 'live' | 'test') => {
+      const r = await window.api.invoice.removeStripeKeyForMode(mode)
       if (!r.success) throw new Error(r.error.message)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stripe'] })
       toast.success('Stripe API key removed')
+    }
+  })
+
+  const setStripeMode = useMutation({
+    mutationFn: async (mode: 'live' | 'test') => {
+      const r = await window.api.invoice.setStripeMode(mode)
+      if (!r.success) throw new Error(r.error.message)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stripe'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      setStripeTestResult('idle')
     }
   })
 
@@ -635,23 +687,58 @@ export function SettingsPage(): React.JSX.Element {
         <SectionHeader title="Invoicing" />
         <SectionCard>
           <p className="mb-3 text-[12px] text-[var(--text-muted)]">
-            Add a Stripe secret key to enable invoicing directly from ClauTime.
-            Uses Stripe Invoicing to create, send, and track invoice payments.
+            Add Stripe secret keys to enable invoicing directly from ClauTime.
+            Toggle between live and sandbox modes.
           </p>
+
+          {/* Mode Toggle */}
+          <div className="mb-4 flex items-center gap-2">
+            <label className="text-[12px] font-semibold text-[var(--text-primary)]">Mode</label>
+            <div className="flex rounded border border-[var(--surface-border)] overflow-hidden">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setStripeMode.mutate('live')}
+                className={cn(
+                  'rounded-none px-3 py-1 text-[11px] font-medium',
+                  stripeMode === 'live'
+                    ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent)]'
+                    : 'text-[var(--text-muted)]'
+                )}
+              >
+                Live
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setStripeMode.mutate('test')}
+                className={cn(
+                  'rounded-none px-3 py-1 text-[11px] font-medium',
+                  stripeMode === 'test'
+                    ? 'bg-amber-500 text-white hover:bg-amber-500'
+                    : 'text-[var(--text-muted)]'
+                )}
+              >
+                Sandbox
+              </Button>
+            </div>
+            {isStripeTestMode && (
+              <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                TEST MODE
+              </span>
+            )}
+          </div>
+
+          {/* Active Key */}
           <div className="space-y-2">
             <label className="text-[12px] font-semibold text-[var(--text-primary)]">
-              Stripe Secret Key
+              {isStripeTestMode ? 'Sandbox' : 'Live'} Secret Key
             </label>
             {hasStripeKey ? (
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[13px] text-[var(--text-secondary)]">
                   {isStripeTestMode ? 'sk_test_' : 'sk_live_'}•••••••••••••••
                 </span>
-                {isStripeTestMode && (
-                  <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
-                    TEST MODE
-                  </span>
-                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -681,19 +768,87 @@ export function SettingsPage(): React.JSX.Element {
                   type="password"
                   value={stripeKeyInput}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setStripeKeyInput(e.target.value)}
-                  placeholder="sk_live_... or sk_test_..."
+                  placeholder={isStripeTestMode ? 'sk_test_...' : 'sk_live_...'}
                   className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                 />
                 <Button
                   size="sm"
                   onClick={() => stripeKeyInput && storeStripeKey.mutate(stripeKeyInput)}
-                  disabled={!stripeKeyInput || !stripeKeyInput.startsWith('sk_')}
+                  disabled={!stripeKeyInput || !stripeKeyInput.startsWith(isStripeTestMode ? 'sk_test_' : 'sk_live_')}
                   className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
                 >
                   Save Key
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Test Email Override */}
+          {isStripeTestMode && (
+            <div className="mt-3 space-y-1 border-t border-[var(--surface-border)] pt-3">
+              <label className="text-[12px] font-semibold text-[var(--text-primary)]">
+                Sandbox Email Override
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                In sandbox mode, this email replaces all client emails when creating Stripe customers. Keeps real emails out of test data.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="email"
+                  value={testEmailInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    setTestEmailInput(e.target.value)
+                    setTestEmailDirty(true)
+                  }}
+                  placeholder="test@example.com"
+                  className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => saveTestEmail.mutate(testEmailInput.trim())}
+                  disabled={!testEmailInput.trim() || testEmailInput.trim() === stripeTestEmail || saveTestEmail.isPending}
+                  className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                >
+                  {saveTestEmail.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </SectionCard>
+      </section>
+
+      {/* Date & Time */}
+      <section>
+        <SectionHeader title="Date & Time" />
+        <SectionCard>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
+              Start of Week
+            </label>
+            <p className="mb-2 text-[11px] text-[var(--text-muted)]">
+              Used for &ldquo;This Week&rdquo; and &ldquo;Last Week&rdquo; filters across sessions, reports, and analytics.
+            </p>
+            <div className="flex gap-1">
+              {([
+                { value: '1', label: 'Monday' },
+                { value: '0', label: 'Sunday' },
+                { value: '6', label: 'Saturday' }
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => saveSetting.mutate({ key: 'week_start_day', value: opt.value })}
+                  className={cn(
+                    'rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors',
+                    (settings?.['week_start_day'] ?? '1') === opt.value
+                      ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                      : 'border-[var(--surface-border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
         </SectionCard>
       </section>
@@ -1530,14 +1685,14 @@ export function SettingsPage(): React.JSX.Element {
 
       <ConfirmDialog
         open={confirmRemoveStripeKey}
-        title="Remove Stripe Key"
-        description="Remove your Stripe API key? You will need to re-enter it to send invoices."
+        title={`Remove ${isStripeTestMode ? 'Sandbox' : 'Live'} Stripe Key`}
+        description={`Remove your Stripe ${isStripeTestMode ? 'sandbox' : 'live'} API key? You will need to re-enter it to send invoices in ${isStripeTestMode ? 'test' : 'live'} mode.`}
         confirmLabel="Remove"
         cancelLabel="Keep"
         variant="destructive"
         onConfirm={() => {
           setConfirmRemoveStripeKey(false)
-          removeStripeKey.mutate()
+          removeStripeKey.mutate(stripeMode)
         }}
         onCancel={() => setConfirmRemoveStripeKey(false)}
       />

@@ -56,6 +56,7 @@ export function AnalyticsPage(): React.JSX.Element {
     }
   })
   const afterHoursMode = settingsData?.['after_hours_mode'] === 'true'
+  const weekStartDay = parseInt(settingsData?.['week_start_day'] ?? '1', 10)
 
   const filters = useMemo((): ReportFilters | null => {
     let dateRange: { startDate: string; endDate: string } | null = null
@@ -71,7 +72,7 @@ export function AnalyticsPage(): React.JSX.Element {
         endDate: new Date(customEnd + 'T23:59:59.999').toISOString()
       }
     } else {
-      dateRange = getDateRangeForPreset(datePreset as DatePreset)
+      dateRange = getDateRangeForPreset(datePreset as DatePreset, weekStartDay)
     }
 
     return {
@@ -80,7 +81,7 @@ export function AnalyticsPage(): React.JSX.Element {
       ...(projectId !== '__all__' ? { projectId: Number(projectId) } : {}),
       ...(afterHoursMode ? { afterHoursOnly: true } : {})
     }
-  }, [datePreset, customStart, customEnd, clientId, projectId, afterHoursMode])
+  }, [datePreset, customStart, customEnd, clientId, projectId, afterHoursMode, weekStartDay])
 
   const { sessionData, summaryData, isLoading, isError } = useAnalyticsData(filters)
 
