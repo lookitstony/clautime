@@ -242,20 +242,29 @@ export function InvoiceCreateFlow({ onBack, onInvoiceCreated }: InvoiceCreateFlo
       thisMonth: 'this-month'
     }
 
+    // Format a Date to YYYY-MM-DD using local components — avoids UTC drift
+    // that would bump end-of-day dates to the next calendar day in negative offsets.
+    const toLocalYmd = (d: Date): string => {
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+
     if (preset === 'lastMonth') {
       const now = new Date()
       const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const end = new Date(now.getFullYear(), now.getMonth(), 0)
-      setStartDate(start.toISOString().slice(0, 10))
-      setEndDate(end.toISOString().slice(0, 10))
+      setStartDate(toLocalYmd(start))
+      setEndDate(toLocalYmd(end))
       return
     }
 
     const mapped = presetMap[preset]
     if (!mapped) return
     const range = getDateRangeForPreset(mapped, weekStartDay)
-    setStartDate(new Date(range.startDate).toISOString().slice(0, 10))
-    setEndDate(new Date(range.endDate).toISOString().slice(0, 10))
+    setStartDate(toLocalYmd(new Date(range.startDate)))
+    setEndDate(toLocalYmd(new Date(range.endDate)))
   }, [weekStartDay])
 
   return (

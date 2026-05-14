@@ -18,6 +18,7 @@ export const invoices = sqliteTable(
     currency: text('currency').notNull().default('usd'),
     memo: text('memo'),
     hostedUrl: text('hosted_url'),
+    invoicePdf: text('invoice_pdf'),
     dueDate: text('due_date'),
     paidAt: text('paid_at'),
     periodStart: text('period_start'),
@@ -25,13 +26,15 @@ export const invoices = sqliteTable(
     createdAt: text('created_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
+    testMode: integer('test_mode').notNull().default(0),
     updatedAt: text('updated_at')
       .notNull()
       .$defaultFn(() => new Date().toISOString())
   },
   (table) => [
     index('idx_invoices_client_id').on(table.clientId),
-    index('idx_invoices_status').on(table.status)
+    index('idx_invoices_status').on(table.status),
+    index('idx_invoices_test_mode').on(table.testMode)
   ]
 )
 

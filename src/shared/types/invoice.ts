@@ -47,6 +47,7 @@ export interface DraftInvoice {
   amountDueCents: number
   currency: string
   hostedUrl: string | null
+  invoicePdf: string | null
   createdAt: string
 }
 
@@ -58,6 +59,7 @@ export interface InvoiceStatus {
   amountPaidCents: number
   currency: string
   hostedUrl: string | null
+  invoicePdf: string | null
   dueDate: string | null
   paidAt: string | null
 }
@@ -110,6 +112,7 @@ export interface LocalInvoice {
   currency: string
   memo: string | null
   hostedUrl: string | null
+  invoicePdf: string | null
   dueDate: string | null
   paidAt: string | null
   periodStart: string | null

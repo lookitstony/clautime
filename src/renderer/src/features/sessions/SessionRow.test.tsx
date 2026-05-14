@@ -17,6 +17,7 @@ const mockSession: Session = {
   inputTokens: 0,
   outputTokens: 0,
   sourceFile: '/home/user/.claude/projects/test/session.jsonl',
+  billable: true,
   projectId: null,
   clientId: null,
   createdAt: '2026-03-04T12:00:00Z',

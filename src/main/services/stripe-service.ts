@@ -53,6 +53,7 @@ function mapInvoiceStatus(inv: Stripe.Invoice): InvoiceStatus {
     amountPaidCents: inv.amount_paid,
     currency: inv.currency,
     hostedUrl: inv.hosted_invoice_url ?? null,
+    invoicePdf: inv.invoice_pdf ?? null,
     dueDate: inv.due_date ? new Date(inv.due_date * 1000).toISOString() : null,
     paidAt: inv.status_transitions?.paid_at
       ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
@@ -200,6 +201,7 @@ export const stripeService = {
       amountDueCents: updated.amount_due,
       currency: updated.currency,
       hostedUrl: updated.hosted_invoice_url ?? null,
+      invoicePdf: updated.invoice_pdf ?? null,
       createdAt: new Date(updated.created * 1000).toISOString()
     }
   },

@@ -12,6 +12,11 @@ import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../../shared/types/session'
 
+/** Map DB session row (billable as 0/1) to Session type (billable as boolean) */
+function mapSession(row: Record<string, unknown>): Session {
+  return { ...row, billable: row.billable !== undefined ? !!row.billable : true } as Session
+}
+
 export function registerSessionHandlers(): void {
   ipcMain.handle(
     'session:scan',
@@ -42,7 +47,7 @@ export function registerSessionHandlers(): void {
     'session:getAll',
     async (_event, filters?: SessionFilters): Promise<IpcResult<Session[]>> => {
       try {
-        const result = sessionService.getAllSessions(filters)
+        const result = sessionService.getAllSessions(filters).map(mapSession)
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC session:getAll failed:', error)
@@ -106,8 +111,8 @@ export function registerSessionHandlers(): void {
     'session:getById',
     async (_event, id: number): Promise<IpcResult<Session | null>> => {
       try {
-        const result = sessionService.getSessionById(id)
-        return ipcSuccess(result)
+        const row = sessionService.getSessionById(id)
+        return ipcSuccess(row ? mapSession(row) : null)
       } catch (error) {
         log.error('IPC session:getById failed:', error)
         return ipcError('SESSION_GET_BY_ID_ERROR', String(error))
@@ -132,7 +137,7 @@ export function registerSessionHandlers(): void {
     'session:update',
     async (_event, id: number, data: UpdateSession): Promise<IpcResult<Session>> => {
       try {
-        const result = sessionService.updateSession(id, data)
+        const result = mapSession(sessionService.updateSession(id, data))
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC session:update failed:', error)
@@ -159,7 +164,7 @@ export function registerSessionHandlers(): void {
     async (_event, id: number, splitAt: string): Promise<IpcResult<Session[]>> => {
       try {
         const [s1, s2] = sessionService.splitSession(id, splitAt)
-        return ipcSuccess([s1, s2])
+        return ipcSuccess([mapSession(s1), mapSession(s2)])
       } catch (error) {
         log.error('IPC session:split failed:', error)
         return ipcError('SESSION_SPLIT_ERROR', String(error))
@@ -208,7 +213,7 @@ export function registerSessionHandlers(): void {
       }
     ): Promise<IpcResult<Session>> => {
       try {
-        const result = sessionService.createSession(data)
+        const result = mapSession(sessionService.createSession(data))
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC session:create failed:', error)

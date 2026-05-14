@@ -52,6 +52,7 @@ function mapStripeInvoiceToLocal(inv: import('stripe').Stripe.Invoice, clientId:
     currency: inv.currency,
     memo: inv.description ?? null,
     hostedUrl: inv.hosted_invoice_url ?? null,
+    invoicePdf: inv.invoice_pdf ?? null,
     dueDate: inv.due_date ? new Date(inv.due_date * 1000).toISOString() : null,
     paidAt: inv.status_transitions?.paid_at
       ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
@@ -222,6 +223,9 @@ export const invoiceService = {
       (a, b) => a.dateKey.localeCompare(b.dateKey) || a.projectName.localeCompare(b.projectName)
     )
 
+    // Stripe caps line item descriptions at 500 characters (hard).
+    const STRIPE_LINE_DESC_LIMIT = 500
+
     for (const group of sortedGroups) {
       // Skip days with negligible time (under 3 minutes = rounds to 0.0h)
       if (group.totalMinutes < 3) continue
@@ -233,19 +237,41 @@ export const invoiceService = {
 
       // Get the attributed commit messages for this day+project
       const dayCommitMsgs = commitsByDayProject.get(`${group.dateKey}::${group.projectId ?? 0}`) ?? []
+      const ticketsForGroup = [...new Set(dayCommitMsgs.map((m) => m.match(/\b[A-Z]{2,10}-\d{1,6}\b/)?.[0]).filter(Boolean))]
+
+      const header = `${dateFormatted} ${group.projectName}:`
+      // When N tickets > MAX_PER_TICKET_LINES (4), ai-service returns a single
+      // combined summary + ticket list. Compute a generous cap for that mode;
+      // otherwise compute a per-ticket budget so header + N decorated lines ≤ 500.
+      const expectedLines = Math.max(1, ticketsForGroup.length || 1)
+      const useCombined = expectedLines > 4
+      let aiPerLineCap: number
+      if (useCombined) {
+        // Reserve space for header + " TICKET, TICKET, … — " + summary
+        const ticketsStr = ticketsForGroup.join(', ')
+        const reserved = header.length + 1 + ticketsStr.length + 3 // " — "
+        aiPerLineCap = Math.max(80, STRIPE_LINE_DESC_LIMIT - reserved - 10)
+      } else {
+        const overheadPerLine = 15 // 2 spaces + "TICKET-NUM: " (~12) + 1 newline
+        const reservedForLines = STRIPE_LINE_DESC_LIMIT - header.length - 1
+        const dynamicPerLineCap = Math.max(40, Math.floor(reservedForLines / expectedLines) - overheadPerLine)
+        aiPerLineCap = Math.min(80, dynamicPerLineCap)
+      }
 
       // Try AI description
       let description = ''
       try {
-        const result = await aiService.summarizeSessionGroup(sessionIds, group.projectName, dayCommitMsgs)
+        const result = await aiService.summarizeSessionGroup(sessionIds, group.projectName, dayCommitMsgs, aiPerLineCap)
         if (result && result.lines.length > 0) {
-          const header = `${dateFormatted} ${group.projectName}:`
-          if (result.lines.length === 1) {
+          if (result.combinedTickets && result.combinedTickets.length > 0) {
+            // Many-tickets mode: render the ticket list inline, then the summary
+            const ticketsStr = result.combinedTickets.join(', ')
+            description = `${header} ${ticketsStr} — ${result.lines[0].description}`
+          } else if (result.lines.length === 1) {
             const line = result.lines[0]
             const ticketPart = line.ticket ? `${line.ticket}: ` : ''
             description = `${header} ${ticketPart}${line.description}`
           } else {
-            // Multiple tickets — each on its own line, indented under the header
             const ticketLines = result.lines.map((line) => {
               const ticketPart = line.ticket ? `${line.ticket}: ` : ''
               return `  ${ticketPart}${line.description}`
@@ -257,10 +283,16 @@ export const invoiceService = {
         log.warn(`AI description failed for ${group.dateKey}/${group.projectName}, using fallback:`, err)
       }
 
-      // Fallback if AI unavailable
+      // Verify final assembled length. If over, drop AI and use the deterministic fallback.
+      if (description && description.length > STRIPE_LINE_DESC_LIMIT) {
+        log.warn(`Assembled line description over Stripe cap (${description.length} > ${STRIPE_LINE_DESC_LIMIT}) for ${group.dateKey}/${group.projectName}; using deterministic fallback`)
+        description = ''
+      }
+
+      // Fallback if AI unavailable or over cap (deterministic, always fits)
       if (!description) {
         const count = group.sessions.length
-        description = `${dateFormatted} ${group.projectName}: Development work (${count} session${count > 1 ? 's' : ''}, ${hours.toFixed(1)}h)`
+        description = `${header} Development work (${count} session${count > 1 ? 's' : ''}, ${hours.toFixed(1)}h)`
       }
 
       lineItems.push({
@@ -280,28 +312,54 @@ export const invoiceService = {
     const periodLabel = `${formatDateShort(startDate)} – ${formatDateShort(endDate)}`
 
     // Collect all tickets mentioned in descriptions
+    // Match ticket-like tokens (e.g. TRI-2643, WI-7), then drop common
+    // non-ticket prefixes that share the same shape (UTF-8, ISO-8859, etc.).
     const ticketPattern = /\b[A-Z]{2,10}-\d{1,6}\b/g
-    const allTickets = [...new Set(lineItems.flatMap((li) => li.description.match(ticketPattern) ?? []))]
+    const NON_TICKET_PREFIXES = new Set([
+      'UTF', 'ASCII', 'ISO', 'COVID', 'HTTP', 'HTTPS', 'IPV', 'TLS', 'SSL',
+      'AES', 'RSA', 'SHA', 'MD', 'RFC', 'OAUTH', 'JWT', 'API', 'REST',
+      'JSON', 'XML', 'YAML', 'CSV', 'HTML', 'CSS', 'JS', 'TS', 'EOL'
+    ])
+    const isLikelyTicket = (token: string): boolean => {
+      const prefix = token.split('-')[0].toUpperCase()
+      return !NON_TICKET_PREFIXES.has(prefix)
+    }
+    const allTickets = [
+      ...new Set(
+        lineItems.flatMap((li) => (li.description.match(ticketPattern) ?? []).filter(isLikelyTicket))
+      )
+    ]
+
+    // Stripe's invoice description field has no documented public limit; treat
+    // 500 as the safe budget (matches their 500-char cap on line item
+    // descriptions and metadata values). The TOTAL HOURS footer is appended
+    // after generation as a guaranteed line — AI must stay within
+    // (500 − footer length). Period appears at the top of the memo body.
+    const STRIPE_MEMO_LIMIT = 500
+    const totalHoursFooter = `\n\nTOTAL HOURS: ${totalHours}`
+    const memoBudget = STRIPE_MEMO_LIMIT - totalHoursFooter.length
 
     let memo: string | null = null
     const apiKey = credentialService.getApiKey()
     if (apiKey && lineItems.length > 1) {
-      try {
-        const summaryContext = lineItems.map((li) => li.description).join('\n')
-        const prompt = [
-          `Summarize the following invoice line items into a brief overall memo (2-3 sentences, under 400 characters total) for a client.`,
-          `This is a ${totalHours}h invoice covering ${periodLabel} for: ${uniqueProjects.join(', ')}.`,
-          allTickets.length > 0 ? `Tickets worked: ${allTickets.join(', ')}.` : '',
-          `CRITICAL: Only describe work that is explicitly mentioned in the line items below. Do NOT infer or invent work based on project names.`,
-          `Use business-friendly language but stay accurate to what was actually done. Do NOT list individual days.`,
-          `NEVER use "we" or "our" — this is a solo contractor. Omit the subject or use passive voice.`,
-          `Output plain text only — no markdown, no bullets, no asterisks, no formatting.`,
-          `Start with the period and hours, then summarize what was accomplished.`,
-          '',
-          'Line items:',
-          summaryContext
-        ].filter(Boolean).join('\n')
+      const summaryContext = lineItems.map((li) => li.description).join('\n')
+      const buildPrompt = (charLimit: number): string => [
+        `Summarize the following invoice line items into a brief overall memo (2-3 sentences) for a client.`,
+        `HARD LIMIT: your entire response MUST be ${charLimit} characters or fewer. This is non-negotiable — anything longer breaks the invoice.`,
+        `This invoice covers ${periodLabel} for: ${uniqueProjects.join(', ')}.`,
+        allTickets.length > 0 ? `Tickets worked: ${allTickets.join(', ')}.` : '',
+        `CRITICAL: Only describe work that is explicitly mentioned in the line items below. Do NOT infer or invent work based on project names.`,
+        `Use business-friendly language but stay accurate to what was actually done. Do NOT list individual days.`,
+        `NEVER use "we" or "our" — this is a solo contractor. Omit the subject or use passive voice.`,
+        `Output plain text only — no markdown, no bullets, no asterisks, no formatting.`,
+        `Start the FIRST line with exactly: ${periodLabel}`,
+        `Then on the next line(s), summarize what was accomplished. Do NOT mention total hours — that's appended separately.`,
+        '',
+        'Line items:',
+        summaryContext
+      ].filter(Boolean).join('\n')
 
+      const callAi = async (charLimit: number): Promise<string | null> => {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -312,26 +370,52 @@ export const invoiceService = {
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 200,
-            messages: [{ role: 'user', content: prompt }]
+            messages: [{ role: 'user', content: buildPrompt(charLimit) }]
           })
         })
+        if (!response.ok) return null
+        const data = await response.json()
+        return data.content?.[0]?.type === 'text' ? data.content[0].text?.trim() ?? null : null
+      }
 
-        if (response.ok) {
-          const data = await response.json()
-          const aiMemo = data.content?.[0]?.type === 'text' ? data.content[0].text?.trim() : null
-          if (aiMemo) memo = aiMemo
+      try {
+        let aiMemo = await callAi(memoBudget)
+        if (aiMemo && aiMemo.length > memoBudget) {
+          log.warn(`AI memo over budget (${aiMemo.length} > ${memoBudget}), regenerating with tighter cap`)
+          aiMemo = await callAi(Math.max(200, memoBudget - 80))
+        }
+        if (aiMemo && aiMemo.length <= memoBudget) {
+          memo = aiMemo
+        } else if (aiMemo) {
+          log.warn(`AI memo still over budget after retry (${aiMemo.length} > ${memoBudget}); using fallback`)
         }
       } catch (err) {
         log.warn('AI invoice memo generation failed:', err)
       }
     }
 
-    // Fallback memo if AI unavailable
+    // Deterministic fallback — period at top, drop tickets that don't fit
     if (!memo) {
-      const parts = [`${periodLabel} · ${totalHours}h · ${uniqueProjects.join(', ')}`]
-      if (allTickets.length > 0) parts.push(`Tickets: ${allTickets.join(', ')}`)
-      memo = parts.join('\n')
+      const head = `${periodLabel} · ${uniqueProjects.join(', ')}`
+      let body = head
+      if (allTickets.length > 0) {
+        const prefix = '\nTickets: '
+        const remaining = memoBudget - head.length - prefix.length
+        const fitTickets: string[] = []
+        let used = 0
+        for (const t of allTickets) {
+          const add = (fitTickets.length > 0 ? 2 : 0) + t.length
+          if (used + add > remaining) break
+          fitTickets.push(t)
+          used += add
+        }
+        if (fitTickets.length > 0) body += `${prefix}${fitTickets.join(', ')}`
+      }
+      memo = body
     }
+
+    // TOTAL HOURS is always appended last and never dropped
+    memo = `${memo}${totalHoursFooter}`
 
     return { lineItems, memo }
   },
@@ -348,6 +432,7 @@ export const invoiceService = {
     currency: string
     memo?: string | null
     hostedUrl?: string | null
+    invoicePdf?: string | null
     dueDate?: string | null
     paidAt?: string | null
     periodStart?: string | null
@@ -378,6 +463,7 @@ export const invoiceService = {
           currency: data.currency,
           memo: data.memo ?? null,
           hostedUrl: data.hostedUrl ?? null,
+          invoicePdf: data.invoicePdf ?? null,
           dueDate: data.dueDate ?? null,
           paidAt: data.paidAt ?? null,
           periodStart: data.periodStart ?? null,
@@ -447,6 +533,7 @@ export const invoiceService = {
       currency: row.currency,
       memo: row.memo,
       hostedUrl: row.hostedUrl,
+      invoicePdf: row.invoicePdf,
       dueDate: row.dueDate,
       paidAt: row.paidAt,
       periodStart: row.periodStart,
@@ -483,6 +570,7 @@ export const invoiceService = {
       currency: row.currency,
       memo: row.memo,
       hostedUrl: row.hostedUrl,
+      invoicePdf: row.invoicePdf,
       dueDate: row.dueDate,
       paidAt: row.paidAt,
       periodStart: row.periodStart,
@@ -517,6 +605,7 @@ export const invoiceService = {
         amountDueCents: stripeStatus.amountDueCents,
         amountPaidCents: stripeStatus.amountPaidCents,
         hostedUrl: stripeStatus.hostedUrl,
+        invoicePdf: stripeStatus.invoicePdf,
         dueDate: stripeStatus.dueDate,
         paidAt: stripeStatus.paidAt,
         updatedAt: new Date().toISOString()
@@ -558,6 +647,7 @@ export const invoiceService = {
               amountDueCents: stripeStatus.amountDueCents,
               amountPaidCents: stripeStatus.amountPaidCents,
               hostedUrl: stripeStatus.hostedUrl,
+              invoicePdf: stripeStatus.invoicePdf,
               dueDate: stripeStatus.dueDate,
               paidAt: stripeStatus.paidAt,
               updatedAt: new Date().toISOString()

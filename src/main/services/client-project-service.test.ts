@@ -264,20 +264,38 @@ describe('ClientProjectService — Projects', () => {
     )
   })
 
-  it('enforces unique directory path', () => {
+  it('returns the existing project when creating a duplicate directory under the same client', () => {
     const client = clientProjectService.createClient({ name: 'UniqueDir' })
-    clientProjectService.createProject({
+    const first = clientProjectService.createProject({
       clientId: client.id,
       name: 'First',
       directoryPath: 'C:\\unique'
     })
-    expect(() =>
-      clientProjectService.createProject({
-        clientId: client.id,
-        name: 'Second',
-        directoryPath: 'C:\\unique'
-      })
-    ).toThrow()
+    const second = clientProjectService.createProject({
+      clientId: client.id,
+      name: 'Second',
+      directoryPath: 'C:\\unique'
+    })
+    expect(second.id).toBe(first.id)
+    expect(second.name).toBe('First') // not renamed because already under same client
+  })
+
+  it('moves an existing project to a new client when creating with the same directory', () => {
+    const clientA = clientProjectService.createClient({ name: 'ClientA' })
+    const clientB = clientProjectService.createClient({ name: 'ClientB' })
+    const first = clientProjectService.createProject({
+      clientId: clientA.id,
+      name: 'OriginalName',
+      directoryPath: 'C:\\moveable'
+    })
+    const moved = clientProjectService.createProject({
+      clientId: clientB.id,
+      name: 'NewName',
+      directoryPath: 'C:\\moveable'
+    })
+    expect(moved.id).toBe(first.id)
+    expect(moved.clientId).toBe(clientB.id)
+    expect(moved.name).toBe('NewName')
   })
 })
 

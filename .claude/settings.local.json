@@ -44,7 +44,10 @@
       "Bash(python:*)",
       "Read(//c/apps/ClawdTime/$APPDATA/clawdtime/**)",
       "Read(//c/apps/ClawdTime/$LOCALAPPDATA/clawdtime/**)",
-      "Read(//c/apps/ClawdTime/**)"
+      "Read(//c/apps/ClawdTime/**)",
+      "Bash(cd:*)",
+      "Bash(node -e \":*)"
     ]
-  }
+  },
+  "prefersReducedMotion": true
 }

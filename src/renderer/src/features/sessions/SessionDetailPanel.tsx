@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
-import { ChevronRight, Pencil, Trash2, GitCommitHorizontal } from 'lucide-react'
+import { ChevronRight, Pencil, Trash2, GitCommitHorizontal, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { formatDuration, formatTimeRange, formatCompactNumber } from '@/lib/format'
@@ -525,6 +525,24 @@ export function SessionDetailPanel({
             )}
           </>
         )}
+        <div className="flex-1" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            updateSession.mutate(
+              { id: session.id, data: { billable: !session.billable } },
+              { onSuccess: () => toast.success(session.billable ? 'Marked as non-billable' : 'Marked as billable') }
+            )
+          }}
+          className={cn(
+            'text-[11px]',
+            session.billable ? 'text-[var(--text-muted)]' : 'text-amber-400'
+          )}
+        >
+          <DollarSign className="mr-1 h-3 w-3" />
+          {session.billable ? 'Billable' : 'Non-billable'}
+        </Button>
       </div>
     </div>
   )

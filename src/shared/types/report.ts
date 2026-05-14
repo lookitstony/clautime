@@ -5,6 +5,8 @@ export interface ReportFilters {
   clientId?: number
   projectId?: number
   afterHoursOnly?: boolean
+  /** Filter by billable status: 'all' (default), 'billable', 'non-billable' */
+  billableFilter?: 'all' | 'billable' | 'non-billable'
 }
 
 /** Report format type */

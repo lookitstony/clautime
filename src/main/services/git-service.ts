@@ -63,7 +63,7 @@ export const gitService = {
   async readCommits(
     dirPath: string,
     since?: string,
-    authorFilter?: { name?: string; email?: string }
+    authorEmails?: string[]
   ): Promise<ParsedCommit[]> {
     const isRepo = await this.isGitRepo(dirPath)
     if (!isRepo) {
@@ -73,6 +73,7 @@ export const gitService = {
 
     const args = [
       'log',
+      '--branches',
       '--format=%H|%s|%an|%ae|%aI',
       '--no-merges'
     ]
@@ -81,10 +82,11 @@ export const gitService = {
       args.push(`--since=${since}`)
     }
 
-    if (authorFilter?.email) {
-      args.push(`--author=${authorFilter.email}`)
-    } else if (authorFilter?.name) {
-      args.push(`--author=${authorFilter.name}`)
+    // Multiple --author flags are ORed together by git
+    if (authorEmails && authorEmails.length > 0) {
+      for (const email of authorEmails) {
+        args.push(`--author=${email}`)
+      }
     }
 
     try {
@@ -151,6 +153,27 @@ export const gitService = {
   },
 
   /**
+   * Resolve the list of author emails to filter commits by, for a given project.
+   * App setting `git_author_email` may hold a comma-separated list to support
+   * a single contributor who commits under multiple identities (e.g. personal
+   * + work email). Falls back to per-repo or global git config (single email)
+   * when the setting is empty.
+   */
+  async getGitAuthorEmails(dirPath?: string): Promise<string[]> {
+    const setting = settingsService.getSetting('git_author_email')
+    if (setting) {
+      const emails = setting
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0)
+      if (emails.length > 0) return emails
+    }
+    // Fall back to git-config-derived single email
+    const identity = await this.getGitIdentity(dirPath)
+    return identity?.email ? [identity.email] : []
+  },
+
+  /**
    * Scan commits for all projects and store in DB.
    * Processes in batches.
    */
@@ -190,11 +213,11 @@ export const gitService = {
         if (!isRepo) continue
 
         projectsScanned++
-        const identity = await this.getGitIdentity(project.directoryPath)
+        const authorEmails = await this.getGitAuthorEmails(project.directoryPath)
         const commits = await this.readCommits(
           project.directoryPath,
           undefined,
-          identity ?? undefined
+          authorEmails
         )
 
         if (commits.length === 0) continue

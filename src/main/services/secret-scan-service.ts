@@ -86,6 +86,12 @@ const PATTERN_DEFS: PatternDef[] = [
   // === MCP / Tool Tokens ===
   { id: 'mcp-token', label: 'MCP Tool Token', source: 'mcp_[a-zA-Z0-9_]{10,}\\.[a-zA-Z0-9_\\-]{20,}', flags: '', severity: 'critical', redactLabel: 'REDACTED-mcp-token' },
 
+  // === Productivity / No-Code ===
+  { id: 'airtable-pat', label: 'Airtable Personal Access Token', source: 'pat[a-zA-Z0-9]{14}\\.[a-f0-9]{64}', flags: '', severity: 'critical', redactLabel: 'REDACTED-airtable-pat' },
+
+  // === Communications / VoIP ===
+  { id: 'vonage-api-key', label: 'Vonage/Nexmo API Key', source: 'vck_[a-zA-Z0-9]{20,}', flags: '', severity: 'critical', redactLabel: 'REDACTED-vonage-api-key' },
+
   // === E-commerce / Platform ===
   { id: 'shopify-token', label: 'Shopify Token', source: 'shp(?:at|ca|pa|ss|ua)_[a-fA-F0-9]{32,}', flags: '', severity: 'critical', redactLabel: 'REDACTED-shopify-token' },
   { id: 'replicate-token', label: 'Replicate Token', source: 'r8_[a-zA-Z0-9]{37}', flags: '', severity: 'critical', redactLabel: 'REDACTED-replicate-token' },

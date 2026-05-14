@@ -295,7 +295,7 @@ describe('secret-scan-service', () => {
   })
 
   describe('redacted preview generation', () => {
-    it('generates first 4 + last 4 chars preview (AC 1)', async () => {
+    it('generates length-only preview without secret content', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
         'test.jsonl': jsonl({ type: 'user', message: { content: 'sk-ant-api03-abc123def456ghij' } })
       })
@@ -311,8 +311,9 @@ describe('secret-scan-service', () => {
         (v: any) => v.secretType === 'anthropic-api-key'
       ) as any
       expect(findingInsert).toBeTruthy()
-      // Preview should start with sk-a and end with last 4 chars
-      expect(findingInsert.redactedPreview).toMatch(/^sk-a••••.{4}$/)
+      // Preview is length-only (no secret chars) for privacy
+      expect(findingInsert.redactedPreview).toMatch(/^\d+ chars$/)
+      expect(findingInsert.redactedPreview).not.toContain('sk-ant')
     })
   })
 
@@ -392,7 +393,7 @@ describe('secret-scan-service', () => {
   })
 
   describe('context extraction', () => {
-    it('captures surrounding chars with secret masked', async () => {
+    it('stores no surrounding text to prevent leaking adjacent secrets', async () => {
       const filePath = join(tmpDir, 'ctx.jsonl')
       await writeFile(filePath, jsonl(
         { type: 'user', message: { content: 'the api key is sk-ant-api03-abc123def456ghijklmnop and here is more text' } }
@@ -404,7 +405,8 @@ describe('secret-scan-service', () => {
         (v: any) => v.secretType === 'anthropic-api-key'
       ) as any
       expect(findingInsert).toBeTruthy()
-      expect(findingInsert.context).toContain('[SECRET]')
+      // Context is intentionally empty for privacy — no surrounding text is stored
+      expect(findingInsert.context).toBe('')
     })
   })
 })

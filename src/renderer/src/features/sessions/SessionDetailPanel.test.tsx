@@ -49,6 +49,7 @@ const baseSession: Session = {
   inputTokens: 50000,
   outputTokens: 75000,
   sourceFile: 'test.jsonl',
+  billable: true,
   projectId: 1,
   clientId: 1,
   createdAt: '2026-03-05T09:15:00.000Z',

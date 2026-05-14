@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send, Trash2, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn } from '@/lib/utils'
@@ -216,6 +216,20 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
               }}
             >
               <ExternalLink className="mr-1 h-3 w-3" /> View on Stripe
+            </Button>
+          )}
+          {invoice.invoicePdf && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const url = invoice.invoicePdf!
+                if (url.startsWith('https://pay.stripe.com/') || url.startsWith('https://files.stripe.com/') || url.startsWith('https://invoice.stripe.com/')) {
+                  window.open(url, '_blank')
+                }
+              }}
+            >
+              <FileDown className="mr-1 h-3 w-3" /> Download PDF
             </Button>
           )}
           <div className="flex-1" />

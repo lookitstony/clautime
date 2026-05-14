@@ -56,6 +56,11 @@ export const reportService = {
     if (filters.projectId != null) {
       conditions.push(eq(sessions.projectId, filters.projectId))
     }
+    if (filters.billableFilter === 'billable') {
+      conditions.push(eq(sessions.billable, 1))
+    } else if (filters.billableFilter === 'non-billable') {
+      conditions.push(eq(sessions.billable, 0))
+    }
 
     // Fetch sessions and pro-rate those that extend beyond the filter range
     let rows = db

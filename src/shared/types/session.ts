@@ -13,6 +13,7 @@ export interface Session {
   inputTokens: number
   outputTokens: number
   sourceFile: string | null
+  billable: boolean
   projectId: number | null
   clientId: number | null
   createdAt: string
@@ -62,6 +63,7 @@ export interface UpdateSession {
   endedAt?: string
   durationMinutes?: number
   description?: string | null
+  billable?: boolean
   projectId?: number | null
   clientId?: number | null
 }

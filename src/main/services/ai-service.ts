@@ -173,9 +173,18 @@ export const aiService = {
    */
   async summarizeSessionGroup(
     sessionIds: number[],
-    projectName: string,
-    commitMessages: string[]
-  ): Promise<{ lines: Array<{ ticket: string | null; description: string }> } | null> {
+    _projectName: string,
+    commitMessages: string[],
+    maxCharsPerLine?: number
+  ): Promise<{
+    lines: Array<{ ticket: string | null; description: string }>
+    combinedTickets?: string[]
+  } | null> {
+    const lineCap = maxCharsPerLine ?? 80
+    // Above this many tickets, per-ticket lines blow past Stripe's 500-char
+    // line cap. Switch to a single combined summary with the ticket list
+    // rendered separately by the caller.
+    const MAX_PER_TICKET_LINES = 4
     const db = getDb()
 
     // Gather cached AI summaries for these sessions
@@ -215,13 +224,26 @@ export const aiService = {
       for (const msg of uniqueMsgs.slice(0, 20)) contextLines.push(`- ${msg}`)
     }
 
-    // Try AI summarization
+    // Try AI summarization (with one retry if any line exceeds the char cap)
     const apiKey = credentialService.getApiKey()
+    const useCombinedSummary = hasMultipleTickets && tickets.length > MAX_PER_TICKET_LINES
     if (apiKey) {
-      try {
-        let prompt: string
+      const buildPrompt = (cap: number): string => {
+        if (useCombinedSummary) {
+          return [
+            `You are writing ONE invoice line description summarizing a busy day across ${tickets.length} tickets.`,
+            `HARD LIMIT: your entire response MUST be ${cap} characters or fewer. Anything longer breaks the invoice.`,
+            'Rules:',
+            '- Write a SINGLE concise sentence describing the overall work done across these tickets.',
+            '- Describe ONLY what the commits and summaries say was done. Do NOT guess or invent work.',
+            '- Use business-friendly language. Start with an action verb.',
+            '- Do NOT list individual ticket IDs — they are rendered separately by the caller.',
+            '- Do NOT mention the project name, "I", or "We". Plain text only, no markdown.',
+            '',
+            ...contextLines
+          ].join('\n')
+        }
         if (hasMultipleTickets) {
-          // Ask AI to produce one description per ticket
           const ticketList = tickets.map((t) => {
             const msgs = ticketCommits.get(t)!
             return `${t}: ${msgs.join('; ')}`
@@ -229,8 +251,9 @@ export const aiService = {
           if (unticketedCommits.length > 0) {
             ticketList.push(`(no ticket): ${unticketedCommits.join('; ')}`)
           }
-          prompt = [
-            `You are writing invoice line descriptions. Write ONE short sentence per work item (under 80 chars each).`,
+          return [
+            `You are writing invoice line descriptions. Write ONE short sentence per work item.`,
+            `HARD LIMIT: each line MUST be ${cap} characters or fewer. Lines longer than ${cap} chars break the invoice.`,
             'Rules:',
             '- Describe ONLY what the commits and summaries say was done. Do NOT guess or invent work.',
             '- Use business-friendly language. Start each line with an action verb.',
@@ -244,63 +267,96 @@ export const aiService = {
             '',
             ...contextLines
           ].join('\n')
-        } else {
-          prompt = [
-            `You are writing a one-line invoice description. Summarize the work below into a SINGLE concise sentence (under 100 chars).`,
-            'Rules:',
-            '- Describe ONLY what the commits and summaries say was done. Do NOT guess or invent work.',
-            '- Use business-friendly language. Start with an action verb.',
-            '- Do NOT mention the project name, ticket IDs, "I", or "We".',
-            '- Plain text only, no markdown.',
-            '- If the data is vague, write a general but honest description like "Development and maintenance work".',
-            '',
-            ...contextLines
-          ].join('\n')
         }
+        return [
+          `You are writing a one-line invoice description. Summarize the work below into a SINGLE concise sentence.`,
+          `HARD LIMIT: your response MUST be ${cap} characters or fewer. Anything longer breaks the invoice.`,
+          'Rules:',
+          '- Describe ONLY what the commits and summaries say was done. Do NOT guess or invent work.',
+          '- Use business-friendly language. Start with an action verb.',
+          '- Do NOT mention the project name, ticket IDs, "I", or "We".',
+          '- Plain text only, no markdown.',
+          '- If the data is vague, write a general but honest description like "Development and maintenance work".',
+          '',
+          ...contextLines
+        ].join('\n')
+      }
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: hasMultipleTickets ? 300 : 100,
-            messages: [{ role: 'user', content: prompt }]
+      const attempt = async (
+        cap: number
+      ): Promise<{
+        lines: Array<{ ticket: string | null; description: string }>
+        combinedTickets?: string[]
+      } | null> => {
+        try {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: useCombinedSummary ? 150 : (hasMultipleTickets ? 300 : 100),
+              messages: [{ role: 'user', content: buildPrompt(cap) }]
+            })
           })
-        })
-
-        if (response.ok) {
+          if (!response.ok) return null
           const data = await response.json()
           const summary = data.content?.[0]?.type === 'text' ? data.content[0].text?.trim() : null
-          // Reject AI refusals or overly long responses that look like explanations
-          const looksLikeRefusal = summary && (
+          if (!summary) return null
+          const looksLikeRefusal =
             summary.toLowerCase().includes("i don't have access") ||
             summary.toLowerCase().includes("i don't have") ||
             summary.toLowerCase().includes('please provide') ||
-            summary.toLowerCase().includes('i cannot') ||
-            summary.length > 300
-          )
-          if (summary && !looksLikeRefusal) {
-            if (hasMultipleTickets) {
-              // Parse multi-line response — one line per ticket
-              const aiLines = summary.split('\n').map((l: string) => l.replace(/^[-•*]\s*/, '').trim()).filter((l: string) => l)
-              const allTicketKeys = [...tickets, ...(unticketedCommits.length > 0 ? [null] : [])]
-              const lines = allTicketKeys.map((ticket, i) => ({
+            summary.toLowerCase().includes('i cannot')
+          if (looksLikeRefusal) return null
+          if (useCombinedSummary) {
+            // Collapse any accidental multi-line response to a single line
+            const single = summary.split('\n').map((l: string) => l.trim()).filter((l: string) => l).join(' ')
+            return {
+              lines: [{ ticket: null, description: single }],
+              combinedTickets: [...tickets]
+            }
+          }
+          if (hasMultipleTickets) {
+            const aiLines = summary
+              .split('\n')
+              .map((l: string) => l.replace(/^[-•*]\s*/, '').trim())
+              .filter((l: string) => l)
+            const allTicketKeys = [...tickets, ...(unticketedCommits.length > 0 ? [null] : [])]
+            return {
+              lines: allTicketKeys.map((ticket, i) => ({
                 ticket,
                 description: aiLines[i] ?? (ticket ? ticketCommits.get(ticket)![0] : unticketedCommits[0])
               }))
-              return { lines }
-            } else {
-              const ticket = tickets.length === 1 ? tickets[0] : null
-              return { lines: [{ ticket, description: summary }] }
             }
           }
+          const ticket = tickets.length === 1 ? tickets[0] : null
+          return { lines: [{ ticket, description: summary }] }
+        } catch (err) {
+          log.warn('AI invoice summary attempt failed:', err)
+          return null
         }
-      } catch (err) {
-        log.warn('AI invoice summary failed, using fallback:', err)
+      }
+
+      const overCap = (
+        result: { lines: Array<{ ticket: string | null; description: string }> } | null,
+        cap: number
+      ): boolean => !!result && result.lines.some((l) => l.description.length > cap)
+
+      let result = await attempt(lineCap)
+      if (overCap(result, lineCap)) {
+        const overage = result!.lines.filter((l) => l.description.length > lineCap).length
+        log.warn(`AI line description over cap (${overage} of ${result!.lines.length} lines > ${lineCap} chars), regenerating`)
+        result = await attempt(Math.max(40, lineCap - 20))
+      }
+      if (result && !overCap(result, lineCap)) {
+        return result
+      }
+      if (result) {
+        log.warn(`AI line descriptions still over cap after retry; falling through to commit-based fallback`)
       }
     }
 
@@ -803,11 +859,23 @@ export const aiService = {
   }
 }
 
+// Common technical-spec tokens shaped like tickets (UTF-8, ISO-8859, COVID-19,
+// HTTP-2, etc.) but never actual issue keys. Excluded from ticket extraction.
+const NON_TICKET_PREFIXES = new Set([
+  'UTF', 'ASCII', 'ISO', 'COVID', 'HTTP', 'HTTPS', 'IPV', 'TLS', 'SSL',
+  'AES', 'RSA', 'SHA', 'MD', 'RFC', 'OAUTH', 'JWT', 'API', 'REST',
+  'JSON', 'XML', 'YAML', 'CSV', 'HTML', 'CSS', 'JS', 'TS', 'EOL'
+])
+
 /** Extract ticket/work item ID from a commit message, or return null. */
 function extractTicketId(message: string): string | null {
   // Match patterns like JIRA-123, FEAT-789, BUG-101, PROJ-1234, #456
   const match = message.match(/^([A-Z]+-\d+)\b/i) ?? message.match(/\b([A-Z]{2,}-\d+)\b/i) ?? message.match(/^(#\d+)\b/)
-  return match ? match[1].toUpperCase() : null
+  if (!match) return null
+  const candidate = match[1].toUpperCase()
+  const prefix = candidate.split('-')[0]
+  if (NON_TICKET_PREFIXES.has(prefix)) return null
+  return candidate
 }
 
 

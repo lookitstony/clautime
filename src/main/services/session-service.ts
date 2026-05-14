@@ -643,6 +643,7 @@ export const sessionService = {
     if (data.endedAt !== undefined) updates.endedAt = data.endedAt
     if (data.durationMinutes !== undefined) updates.durationMinutes = data.durationMinutes
     if (data.description !== undefined) updates.description = data.description
+    if (data.billable !== undefined) updates.billable = data.billable ? 1 : 0
     if (data.projectId !== undefined) updates.projectId = data.projectId
     if (data.clientId !== undefined) updates.clientId = data.clientId
 

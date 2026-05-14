@@ -10,11 +10,17 @@ vi.mock('./use-projects', () => ({
   useProjects: vi.fn()
 }))
 
+vi.mock('./use-clients', () => ({
+  useClients: vi.fn()
+}))
+
 import { useSessions } from '../sessions/use-sessions'
 import { useProjects } from './use-projects'
+import { useClients } from './use-clients'
 
 const mockUseSessions = vi.mocked(useSessions)
 const mockUseProjects = vi.mocked(useProjects)
+const mockUseClients = vi.mocked(useClients)
 
 function mockQuery<T>(data: T | undefined) {
   return { data, isLoading: false, error: null } as ReturnType<typeof useSessions>
@@ -22,6 +28,7 @@ function mockQuery<T>(data: T | undefined) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockUseClients.mockReturnValue(mockQuery([]) as any)
 })
 
 describe('useUnassignedDirectories', () => {
@@ -61,7 +68,7 @@ describe('useUnassignedDirectories', () => {
       ]) as any
     )
     mockUseProjects.mockReturnValue(
-      mockQuery([{ directoryPath: 'C:\\apps\\ClauTime' }]) as any
+      mockQuery([{ directoryPath: 'C:\\apps\\ClauTime', clientId: 1 }]) as any
     )
     const { result } = renderHook(() => useUnassignedDirectories())
     expect(result.current).toHaveLength(1)
@@ -117,7 +124,7 @@ describe('useUnassignedDirectories', () => {
       mockQuery([{ projectPath: 'C:/Apps/ClauTime' }]) as any
     )
     mockUseProjects.mockReturnValue(
-      mockQuery([{ directoryPath: 'c:\\apps\\clautime' }]) as any
+      mockQuery([{ directoryPath: 'c:\\apps\\clautime', clientId: 1 }]) as any
     )
     const { result } = renderHook(() => useUnassignedDirectories())
     expect(result.current).toHaveLength(0)

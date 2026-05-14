@@ -238,6 +238,7 @@ export function registerInvoiceHandlers(): void {
           .set({
             status: result.status,
             hostedUrl: result.hostedUrl,
+            invoicePdf: result.invoicePdf,
             dueDate: result.dueDate,
             updatedAt: new Date().toISOString()
           })

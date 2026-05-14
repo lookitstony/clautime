@@ -18,6 +18,7 @@ export const sessions = sqliteTable(
     inputTokens: integer('input_tokens').notNull().default(0),
     outputTokens: integer('output_tokens').notNull().default(0),
     sourceFile: text('source_file'),
+    billable: integer('billable').notNull().default(1),
     projectId: integer('project_id').references(() => projects.id),
     clientId: integer('client_id').references(() => clients.id),
     createdAt: text('created_at')

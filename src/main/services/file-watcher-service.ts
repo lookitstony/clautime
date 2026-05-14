@@ -151,6 +151,14 @@ export const fileWatcherService = {
       await sessionService.scanSessions(undefined, [projectDirName])
       clientProjectService.attributeSessions()
 
+      // Pick up any new git commits for this project, then correlate.
+      // Without this, long-running app sessions never see commits made after startup.
+      gitService.scanCommits().then(() => {
+        gitService.correlateCommitsWithSessions()
+      }).catch((err) => {
+        log.warn('Incremental git scan failed (non-critical):', err)
+      })
+
       // Notify renderer to refresh data
       this._notifyRenderer()
     } catch (err) {
