@@ -35,8 +35,10 @@ export function detectSessions(
         const currTs = messages[i].timestamp
         // Hard cap: no single tool execution should bridge more than 2 hours,
         // even with progress events (catches tail -f, npm run dev left overnight)
-        if (gapMinutes <= MAX_PROGRESS_GAP_MINUTES &&
-            hasProgressActivity(parsed.progressTimestamps, prevTs, currTs)) {
+        if (
+          gapMinutes <= MAX_PROGRESS_GAP_MINUTES &&
+          hasProgressActivity(parsed.progressTimestamps, prevTs, currTs)
+        ) {
           continue
         }
         // Fall back to tool-type heuristic limits for short gaps without progress
@@ -45,9 +47,7 @@ export function detectSessions(
         }
       }
 
-      results.push(
-        buildDetectedSession(parsed, messages, segmentStart, i - 1, projectPath)
-      )
+      results.push(buildDetectedSession(parsed, messages, segmentStart, i - 1, projectPath))
       segmentStart = i
     }
   }
@@ -58,7 +58,7 @@ export function detectSessions(
   )
 
   // Filter out noise: sessions with 0 human prompts and minimal tokens (< 50) are just init/system messages
-  return results.filter((s) => s.promptCount > 0 || (s.inputTokens + s.outputTokens) >= 50)
+  return results.filter((s) => s.promptCount > 0 || s.inputTokens + s.outputTokens >= 50)
 }
 
 /**
@@ -98,15 +98,15 @@ export function resolveProjectPath(parsed: ParsedSessionData): string {
 export function encodeProjectPath(fsPath: string): string {
   if (!fsPath) return ''
   // Windows: C:\foo\bar → C--foo-bar
-  const winMatch = fsPath.match(/^([A-Za-z]):[\\\/](.*)$/)
+  const winMatch = fsPath.match(/^([A-Za-z]):[\\/](.*)$/)
   if (winMatch) {
-    return `${winMatch[1]}--${winMatch[2].replace(/[\\\/\s]/g, '-')}`
+    return `${winMatch[1]}--${winMatch[2].replace(/[\\/\s]/g, '-')}`
   }
   // Unix: /home/user/foo → -home-user-foo
   if (fsPath.startsWith('/')) {
-    return fsPath.replace(/[\/\s]/g, '-')
+    return fsPath.replace(/[/\s]/g, '-')
   }
-  return fsPath.replace(/[\/\\\s]/g, '-')
+  return fsPath.replace(/[/\\\s]/g, '-')
 }
 
 export function decodeProjectPath(encoded: string): string {
@@ -143,7 +143,11 @@ const MAX_PROGRESS_GAP_MINUTES = 120
  * Uses exclusive boundaries — a progress event at exactly startTs or endTs
  * is not evidence of activity *during* the gap.
  */
-function hasProgressActivity(progressTimestamps: string[], startTs: string, endTs: string): boolean {
+function hasProgressActivity(
+  progressTimestamps: string[],
+  startTs: string,
+  endTs: string
+): boolean {
   if (progressTimestamps.length === 0) return false
 
   // Binary search for first timestamp > startTs (exclusive)
@@ -167,27 +171,38 @@ function hasProgressActivity(progressTimestamps: string[], startTs: string, endT
   // For long gaps, find the LAST progress event before endTs and check
   // it's within 15 minutes of the gap end (tool was still running near the end)
   let lastInRange = lo
-  while (lastInRange + 1 < progressTimestamps.length && progressTimestamps[lastInRange + 1] < endTs) {
+  while (
+    lastInRange + 1 < progressTimestamps.length &&
+    progressTimestamps[lastInRange + 1] < endTs
+  ) {
     lastInRange++
   }
   const lastProgressMs = new Date(progressTimestamps[lastInRange]).getTime()
   const endMs = new Date(endTs).getTime()
-  return (endMs - lastProgressMs) < 15 * 60_000
+  return endMs - lastProgressMs < 15 * 60_000
 }
 
 /**
  * Maximum gap (in minutes) to tolerate for a tool execution before treating
  * it as idle time. Based on realistic execution times per tool type.
  */
-const TOOL_GAP_SLOW = 30  // Agent subagents, complex MCP tools
+const TOOL_GAP_SLOW = 30 // Agent subagents, complex MCP tools
 const TOOL_GAP_MEDIUM = 10 // Bash (builds/tests can take a few minutes)
-const TOOL_GAP_FAST = 5    // Read, Write, Edit, Glob, Grep, etc.
+const TOOL_GAP_FAST = 5 // Read, Write, Edit, Glob, Grep, etc.
 
 const SLOW_TOOLS = new Set(['Agent', 'TaskCreate', 'TaskUpdate', 'TaskGet'])
 const FAST_TOOLS = new Set([
-  'Read', 'Write', 'Edit', 'Glob', 'Grep', 'LSP',
-  'NotebookEdit', 'AskUserQuestion', 'TodoWrite',
-  'EnterPlanMode', 'ExitPlanMode'
+  'Read',
+  'Write',
+  'Edit',
+  'Glob',
+  'Grep',
+  'LSP',
+  'NotebookEdit',
+  'AskUserQuestion',
+  'TodoWrite',
+  'EnterPlanMode',
+  'ExitPlanMode'
 ])
 
 function getMaxToolGap(toolNames: string[]): number {
@@ -217,9 +232,7 @@ function buildDetectedSession(
   const segment = messages.slice(startIdx, endIdx + 1)
 
   // Count only human prompts (user messages that are NOT tool results)
-  const humanPrompts = segment
-    .filter((m) => m.type === 'user' && !m.isToolResult)
-    .length
+  const humanPrompts = segment.filter((m) => m.type === 'user' && !m.isToolResult).length
 
   // Accumulate token usage for this segment
   let inputTokens = 0

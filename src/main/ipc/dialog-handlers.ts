@@ -5,24 +5,21 @@ import { discoveryService } from '../services/discovery-service'
 import type { DiscoveredProject } from '../../shared/types/session'
 
 export function registerDialogHandlers(): void {
-  ipcMain.handle(
-    'dialog:openFolder',
-    async (): Promise<IpcResult<string | null>> => {
-      try {
-        const result = await dialog.showOpenDialog({
-          properties: ['openDirectory'],
-          title: 'Select a folder to filter projects'
-        })
-        if (result.canceled || result.filePaths.length === 0) {
-          return ipcSuccess(null)
-        }
-        return ipcSuccess(result.filePaths[0])
-      } catch (error) {
-        log.error('IPC dialog:openFolder failed:', error)
-        return ipcError('DIALOG_ERROR', String(error))
+  ipcMain.handle('dialog:openFolder', async (): Promise<IpcResult<string | null>> => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Select a folder to filter projects'
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return ipcSuccess(null)
       }
+      return ipcSuccess(result.filePaths[0])
+    } catch (error) {
+      log.error('IPC dialog:openFolder failed:', error)
+      return ipcError('DIALOG_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'dialog:discoverProjects',

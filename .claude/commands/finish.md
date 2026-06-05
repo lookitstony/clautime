@@ -11,12 +11,14 @@ git status
 ```
 
 If there are uncommitted changes:
+
 1. Show the user what's uncommitted
 2. Ask if they want to commit or discard
 
 ## Phase 2: Pre-flight Verification
 
 Run in parallel:
+
 ```bash
 npm run typecheck
 npm run test
@@ -31,5 +33,6 @@ git push origin master
 ```
 
 Report success with:
+
 - What was pushed (commit range)
 - Any warnings from the push

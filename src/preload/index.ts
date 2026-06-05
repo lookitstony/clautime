@@ -6,8 +6,7 @@ import type { IpcResult } from '../shared/types/ipc'
 // Custom APIs for renderer — typed service interfaces
 const api = {
   dialog: {
-    openFolder: (): Promise<IpcResult<string | null>> =>
-      ipcRenderer.invoke('dialog:openFolder'),
+    openFolder: (): Promise<IpcResult<string | null>> => ipcRenderer.invoke('dialog:openFolder'),
     discoverProjects: (
       folderPath?: string
     ): Promise<IpcResult<import('../shared/types/session').DiscoveredProject[]>> =>
@@ -18,8 +17,7 @@ const api = {
       ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('settings:set', key, value),
-    getAll: (): Promise<IpcResult<Record<string, string>>> =>
-      ipcRenderer.invoke('settings:getAll')
+    getAll: (): Promise<IpcResult<Record<string, string>>> => ipcRenderer.invoke('settings:getAll')
   },
   sessions: {
     scan: (
@@ -36,9 +34,7 @@ const api = {
       filters?: import('../shared/types/session').SessionFilters
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
       ipcRenderer.invoke('session:getAll', filters),
-    getById: (
-      id: number
-    ): Promise<IpcResult<import('../shared/types/session').Session | null>> =>
+    getById: (id: number): Promise<IpcResult<import('../shared/types/session').Session | null>> =>
       ipcRenderer.invoke('session:getById', id),
     getPromptTimings: (
       sessionId: number
@@ -49,28 +45,28 @@ const api = {
       data: import('../shared/types/session').UpdateSession
     ): Promise<IpcResult<import('../shared/types/session').Session>> =>
       ipcRenderer.invoke('session:update', id, data),
-    delete: (id: number): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('session:delete', id),
+    delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('session:delete', id),
     split: (
       id: number,
       splitAt: string
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
       ipcRenderer.invoke('session:split', id, splitAt),
-    getTimeBreakdown: (startDate: string, endDate: string): Promise<IpcResult<import('../shared/types/session').TimeBreakdownDay[]>> =>
+    getTimeBreakdown: (
+      startDate: string,
+      endDate: string
+    ): Promise<IpcResult<import('../shared/types/session').TimeBreakdownDay[]>> =>
       ipcRenderer.invoke('session:getTimeBreakdown', startDate, endDate),
     getGapAnalysis: (): Promise<IpcResult<import('../shared/types/session').GapAnalysis>> =>
       ipcRenderer.invoke('session:getGapAnalysis'),
-    create: (
-      data: {
-        projectPath: string
-        startedAt: string
-        endedAt: string
-        durationMinutes: number
-        description?: string
-        projectId?: number | null
-        clientId?: number | null
-      }
-    ): Promise<IpcResult<import('../shared/types/session').Session>> =>
+    create: (data: {
+      projectPath: string
+      startedAt: string
+      endedAt: string
+      durationMinutes: number
+      description?: string
+      projectId?: number | null
+      clientId?: number | null
+    }): Promise<IpcResult<import('../shared/types/session').Session>> =>
       ipcRenderer.invoke('session:create', data)
   },
   clients: {
@@ -96,21 +92,20 @@ const api = {
       ipcRenderer.invoke('ai:storeApiKey', key),
     removeApiKey: (): Promise<IpcResult<void>> => ipcRenderer.invoke('ai:removeApiKey'),
     testConnection: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('ai:testConnection'),
-    getSummary: (
-      sessionId: number
-    ): Promise<IpcResult<{ summary: string; tier: string }>> =>
+    getSummary: (sessionId: number): Promise<IpcResult<{ summary: string; tier: string }>> =>
       ipcRenderer.invoke('ai:getSummary', sessionId),
-    generateSummary: (
-      sessionId: number
-    ): Promise<IpcResult<string | null>> =>
+    generateSummary: (sessionId: number): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('ai:generateSummary', sessionId),
-    generateBatch: (
-      sessionIds: number[]
-    ): Promise<IpcResult<number>> => ipcRenderer.invoke('ai:generateBatch', sessionIds),
+    generateBatch: (sessionIds: number[]): Promise<IpcResult<number>> =>
+      ipcRenderer.invoke('ai:generateBatch', sessionIds),
     generateReportSummary: (
       filters: { startDate: string; endDate: string; projectId?: number; clientId?: number },
       useAi?: boolean,
-      summaryOptions?: { includeOverall?: boolean; includeDailyBreakdown?: boolean; brief?: boolean }
+      summaryOptions?: {
+        includeOverall?: boolean
+        includeDailyBreakdown?: boolean
+        brief?: boolean
+      }
     ): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('ai:generateReportSummary', filters, useAi, summaryOptions)
   },
@@ -131,10 +126,8 @@ const api = {
       ipcRenderer.invoke('git:detectIdentity'),
     getIdentity: (): Promise<IpcResult<import('../shared/types/git').GitIdentity | null>> =>
       ipcRenderer.invoke('git:getIdentity'),
-    setIdentity: (
-      name: string,
-      email: string
-    ): Promise<IpcResult<void>> => ipcRenderer.invoke('git:setIdentity', name, email),
+    setIdentity: (name: string, email: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('git:setIdentity', name, email),
     correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate'),
     getSessionIdsWithCommits: (): Promise<IpcResult<number[]>> =>
       ipcRenderer.invoke('git:getSessionIdsWithCommits'),
@@ -159,11 +152,20 @@ const api = {
     generate: (
       filters: import('../shared/types/report').ReportFilters,
       format: import('../shared/types/report').ReportFormat
-    ): Promise<import('../shared/types/ipc').IpcResult<import('../shared/types/report').ReportResult>> =>
-      ipcRenderer.invoke('report:generate', filters, format),
-    exportPdf: (html: string, filename?: string): Promise<import('../shared/types/ipc').IpcResult<string | null>> =>
+    ): Promise<
+      import('../shared/types/ipc').IpcResult<import('../shared/types/report').ReportResult>
+    > => ipcRenderer.invoke('report:generate', filters, format),
+    exportPdf: (
+      html: string,
+      filename?: string
+    ): Promise<import('../shared/types/ipc').IpcResult<string | null>> =>
       ipcRenderer.invoke('report:exportPdf', html, filename),
-    exportFile: (content: string, defaultFilename: string, filterName: string, extension: string): Promise<import('../shared/types/ipc').IpcResult<string | null>> =>
+    exportFile: (
+      content: string,
+      defaultFilename: string,
+      filterName: string,
+      extension: string
+    ): Promise<import('../shared/types/ipc').IpcResult<string | null>> =>
       ipcRenderer.invoke('report:exportFile', content, defaultFilename, filterName, extension),
     openFile: (filePath: string): Promise<import('../shared/types/ipc').IpcResult<boolean>> =>
       ipcRenderer.invoke('report:openFile', filePath)
@@ -173,8 +175,7 @@ const api = {
     getProjectStatuses: () => ipcRenderer.invoke('live:getProjectStatuses'),
     setWatching: (projectId: number, enabled: boolean) =>
       ipcRenderer.invoke('live:setWatching', projectId, enabled),
-    getAlertConfig: (projectId: number) =>
-      ipcRenderer.invoke('live:getAlertConfig', projectId),
+    getAlertConfig: (projectId: number) => ipcRenderer.invoke('live:getAlertConfig', projectId),
     setAlertConfig: (projectId: number, alertSound: string) =>
       ipcRenderer.invoke('live:setAlertConfig', projectId, alertSound),
     getAvailableSounds: () => ipcRenderer.invoke('live:getAvailableSounds'),
@@ -183,7 +184,9 @@ const api = {
     onSessionsUpdated: (callback: () => void) => {
       ipcRenderer.on('watcher:sessionsUpdated', () => callback())
     },
-    onNewProject: (callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void) => {
+    onNewProject: (
+      callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void
+    ) => {
       ipcRenderer.on('watcher:newProject', (_event, info) => callback(info))
     },
     timerStarted: (projectName: string, startedAt: string) =>
@@ -194,7 +197,8 @@ const api = {
     hideAllWidgets: () => ipcRenderer.invoke('live:hideAllWidgets'),
     showStopDialog: (projectId: number) => ipcRenderer.invoke('live:showStopDialog', projectId),
     getWidgetHotkey: () => ipcRenderer.invoke('live:getWidgetHotkey'),
-    setWidgetHotkey: (accelerator: string) => ipcRenderer.invoke('live:setWidgetHotkey', accelerator),
+    setWidgetHotkey: (accelerator: string) =>
+      ipcRenderer.invoke('live:setWidgetHotkey', accelerator),
     onWidgetAlert: (callback: (info: { projectName: string }) => void) => {
       ipcRenderer.on('widget:alert', (_event, info) => callback(info))
     },
@@ -203,33 +207,51 @@ const api = {
     }
   },
   invoice: {
-    hasStripeKey: (): Promise<IpcResult<boolean>> =>
-      ipcRenderer.invoke('invoice:hasStripeKey'),
-    isTestMode: (): Promise<IpcResult<boolean>> =>
-      ipcRenderer.invoke('invoice:isTestMode'),
+    hasStripeKey: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('invoice:hasStripeKey'),
+    isTestMode: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('invoice:isTestMode'),
     storeStripeKey: (key: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('invoice:storeStripeKey', key),
-    removeStripeKey: (): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('invoice:removeStripeKey'),
-    testConnection: (): Promise<IpcResult<boolean>> =>
-      ipcRenderer.invoke('invoice:testConnection'),
-    syncCustomer: (clientId: number): Promise<IpcResult<import('../shared/types/invoice').StripeCustomerInfo>> =>
+    removeStripeKey: (): Promise<IpcResult<void>> => ipcRenderer.invoke('invoice:removeStripeKey'),
+    testConnection: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('invoice:testConnection'),
+    syncCustomer: (
+      clientId: number
+    ): Promise<IpcResult<import('../shared/types/invoice').StripeCustomerInfo>> =>
       ipcRenderer.invoke('invoice:syncCustomer', clientId),
-    createDraftInvoice: (request: import('../shared/types/invoice').CreateInvoiceRequest): Promise<IpcResult<import('../shared/types/invoice').DraftInvoice>> =>
+    createDraftInvoice: (
+      request: import('../shared/types/invoice').CreateInvoiceRequest
+    ): Promise<IpcResult<import('../shared/types/invoice').DraftInvoice>> =>
       ipcRenderer.invoke('invoice:createDraftInvoice', request),
-    sendInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
+    sendInvoice: (
+      invoiceId: string
+    ): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
       ipcRenderer.invoke('invoice:sendInvoice', invoiceId),
-    getInvoiceStatus: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
+    getInvoiceStatus: (
+      invoiceId: string
+    ): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
       ipcRenderer.invoke('invoice:getInvoiceStatus', invoiceId),
-    voidInvoice: (invoiceId: string): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
+    voidInvoice: (
+      invoiceId: string
+    ): Promise<IpcResult<import('../shared/types/invoice').InvoiceStatus>> =>
       ipcRenderer.invoke('invoice:voidInvoice', invoiceId),
-    generateLineItems: (request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<import('../shared/types/invoice').GenerateLineItemsResult>> =>
+    generateLineItems: (request: {
+      clientId: number
+      startDate: string
+      endDate: string
+      projectId?: number
+    }): Promise<IpcResult<import('../shared/types/invoice').GenerateLineItemsResult>> =>
       ipcRenderer.invoke('invoice:generateLineItems', request),
-    getAll: (filters?: { clientId?: number; status?: string }): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice[]>> =>
+    getAll: (filters?: {
+      clientId?: number
+      status?: string
+    }): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice[]>> =>
       ipcRenderer.invoke('invoice:getAll', filters),
-    getById: (localId: number): Promise<IpcResult<import('../shared/types/invoice').LocalInvoiceDetail | null>> =>
+    getById: (
+      localId: number
+    ): Promise<IpcResult<import('../shared/types/invoice').LocalInvoiceDetail | null>> =>
       ipcRenderer.invoke('invoice:getById', localId),
-    syncLocalStatus: (localId: number): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice>> =>
+    syncLocalStatus: (
+      localId: number
+    ): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice>> =>
       ipcRenderer.invoke('invoice:syncLocalStatus', localId),
     syncAllStatuses: (): Promise<IpcResult<number>> =>
       ipcRenderer.invoke('invoice:syncAllStatuses'),
@@ -249,15 +271,21 @@ const api = {
       ipcRenderer.invoke('invoice:getStripeTestEmail'),
     setStripeTestEmail: (email: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('invoice:setStripeTestEmail', email),
-    checkOverlap: (request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<import('../shared/types/invoice').InvoiceOverlap[]>> =>
+    checkOverlap: (request: {
+      clientId: number
+      startDate: string
+      endDate: string
+    }): Promise<IpcResult<import('../shared/types/invoice').InvoiceOverlap[]>> =>
       ipcRenderer.invoke('invoice:checkOverlap', request)
   },
   secretScan: {
     run: (): Promise<IpcResult<import('../shared/types/secret-scan').SecretScanResult>> =>
       ipcRenderer.invoke('secretScan:run'),
-    cancel: (): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke('secretScan:cancel'),
-    getFindings: (limit?: number, offset?: number): Promise<IpcResult<import('../shared/types/secret-scan').SecretFinding[]>> =>
+    cancel: (): Promise<IpcResult<void>> => ipcRenderer.invoke('secretScan:cancel'),
+    getFindings: (
+      limit?: number,
+      offset?: number
+    ): Promise<IpcResult<import('../shared/types/secret-scan').SecretFinding[]>> =>
       ipcRenderer.invoke('secretScan:getFindings', limit, offset),
     getSummary: (): Promise<IpcResult<import('../shared/types/secret-scan').SecretScanSummary>> =>
       ipcRenderer.invoke('secretScan:getSummary'),
@@ -265,15 +293,21 @@ const api = {
       ipcRenderer.invoke('secretScan:ignoreFinding', id),
     redactFinding: (id: number): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('secretScan:redactFinding', id),
-    redactAll: (): Promise<IpcResult<number>> =>
-      ipcRenderer.invoke('secretScan:redactAll'),
-    getCustomPatterns: (): Promise<IpcResult<import('../shared/types/secret-scan').CustomSecretPattern[]>> =>
-      ipcRenderer.invoke('secretScan:getCustomPatterns'),
-    upsertCustomPattern: (pattern: import('../shared/types/secret-scan').CustomSecretPattern): Promise<IpcResult<{ success: boolean; warnings: string[] }>> =>
+    redactAll: (): Promise<IpcResult<number>> => ipcRenderer.invoke('secretScan:redactAll'),
+    getCustomPatterns: (): Promise<
+      IpcResult<import('../shared/types/secret-scan').CustomSecretPattern[]>
+    > => ipcRenderer.invoke('secretScan:getCustomPatterns'),
+    upsertCustomPattern: (
+      pattern: import('../shared/types/secret-scan').CustomSecretPattern
+    ): Promise<IpcResult<{ success: boolean; warnings: string[] }>> =>
       ipcRenderer.invoke('secretScan:upsertCustomPattern', pattern),
     deleteCustomPattern: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('secretScan:deleteCustomPattern', id),
-    testPattern: (source: string, flags: string, testString: string): Promise<IpcResult<import('../shared/types/secret-scan').PatternTestResult>> =>
+    testPattern: (
+      source: string,
+      flags: string,
+      testString: string
+    ): Promise<IpcResult<import('../shared/types/secret-scan').PatternTestResult>> =>
       ipcRenderer.invoke('secretScan:testPattern', source, flags, testString)
   },
   window: {

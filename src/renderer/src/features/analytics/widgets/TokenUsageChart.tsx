@@ -1,5 +1,14 @@
 import { useMemo } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend
+} from 'recharts'
 import { useChartColors } from '../chart-theme'
 import type { WidgetProps } from '../widget-registry'
 import { formatDateKey } from '@/lib/format'
@@ -31,7 +40,12 @@ export default function TokenUsageChart({ sessionData }: WidgetProps): React.JSX
       }))
   }, [sessionData])
 
-  if (data.length === 0) return <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">No data for this period</div>
+  if (data.length === 0)
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+        No data for this period
+      </div>
+    )
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -40,7 +54,12 @@ export default function TokenUsageChart({ sessionData }: WidgetProps): React.JSX
         <XAxis dataKey="date" tick={{ fontSize: 11, fill: mutedColor }} />
         <YAxis tickFormatter={formatTokenAxis} tick={{ fontSize: 11, fill: mutedColor }} />
         <Tooltip
-          contentStyle={{ backgroundColor: 'var(--background-elevated)', border: '1px solid var(--surface-border)', color: textColor, fontSize: 12 }}
+          contentStyle={{
+            backgroundColor: 'var(--background-elevated)',
+            border: '1px solid var(--surface-border)',
+            color: textColor,
+            fontSize: 12
+          }}
           itemStyle={{ color: textColor }}
           labelStyle={{ color: textColor }}
           formatter={(value: number) => [formatTokenAxis(value), undefined]}

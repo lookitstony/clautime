@@ -78,16 +78,12 @@
       "indexes": {
         "scan_state_file_path_unique": {
           "name": "scan_state_file_path_unique",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": true
         },
         "idx_scan_state_file_path": {
           "name": "idx_scan_state_file_path",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": false
         }
       },
@@ -189,23 +185,17 @@
       "indexes": {
         "idx_sessions_project_path": {
           "name": "idx_sessions_project_path",
-          "columns": [
-            "project_path"
-          ],
+          "columns": ["project_path"],
           "isUnique": false
         },
         "idx_sessions_started_at": {
           "name": "idx_sessions_started_at",
-          "columns": [
-            "started_at"
-          ],
+          "columns": ["started_at"],
           "isUnique": false
         },
         "idx_sessions_claude_session_id": {
           "name": "idx_sessions_claude_session_id",
-          "columns": [
-            "claude_session_id"
-          ],
+          "columns": ["claude_session_id"],
           "isUnique": false
         }
       },

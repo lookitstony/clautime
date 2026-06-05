@@ -2,19 +2,15 @@ import { useState, useEffect } from 'react'
 import { Bell, BellOff, Play, Pause, Square, MonitorUp, ChevronDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger
-} from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from '@/components/ui/tooltip'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getProjectColor } from '@/lib/format'
-import { useSetWatching, useSetAlertConfig, useAvailableSounds, useSelectCustomSound } from './use-live'
+import {
+  useSetWatching,
+  useSetAlertConfig,
+  useAvailableSounds,
+  useSelectCustomSound
+} from './use-live'
 import { useLiveStore } from '@/stores/use-live-store'
 import { ManualTimerDialog } from './ManualTimerDialog'
 import type { ProjectLiveStatus } from '../../../../shared/types/live'
@@ -147,7 +143,10 @@ function ProjectCard({
               onClick={() => window.api.live.toggleWidget(project.projectId)}
               className="mt-0.5 shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
             >
-              <MonitorUp size={16} className="text-[var(--text-muted)] hover:text-[var(--accent)]" />
+              <MonitorUp
+                size={16}
+                className="text-[var(--text-muted)] hover:text-[var(--accent)]"
+              />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={4}>
@@ -166,11 +165,15 @@ function ProjectCard({
       {/* Stats grid row */}
       <div className="grid grid-cols-4 border-t border-[var(--surface-border)]">
         <div className="border-r border-[var(--surface-border)] py-1.5 text-center">
-          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">{project.sessionCount}</div>
+          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">
+            {project.sessionCount}
+          </div>
           <div className="text-[9px] text-[var(--text-muted)]">sessions</div>
         </div>
         <div className="border-r border-[var(--surface-border)] py-1.5 text-center">
-          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">{project.totalPrompts}</div>
+          <div className="font-mono text-[13px] font-semibold text-[var(--text-secondary)]">
+            {project.totalPrompts}
+          </div>
           <div className="text-[9px] text-[var(--text-muted)]">prompts</div>
         </div>
         <div className="border-r border-[var(--surface-border)] py-1.5 text-center">

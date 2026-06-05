@@ -90,7 +90,10 @@ export type DatePreset = 'today' | 'this-week' | 'last-week' | 'this-month'
  * Compute start/end ISO date strings for a date preset.
  * @param weekStartDay 0 = Sunday, 1 = Monday (default)
  */
-export function getDateRangeForPreset(preset: DatePreset, weekStartDay: number = 1): { startDate: string; endDate: string } {
+export function getDateRangeForPreset(
+  preset: DatePreset,
+  weekStartDay: number = 1
+): { startDate: string; endDate: string } {
   const now = new Date()
   const startOfDay = (d: Date): string => {
     const s = new Date(d.getFullYear(), d.getMonth(), d.getDate())

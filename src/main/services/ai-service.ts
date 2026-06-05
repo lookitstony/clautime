@@ -7,7 +7,10 @@ import { gitCommits } from '../db/schema/git-commits'
 import { projects } from '../db/schema/projects'
 import { credentialService } from './credential-service'
 import { settingsService } from './settings-service'
-import { DEFAULT_AI_SUMMARY_INSTRUCTIONS, DEFAULT_AI_BRIEF_INSTRUCTIONS } from '../../shared/constants'
+import {
+  DEFAULT_AI_SUMMARY_INSTRUCTIONS,
+  DEFAULT_AI_BRIEF_INSTRUCTIONS
+} from '../../shared/constants'
 
 interface SummaryResult {
   summary: string
@@ -29,11 +32,7 @@ export const aiService = {
     const db = getDb()
 
     // Tier 1: Check for cached AI summary
-    const cached = db
-      .select()
-      .from(aiSummaries)
-      .where(eq(aiSummaries.sessionId, sessionId))
-      .get()
+    const cached = db.select().from(aiSummaries).where(eq(aiSummaries.sessionId, sessionId)).get()
 
     if (cached) {
       return { summary: cached.summary, tier: 'ai' }
@@ -76,11 +75,7 @@ export const aiService = {
       ? db.select().from(projects).where(eq(projects.id, session.projectId)).get()
       : null
 
-    const commits = db
-      .select()
-      .from(gitCommits)
-      .where(eq(gitCommits.sessionId, sessionId))
-      .all()
+    const commits = db.select().from(gitCommits).where(eq(gitCommits.sessionId, sessionId)).all()
 
     const prompt = buildPrompt(session, project?.name ?? null, commits)
 
@@ -95,9 +90,7 @@ export const aiService = {
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 200,
-          messages: [
-            { role: 'user', content: prompt }
-          ]
+          messages: [{ role: 'user', content: prompt }]
         })
       })
 
@@ -108,8 +101,7 @@ export const aiService = {
       }
 
       const data = await response.json()
-      const summary =
-        data.content?.[0]?.type === 'text' ? data.content[0].text : null
+      const summary = data.content?.[0]?.type === 'text' ? data.content[0].text : null
 
       if (summary) {
         // Cache the summary
@@ -158,11 +150,7 @@ export const aiService = {
    */
   getCachedSummary(sessionId: number) {
     const db = getDb()
-    return db
-      .select()
-      .from(aiSummaries)
-      .where(eq(aiSummaries.sessionId, sessionId))
-      .get() ?? null
+    return db.select().from(aiSummaries).where(eq(aiSummaries.sessionId, sessionId)).get() ?? null
   },
 
   /**
@@ -188,9 +176,10 @@ export const aiService = {
     const db = getDb()
 
     // Gather cached AI summaries for these sessions
-    const cached = sessionIds.length > 0
-      ? db.select().from(aiSummaries).where(inArray(aiSummaries.sessionId, sessionIds)).all()
-      : []
+    const cached =
+      sessionIds.length > 0
+        ? db.select().from(aiSummaries).where(inArray(aiSummaries.sessionId, sessionIds)).all()
+        : []
 
     // If no data at all, return null
     if (cached.length === 0 && commitMessages.length === 0) return null
@@ -211,7 +200,8 @@ export const aiService = {
     }
 
     const tickets = Array.from(ticketCommits.keys())
-    const hasMultipleTickets = tickets.length > 1 || (tickets.length >= 1 && unticketedCommits.length > 0)
+    const hasMultipleTickets =
+      tickets.length > 1 || (tickets.length >= 1 && unticketedCommits.length > 0)
 
     // Build context for AI
     const contextLines: string[] = []
@@ -298,7 +288,7 @@ export const aiService = {
             },
             body: JSON.stringify({
               model: 'claude-haiku-4-5-20251001',
-              max_tokens: useCombinedSummary ? 150 : (hasMultipleTickets ? 300 : 100),
+              max_tokens: useCombinedSummary ? 150 : hasMultipleTickets ? 300 : 100,
               messages: [{ role: 'user', content: buildPrompt(cap) }]
             })
           })
@@ -314,7 +304,11 @@ export const aiService = {
           if (looksLikeRefusal) return null
           if (useCombinedSummary) {
             // Collapse any accidental multi-line response to a single line
-            const single = summary.split('\n').map((l: string) => l.trim()).filter((l: string) => l).join(' ')
+            const single = summary
+              .split('\n')
+              .map((l: string) => l.trim())
+              .filter((l: string) => l)
+              .join(' ')
             return {
               lines: [{ ticket: null, description: single }],
               combinedTickets: [...tickets]
@@ -329,7 +323,8 @@ export const aiService = {
             return {
               lines: allTicketKeys.map((ticket, i) => ({
                 ticket,
-                description: aiLines[i] ?? (ticket ? ticketCommits.get(ticket)![0] : unticketedCommits[0])
+                description:
+                  aiLines[i] ?? (ticket ? ticketCommits.get(ticket)![0] : unticketedCommits[0])
               }))
             }
           }
@@ -349,23 +344,29 @@ export const aiService = {
       let result = await attempt(lineCap)
       if (overCap(result, lineCap)) {
         const overage = result!.lines.filter((l) => l.description.length > lineCap).length
-        log.warn(`AI line description over cap (${overage} of ${result!.lines.length} lines > ${lineCap} chars), regenerating`)
+        log.warn(
+          `AI line description over cap (${overage} of ${result!.lines.length} lines > ${lineCap} chars), regenerating`
+        )
         result = await attempt(Math.max(40, lineCap - 20))
       }
       if (result && !overCap(result, lineCap)) {
         return result
       }
       if (result) {
-        log.warn(`AI line descriptions still over cap after retry; falling through to commit-based fallback`)
+        log.warn(
+          `AI line descriptions still over cap after retry; falling through to commit-based fallback`
+        )
       }
     }
 
     // Fallback: one line per ticket from raw commits, or single line from cached summary
     if (tickets.length > 0) {
-      const lines: Array<{ ticket: string | null; description: string }> = tickets.map((ticket) => ({
-        ticket,
-        description: ticketCommits.get(ticket)![0]
-      }))
+      const lines: Array<{ ticket: string | null; description: string }> = tickets.map(
+        (ticket) => ({
+          ticket,
+          description: ticketCommits.get(ticket)![0]
+        })
+      )
       if (unticketedCommits.length > 0) {
         lines.push({ ticket: null, description: unticketedCommits[0] })
       }
@@ -380,16 +381,20 @@ export const aiService = {
    * Generate an AI summary for a report by summarizing all git commit messages
    * in the given date range (and optional project/client filters).
    */
-  async generateReportSummary(filters: {
-    startDate: string
-    endDate: string
-    projectId?: number
-    clientId?: number
-  }, useAi = true, summaryOptions?: {
-    includeOverall?: boolean
-    includeDailyBreakdown?: boolean
-    brief?: boolean
-  }): Promise<string | null> {
+  async generateReportSummary(
+    filters: {
+      startDate: string
+      endDate: string
+      projectId?: number
+      clientId?: number
+    },
+    useAi = true,
+    summaryOptions?: {
+      includeOverall?: boolean
+      includeDailyBreakdown?: boolean
+      brief?: boolean
+    }
+  ): Promise<string | null> {
     const db = getDb()
 
     // Build project filter conditions (without date — we filter dates in JS
@@ -441,7 +446,9 @@ export const aiService = {
     }
 
     // Group commits by project
-    const projectIds = [...new Set(commits.filter((c) => c.projectId != null).map((c) => c.projectId!))]
+    const projectIds = [
+      ...new Set(commits.filter((c) => c.projectId != null).map((c) => c.projectId!))
+    ]
     const projectMap = new Map<number, string>()
     if (projectIds.length > 0) {
       const allProjects = db.select().from(projects).all()
@@ -531,8 +538,10 @@ export const aiService = {
 
         const msgsByProject = new Map<string, string[]>()
         for (const c of dayCommits) {
-          const projName = c.projectId != null ? (projectMap.get(c.projectId) ?? 'Unknown') : 'Unknown'
-          if (c.projectId != null && !allProjectIds.has(c.projectId) && !allProjectIds.has(null)) continue
+          const projName =
+            c.projectId != null ? (projectMap.get(c.projectId) ?? 'Unknown') : 'Unknown'
+          if (c.projectId != null && !allProjectIds.has(c.projectId) && !allProjectIds.has(null))
+            continue
           const existing = msgsByProject.get(projName) ?? []
           if (!existing.includes(c.message)) existing.push(c.message)
           msgsByProject.set(projName, existing)
@@ -548,7 +557,11 @@ export const aiService = {
             // If no items left for this day, carry forward the last message
             const items = slice.length > 0 ? slice : [msgs[msgs.length - 1]]
             const sd = spanDays[i]
-            const dateLabel = new Date(sd.dateKey + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+            const dateLabel = new Date(sd.dateKey + 'T12:00:00').toLocaleDateString([], {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric'
+            })
             const key = `${sd.dateKey}|${dateLabel}`
             if (!dailyGrouped.has(key)) dailyGrouped.set(key, new Map())
             const dayMap = dailyGrouped.get(key)!
@@ -563,7 +576,11 @@ export const aiService = {
 
       // Days after the last commit — mark as in progress
       for (const sd of inProgressDays) {
-        const dateLabel = new Date(sd.dateKey + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+        const dateLabel = new Date(sd.dateKey + 'T12:00:00').toLocaleDateString([], {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
+        })
         const key = `${sd.dateKey}|${dateLabel}`
         if (!dailyGrouped.has(key)) dailyGrouped.set(key, new Map())
         const dayMap = dailyGrouped.get(key)!
@@ -609,7 +626,9 @@ export const aiService = {
           if (!existing.includes(c.summary)) existing.push(c.summary)
           cachedByProject.set(projName, existing)
         }
-        log.info(`Report summary: using ${cached.length} cached session summaries (${rangeSessions2.length} total sessions)`)
+        log.info(
+          `Report summary: using ${cached.length} cached session summaries (${rangeSessions2.length} total sessions)`
+        )
       }
     }
 
@@ -617,7 +636,15 @@ export const aiService = {
     if (useAi) {
       const apiKey = credentialService.getApiKey()
       if (apiKey) {
-        const aiSummary = await this._aiSummarizeCommits(apiKey, filters, commits.length, grouped, opts, dailyGrouped, cachedByProject)
+        const aiSummary = await this._aiSummarizeCommits(
+          apiKey,
+          filters,
+          commits.length,
+          grouped,
+          opts,
+          dailyGrouped,
+          cachedByProject
+        )
         if (aiSummary) return aiSummary
       }
     }
@@ -709,7 +736,8 @@ export const aiService = {
         dailyLines.push(`Date: ${dateLabel}`)
         for (const [projName, msgs] of dayMap) {
           if (!singleProject) dailyLines.push(`  Project: ${projName}`)
-          for (const item of groupByTicket(msgs)) dailyLines.push(`${singleProject ? '  ' : '    '}- ${item}`)
+          for (const item of groupByTicket(msgs))
+            dailyLines.push(`${singleProject ? '  ' : '    '}- ${item}`)
         }
         dailyLines.push('')
       }
@@ -718,7 +746,8 @@ export const aiService = {
     const formatInstructions: string[] = []
     if (opts.brief) {
       // Brief mode: load custom instructions from settings, fall back to default
-      const briefInstructions = settingsService.getSetting('ai_brief_instructions') || DEFAULT_AI_BRIEF_INSTRUCTIONS
+      const briefInstructions =
+        settingsService.getSetting('ai_brief_instructions') || DEFAULT_AI_BRIEF_INSTRUCTIONS
       const hasCustomBriefInstructions = !!settingsService.getSetting('ai_brief_instructions')
       // If user has custom brief instructions, they fully control the format.
       // Otherwise use sensible defaults.
@@ -740,7 +769,7 @@ export const aiService = {
             'For each day, use **Day Label** (e.g. **Mon, Mar 10**) as a header.',
             'Under each day, list each ticket/work item on its own bullet (use "- " prefix).',
             'Format each bullet as: "- **TICKET-ID**: brief description" with the ticket ID bolded.',
-            'Each bullet should be ONE short sentence. Each ticket must be on its own separate line.',
+            'Each bullet should be ONE short sentence. Each ticket must be on its own separate line.'
           )
         } else if (opts.includeDailyBreakdown) {
           formatInstructions.push(
@@ -748,19 +777,19 @@ export const aiService = {
             'For each day, use **Day Label** (e.g. **Mon, Mar 10**) as a header.',
             'Under each day, list each ticket/work item on its own bullet (use "- " prefix).',
             'Format each bullet as: "- **TICKET-ID**: brief description" with the ticket ID bolded.',
-            'Each bullet should be ONE short sentence. Each ticket must be on its own separate line.',
+            'Each bullet should be ONE short sentence. Each ticket must be on its own separate line.'
           )
         } else {
           formatInstructions.push(
             'Compress ALL work into a SINGLE sentence suitable for a timesheet entry.',
-            'Do NOT use bullet points, headers, or multiple lines — just one plain sentence.',
+            'Do NOT use bullet points, headers, or multiple lines — just one plain sentence.'
           )
         }
         formatInstructions.push(
           'Do NOT start with "I" — start with an action verb or description of the work.',
           singleProject
             ? 'Do NOT mention the project name — the reader already knows the project.'
-            : 'You may mention project names if helpful.',
+            : 'You may mention project names if helpful.'
         )
       }
       if (opts.includeDailyBreakdown && dailyLines.length > 0) {
@@ -774,7 +803,7 @@ export const aiService = {
         '3. Group all work under the same ticket ID into ONE bullet. Summarize the individual commits into a concise description of what was accomplished — do NOT just concatenate commit messages.',
         singleProject
           ? '4. Do NOT mention the project name anywhere — the reader already knows the project.'
-          : '4. You may mention project names inline if helpful, but do NOT use project name headers or subgroups.',
+          : '4. You may mention project names inline if helpful, but do NOT use project name headers or subgroups.'
       )
     }
     if (!opts.brief && opts.includeDailyBreakdown) {
@@ -788,7 +817,7 @@ export const aiService = {
         'If a ticket appears multiple times in one day, merge into ONE bullet with a concise summary of what was done — do NOT just list or concatenate the commit messages.',
         singleProject
           ? 'Do NOT mention the project name — just the work item description.'
-          : 'You may mention project names inline if helpful, but do NOT use project name headers.',
+          : 'You may mention project names inline if helpful, but do NOT use project name headers.'
       )
       if (dailyLines.length > 0) {
         formatInstructions.push('', 'Commits by date:', ...dailyLines)
@@ -798,13 +827,15 @@ export const aiService = {
     // Load custom instructions from settings — brief mode uses its own setting
     const customInstructions = opts.brief
       ? '' // brief instructions already included in formatInstructions
-      : (settingsService.getSetting('ai_summary_instructions') || DEFAULT_AI_SUMMARY_INSTRUCTIONS)
+      : settingsService.getSetting('ai_summary_instructions') || DEFAULT_AI_SUMMARY_INSTRUCTIONS
 
     const prompt = [
       `Summarize the following work done by an individual contributor during ${startLabel} to ${endLabel}.`,
       'Write from a first-person or neutral perspective — do NOT use "the team" or refer to a team. This is one person\'s work.',
       `There were ${totalCount} commits total${singleProject ? '' : ` across ${grouped.size} projects`}.`,
-      hasCached ? 'Some sessions already have AI-generated summaries — prefer those over raw commits when available, but use commits to fill gaps.' : '',
+      hasCached
+        ? 'Some sessions already have AI-generated summaries — prefer those over raw commits when available, but use commits to fill gaps.'
+        : '',
       '',
       `Commits${singleProject ? '' : ' by project'}:`,
       ...commitLines,
@@ -818,8 +849,12 @@ export const aiService = {
 
     // Adjust max_tokens based on mode
     const maxTokens = opts.brief
-      ? (opts.includeDailyBreakdown ? 800 : 100)
-      : (opts.includeDailyBreakdown ? 1500 : 500)
+      ? opts.includeDailyBreakdown
+        ? 800
+        : 100
+      : opts.includeDailyBreakdown
+        ? 1500
+        : 500
 
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -860,22 +895,48 @@ export const aiService = {
 // Common technical-spec tokens shaped like tickets (UTF-8, ISO-8859, COVID-19,
 // HTTP-2, etc.) but never actual issue keys. Excluded from ticket extraction.
 const NON_TICKET_PREFIXES = new Set([
-  'UTF', 'ASCII', 'ISO', 'COVID', 'HTTP', 'HTTPS', 'IPV', 'TLS', 'SSL',
-  'AES', 'RSA', 'SHA', 'MD', 'RFC', 'OAUTH', 'JWT', 'API', 'REST',
-  'JSON', 'XML', 'YAML', 'CSV', 'HTML', 'CSS', 'JS', 'TS', 'EOL'
+  'UTF',
+  'ASCII',
+  'ISO',
+  'COVID',
+  'HTTP',
+  'HTTPS',
+  'IPV',
+  'TLS',
+  'SSL',
+  'AES',
+  'RSA',
+  'SHA',
+  'MD',
+  'RFC',
+  'OAUTH',
+  'JWT',
+  'API',
+  'REST',
+  'JSON',
+  'XML',
+  'YAML',
+  'CSV',
+  'HTML',
+  'CSS',
+  'JS',
+  'TS',
+  'EOL'
 ])
 
 /** Extract ticket/work item ID from a commit message, or return null. */
 function extractTicketId(message: string): string | null {
   // Match patterns like JIRA-123, FEAT-789, BUG-101, PROJ-1234, #456
-  const match = message.match(/^([A-Z]+-\d+)\b/i) ?? message.match(/\b([A-Z]{2,}-\d+)\b/i) ?? message.match(/^(#\d+)\b/)
+  const match =
+    message.match(/^([A-Z]+-\d+)\b/i) ??
+    message.match(/\b([A-Z]{2,}-\d+)\b/i) ??
+    message.match(/^(#\d+)\b/)
   if (!match) return null
   const candidate = match[1].toUpperCase()
   const prefix = candidate.split('-')[0]
   if (NON_TICKET_PREFIXES.has(prefix)) return null
   return candidate
 }
-
 
 /**
  * Group commit messages by ticket ID. Messages with the same ticket are merged
@@ -889,7 +950,12 @@ function groupByTicket(messages: string[]): string[] {
   for (const msg of messages) {
     const ticket = extractTicketId(msg)
     if (ticket) {
-      const cleaned = msg.replace(new RegExp(`\\s*${ticket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[:\\s-]*`, 'i'), '').trim()
+      const cleaned = msg
+        .replace(
+          new RegExp(`\\s*${ticket.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[:\\s-]*`, 'i'),
+          ''
+        )
+        .trim()
       const desc = cleaned || msg
       const existing = ticketMap.get(ticket) ?? []
       if (!existing.includes(desc)) existing.push(desc)

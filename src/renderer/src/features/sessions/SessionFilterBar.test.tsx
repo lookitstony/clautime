@@ -4,13 +4,53 @@ import { SessionFilterBar } from './SessionFilterBar'
 import { useFilterStore } from '@/stores/use-filter-store'
 
 const mockClients = [
-  { id: 1, name: 'Acme Corp', color: 'var(--project-1)', billableRate: null, email: null, stripeCustomerId: null, isActive: true, createdAt: '', updatedAt: '' },
-  { id: 2, name: 'Beta Inc', color: 'var(--project-2)', billableRate: null, email: null, stripeCustomerId: null, isActive: true, createdAt: '', updatedAt: '' }
+  {
+    id: 1,
+    name: 'Acme Corp',
+    color: 'var(--project-1)',
+    billableRate: null,
+    email: null,
+    stripeCustomerId: null,
+    isActive: true,
+    createdAt: '',
+    updatedAt: ''
+  },
+  {
+    id: 2,
+    name: 'Beta Inc',
+    color: 'var(--project-2)',
+    billableRate: null,
+    email: null,
+    stripeCustomerId: null,
+    isActive: true,
+    createdAt: '',
+    updatedAt: ''
+  }
 ]
 
 const mockProjects = [
-  { id: 1, clientId: 1, name: 'ClauTime', invoiceName: null, directoryPath: 'C:\\apps\\ClauTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' },
-  { id: 2, clientId: 2, name: 'OtherApp', invoiceName: null, directoryPath: 'C:\\apps\\OtherApp', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
+  {
+    id: 1,
+    clientId: 1,
+    name: 'ClauTime',
+    invoiceName: null,
+    directoryPath: 'C:\\apps\\ClauTime',
+    isBillable: true,
+    isActive: true,
+    createdAt: '',
+    updatedAt: ''
+  },
+  {
+    id: 2,
+    clientId: 2,
+    name: 'OtherApp',
+    invoiceName: null,
+    directoryPath: 'C:\\apps\\OtherApp',
+    isBillable: true,
+    isActive: true,
+    createdAt: '',
+    updatedAt: ''
+  }
 ]
 
 beforeEach(() => {
@@ -43,7 +83,10 @@ describe('SessionFilterBar', () => {
   it('marks active preset with aria-pressed', () => {
     useFilterStore.getState().setDatePreset('this-week')
     render(<SessionFilterBar clients={[]} projects={[]} />)
-    expect(screen.getByRole('button', { name: 'This Week' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'This Week' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
     expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'false')
   })
 

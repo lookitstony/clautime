@@ -62,7 +62,9 @@ function SortableWidget({
         >
           <GripVertical size={14} />
         </button>
-        <span className="flex-1 text-xs font-medium text-[var(--text-primary)]">{config.title}</span>
+        <span className="flex-1 text-xs font-medium text-[var(--text-primary)]">
+          {config.title}
+        </span>
         <button
           onClick={() => onResize(widgetId, nextSize)}
           className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -79,7 +81,13 @@ function SortableWidget({
   )
 }
 
-export function DashboardGrid({ sessionData, summaryData, layout, onReorder, onResize }: DashboardGridProps): React.JSX.Element {
+export function DashboardGrid({
+  sessionData,
+  summaryData,
+  layout,
+  onReorder,
+  onResize
+}: DashboardGridProps): React.JSX.Element {
   return (
     <DragDropProvider
       onDragEnd={(event) => {

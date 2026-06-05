@@ -13,6 +13,7 @@ We will acknowledge receipt within 48 hours and provide a timeline for a fix.
 ## Scope
 
 ClauTime is a local desktop application. Security concerns include:
+
 - Credential storage (API keys stored via Electron safeStorage)
 - Secret scanner bypass (patterns that should be detected but aren't)
 - Local data exposure (session data, JSONL file handling)

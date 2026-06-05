@@ -59,10 +59,7 @@ describe('ProjectGroup', () => {
   it('has correct aria-label without client name', () => {
     render(<ProjectGroup {...defaultProps} />)
     const group = screen.getByRole('group')
-    expect(group).toHaveAttribute(
-      'aria-label',
-      'ClauTime - 5 sessions, 2h 5m total'
-    )
+    expect(group).toHaveAttribute('aria-label', 'ClauTime - 5 sessions, 2h 5m total')
   })
 
   it('sets aria-expanded correctly', () => {
@@ -82,10 +79,7 @@ describe('ProjectGroup', () => {
   it('includes client name in aria-label when provided', () => {
     render(<ProjectGroup {...defaultProps} clientName="Acme Corp" />)
     const group = screen.getByRole('group')
-    expect(group).toHaveAttribute(
-      'aria-label',
-      'Acme Corp / ClauTime - 5 sessions, 2h 5m total'
-    )
+    expect(group).toHaveAttribute('aria-label', 'Acme Corp / ClauTime - 5 sessions, 2h 5m total')
   })
 
   it('renders separator between client name and project name', () => {
@@ -94,9 +88,7 @@ describe('ProjectGroup', () => {
   })
 
   it('uses muted color dot for unassigned groups', () => {
-    const { container } = render(
-      <ProjectGroup {...defaultProps} isUnassigned={true} />
-    )
+    const { container } = render(<ProjectGroup {...defaultProps} isUnassigned={true} />)
     const dot = container.querySelector('.rounded-full')
     expect(dot).toHaveClass('opacity-40')
   })
@@ -104,16 +96,11 @@ describe('ProjectGroup', () => {
   it('includes (Unassigned) in aria-label for unassigned groups', () => {
     render(<ProjectGroup {...defaultProps} isUnassigned={true} />)
     const group = screen.getByRole('group')
-    expect(group).toHaveAttribute(
-      'aria-label',
-      'ClauTime (Unassigned) - 5 sessions, 2h 5m total'
-    )
+    expect(group).toHaveAttribute('aria-label', 'ClauTime (Unassigned) - 5 sessions, 2h 5m total')
   })
 
   it('does not show opacity on assigned groups', () => {
-    const { container } = render(
-      <ProjectGroup {...defaultProps} isUnassigned={false} />
-    )
+    const { container } = render(<ProjectGroup {...defaultProps} isUnassigned={false} />)
     const dot = container.querySelector('.rounded-full')
     expect(dot).not.toHaveClass('opacity-40')
   })

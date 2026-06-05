@@ -129,10 +129,7 @@ export function ProjectPicker({ clientId, open, onClose }: ProjectPickerProps): 
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleAssign}
-            disabled={selectedCount === 0 || assigning}
-          >
+          <Button onClick={handleAssign} disabled={selectedCount === 0 || assigning}>
             {assigning
               ? 'Assigning...'
               : selectedCount > 0

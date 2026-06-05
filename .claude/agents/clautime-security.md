@@ -31,6 +31,7 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 ## Security Architecture
 
 ### Electron Security Model
+
 - **Context isolation**: Enabled — renderer cannot access Node.js APIs
 - **Preload script**: Only bridge, exposes typed IPC methods via `contextBridge`
 - **Node integration**: Disabled in renderer
@@ -38,11 +39,13 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 - **No remote module**: Not used
 
 ### Credential Storage
+
 - API keys stored via `credential-service.ts` using Electron's `safeStorage` API
 - Keys encrypted at rest using OS keychain (Windows DPAPI, macOS Keychain)
 - Never stored in plaintext, localStorage, or config files
 
 ### Data Sensitivity
+
 - **JSONL files**: May contain source code, API responses, secrets, PII
 - **Session data**: Project paths, timestamps, token counts (low sensitivity)
 - **AI summaries**: Generated text based on session context (medium sensitivity)
@@ -51,6 +54,7 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 ## Review Checklist
 
 ### Auth & Credentials
+
 - [ ] API keys only accessed via credential-service
 - [ ] No hardcoded keys, tokens, or passwords
 - [ ] No credentials in log messages
@@ -58,6 +62,7 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 - [ ] Electron safeStorage used correctly
 
 ### Input Validation
+
 - [ ] IPC handlers validate input types before processing
 - [ ] File paths validated/sanitized (no path traversal)
 - [ ] User-provided regex patterns sandboxed (ReDoS protection)
@@ -65,6 +70,7 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 - [ ] No `shell: true` in child_process calls (command injection)
 
 ### Data Protection
+
 - [ ] JSONL content not stored in plaintext beyond what's needed
 - [ ] Secret scanner findings store redacted values only
 - [ ] Log messages don't include sensitive JSONL content
@@ -72,6 +78,7 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 - [ ] Clipboard operations don't expose secrets
 
 ### Electron-Specific
+
 - [ ] No `nodeIntegration: true` in webPreferences
 - [ ] No `contextIsolation: false`
 - [ ] No `webSecurity: false`
@@ -80,18 +87,21 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 - [ ] Auto-updater uses HTTPS + code signing verification
 
 ### API Security
+
 - [ ] Claude API calls use HTTPS
 - [ ] API key sent in Authorization header, not URL
 - [ ] API responses validated before processing
 - [ ] Rate limiting / retry logic doesn't leak timing info
 
 ### File System
+
 - [ ] File operations scoped to expected directories (userData, ~/.claude)
 - [ ] No arbitrary file read/write from renderer input
 - [ ] Temp files cleaned up
 - [ ] File permissions appropriate
 
 ### Dependencies
+
 - [ ] No known vulnerable dependencies
 - [ ] Native modules (better-sqlite3) from trusted sources
 - [ ] electron-builder / electron-updater on latest stable
@@ -110,6 +120,7 @@ You audit security for **ClauTime**, an Electron desktop app that reads Claude C
 Start with: `## Security Audit: X critical, Y high, Z medium, W info`
 
 Group by category. End with:
+
 ```
 ## Risk Assessment: 🟢 LOW / 🟡 MODERATE / 🔴 HIGH
 ```

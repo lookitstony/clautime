@@ -28,17 +28,12 @@ afterAll(() => {
 // Direct DB tests for settings CRUD (same logic as SettingsService)
 describe('SettingsService logic', () => {
   it('inserts and retrieves a setting', () => {
-    db.insert(appSettingsSchema.appSettings)
-      .values({ key: 'idle_timeout', value: '10' })
-      .run()
+    db.insert(appSettingsSchema.appSettings).values({ key: 'idle_timeout', value: '10' }).run()
 
     const row = db
       .select()
       .from(appSettingsSchema.appSettings)
-      .where(
-        // eslint-disable-next-line drizzle/enforce-delete-with-where
-        undefined as never
-      )
+      .where(undefined as never)
       .all()
       .find((r) => r.key === 'idle_timeout')
 
@@ -60,9 +55,7 @@ describe('SettingsService logic', () => {
   })
 
   it('retrieves all settings', () => {
-    db.insert(appSettingsSchema.appSettings)
-      .values({ key: 'theme', value: 'teal' })
-      .run()
+    db.insert(appSettingsSchema.appSettings).values({ key: 'theme', value: 'teal' }).run()
 
     const rows = db.select().from(appSettingsSchema.appSettings).all()
     expect(rows.length).toBeGreaterThanOrEqual(2)

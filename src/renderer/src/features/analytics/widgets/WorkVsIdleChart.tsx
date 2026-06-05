@@ -1,12 +1,25 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend
+} from 'recharts'
 import { useChartColors } from '../chart-theme'
 import type { WidgetProps } from '../widget-registry'
 import { formatDateKey } from '@/lib/format'
 
 function EmptyMessage(): React.JSX.Element {
-  return <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">No data for this period</div>
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+      No data for this period
+    </div>
+  )
 }
 
 export default function WorkVsIdleChart({ sessionData }: WidgetProps): React.JSX.Element {
@@ -65,7 +78,12 @@ export default function WorkVsIdleChart({ sessionData }: WidgetProps): React.JSX
             <XAxis dataKey="date" tick={{ fontSize: 11, fill: mutedColor }} />
             <YAxis
               tick={{ fontSize: 11, fill: mutedColor }}
-              label={{ value: 'Hours', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: mutedColor } }}
+              label={{
+                value: 'Hours',
+                angle: -90,
+                position: 'insideLeft',
+                style: { fontSize: 11, fill: mutedColor }
+              }}
             />
             <Tooltip
               contentStyle={{
@@ -83,7 +101,7 @@ export default function WorkVsIdleChart({ sessionData }: WidgetProps): React.JSX
             />
             <Legend
               wrapperStyle={{ fontSize: 11 }}
-              formatter={(value: string) => value === 'ai' ? 'AI processing' : 'Human time'}
+              formatter={(value: string) => (value === 'ai' ? 'AI processing' : 'Human time')}
             />
             <Bar dataKey="ai" stackId="time" fill="var(--accent)" name="ai" />
             <Bar dataKey="human" stackId="time" fill="#8b5cf6" fillOpacity={0.6} name="human" />
@@ -92,9 +110,16 @@ export default function WorkVsIdleChart({ sessionData }: WidgetProps): React.JSX
       </div>
       {totals && (
         <div className="flex justify-center gap-4 pt-1 text-[10px] text-[var(--text-muted)]">
-          <span>Total: <strong className="text-[var(--text-primary)]">{totals.total}h</strong></span>
-          <span>AI: <strong style={{ color: 'var(--accent)' }}>{totals.ai}h</strong></span>
-          <span>Human: <strong style={{ color: '#8b5cf6' }}>{totals.human}h</strong> ({totals.humanPct}%)</span>
+          <span>
+            Total: <strong className="text-[var(--text-primary)]">{totals.total}h</strong>
+          </span>
+          <span>
+            AI: <strong style={{ color: 'var(--accent)' }}>{totals.ai}h</strong>
+          </span>
+          <span>
+            Human: <strong style={{ color: '#8b5cf6' }}>{totals.human}h</strong> ({totals.humanPct}
+            %)
+          </span>
         </div>
       )}
     </div>

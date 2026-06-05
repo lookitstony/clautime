@@ -22,6 +22,7 @@ You write tests, plan test strategies, analyze defects, and validate quality for
 ## Test Patterns
 
 ### Main Process Service Test
+
 ```typescript
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -56,6 +57,7 @@ describe('myService', () => {
 ```
 
 ### Renderer Component Test
+
 ```typescript
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -79,6 +81,7 @@ describe('MyComponent', () => {
 ```
 
 ### Database Integration Test
+
 ```typescript
 // @vitest-environment node
 import Database from 'better-sqlite3'
@@ -96,22 +99,24 @@ beforeEach(() => {
 ```
 
 ### Radix Select Mock (required for happy-dom)
+
 ```typescript
 vi.stubGlobal('HTMLSelectElement', class HTMLSelectElement extends HTMLElement {})
 ```
 
 ## Test Pyramid for ClauTime
 
-| Level | What | Framework | Count |
-|-------|------|-----------|-------|
-| Unit | Service methods, utilities, pure functions | Vitest + node env | High |
-| Unit | React components, hooks | Vitest + happy-dom + @testing-library | Medium |
-| Integration | Service + DB, IPC handlers | Vitest + in-memory SQLite | Medium |
-| Manual | Full app flows, widget behavior, tray | Manual (Electron dev mode) | As needed |
+| Level       | What                                       | Framework                             | Count     |
+| ----------- | ------------------------------------------ | ------------------------------------- | --------- |
+| Unit        | Service methods, utilities, pure functions | Vitest + node env                     | High      |
+| Unit        | React components, hooks                    | Vitest + happy-dom + @testing-library | Medium    |
+| Integration | Service + DB, IPC handlers                 | Vitest + in-memory SQLite             | Medium    |
+| Manual      | Full app flows, widget behavior, tray      | Manual (Electron dev mode)            | As needed |
 
 ## Testing Checklists
 
 ### New Service Method
+
 - [ ] Happy path returns expected data
 - [ ] Error case throws AppError with correct code
 - [ ] Edge cases: empty input, null values, boundary values
@@ -119,12 +124,14 @@ vi.stubGlobal('HTMLSelectElement', class HTMLSelectElement extends HTMLElement {
 - [ ] Side effects: verify log calls, other service calls
 
 ### New IPC Handler
+
 - [ ] Returns `ipcSuccess(data)` on success
 - [ ] Returns `ipcError(code, message)` on failure
 - [ ] Handles all parameter combinations
 - [ ] Error is logged before returning
 
 ### New React Component
+
 - [ ] Renders without errors
 - [ ] Shows loading state
 - [ ] Shows error state
@@ -133,6 +140,7 @@ vi.stubGlobal('HTMLSelectElement', class HTMLSelectElement extends HTMLElement {
 - [ ] Query invalidation on mutations
 
 ### Session Detection
+
 - [ ] Gap detection with various tool types
 - [ ] Midnight-spanning sessions
 - [ ] Subagent JSONL files included
@@ -141,25 +149,27 @@ vi.stubGlobal('HTMLSelectElement', class HTMLSelectElement extends HTMLElement {
 
 ## Defect Severity
 
-| Level | Criteria |
-|-------|----------|
-| **Critical** | Data loss, crash, security breach |
-| **High** | Feature broken, incorrect calculations, data corruption |
-| **Medium** | UI glitch, minor incorrect behavior, missing validation |
-| **Low** | Cosmetic, typo, inconsistent styling |
+| Level        | Criteria                                                |
+| ------------ | ------------------------------------------------------- |
+| **Critical** | Data loss, crash, security breach                       |
+| **High**     | Feature broken, incorrect calculations, data corruption |
+| **Medium**   | UI glitch, minor incorrect behavior, missing validation |
+| **Low**      | Cosmetic, typo, inconsistent styling                    |
 
 ## Defect Report Template
 
 ```markdown
 ## Bug: [Title]
+
 **Severity**: Critical / High / Medium / Low
 **Component**: [service/component name]
 **Steps to Reproduce**:
+
 1. ...
-**Expected**: ...
-**Actual**: ...
-**Root Cause**: ...
-**Fix**: ...
+   **Expected**: ...
+   **Actual**: ...
+   **Root Cause**: ...
+   **Fix**: ...
 ```
 
 ## Cross-Agent Escalation

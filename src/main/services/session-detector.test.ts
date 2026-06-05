@@ -8,10 +8,7 @@ import {
 } from './session-detector'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
-function makeMessage(
-  timestamp: string,
-  overrides: Partial<ParsedMessage> = {}
-): ParsedMessage {
+function makeMessage(timestamp: string, overrides: Partial<ParsedMessage> = {}): ParsedMessage {
   return {
     type: 'user',
     timestamp,
@@ -125,7 +122,11 @@ describe('detectSessions', () => {
   it('should NOT split at Agent subagent gaps under 30 minutes', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Agent'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Agent']
+      }),
       // 25 min gap — Agent subagent running (under 30 min limit)
       makeMessage('2026-03-04T10:26:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:27:00Z', { type: 'assistant' }),
@@ -141,7 +142,11 @@ describe('detectSessions', () => {
   it('should split at Agent subagent gaps exceeding 30 minutes', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Agent'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Agent']
+      }),
       // 45 min gap — too long even for an Agent
       makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
@@ -155,7 +160,11 @@ describe('detectSessions', () => {
   it('should split at Bash gaps exceeding 10 minutes', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 15 min gap — Bash shouldn't take this long
       makeMessage('2026-03-04T10:16:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:17:00Z', { type: 'user' })
@@ -169,7 +178,11 @@ describe('detectSessions', () => {
   it('should split at fast tool (Read/Write) gaps exceeding 5 minutes', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Read'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Read']
+      }),
       // 8 min gap — Read should complete in seconds
       makeMessage('2026-03-04T10:09:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:10:00Z', { type: 'user' })
@@ -183,7 +196,11 @@ describe('detectSessions', () => {
   it('should use the most generous limit when multiple tools called', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Read', 'Agent'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Read', 'Agent']
+      }),
       // 25 min gap — Agent allows up to 30 min
       makeMessage('2026-03-04T10:26:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:27:00Z', { type: 'user' })
@@ -198,7 +215,11 @@ describe('detectSessions', () => {
   it('should split at massive gaps regardless of tool type (7 hours)', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 7 hour gap — user went to sleep
       makeMessage('2026-03-04T17:01:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T17:02:00Z', { type: 'assistant' }),
@@ -215,7 +236,11 @@ describe('detectSessions', () => {
   it('should NOT split when progress events prove active processing during gap', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 45 min gap — exceeds Bash 10-min heuristic, but progress events prove it was running
       makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
@@ -237,7 +262,11 @@ describe('detectSessions', () => {
   it('should split when no progress events exist during tool gap', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 45 min gap — no progress events during this gap
       makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
@@ -255,7 +284,11 @@ describe('detectSessions', () => {
   it('should split long gaps even with progress events (2hr hard cap)', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 3 hour gap — tail -f or npm run dev left running
       makeMessage('2026-03-04T13:01:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T13:02:00Z', { type: 'user' })
@@ -263,9 +296,12 @@ describe('detectSessions', () => {
     const parsed = makeParsedSession(messages, {
       // Progress events throughout — tool was outputting, but 3hrs is clearly not billable
       progressTimestamps: [
-        '2026-03-04T10:05:00Z', '2026-03-04T10:30:00Z',
-        '2026-03-04T11:00:00Z', '2026-03-04T11:30:00Z',
-        '2026-03-04T12:00:00Z', '2026-03-04T12:55:00Z'
+        '2026-03-04T10:05:00Z',
+        '2026-03-04T10:30:00Z',
+        '2026-03-04T11:00:00Z',
+        '2026-03-04T11:30:00Z',
+        '2026-03-04T12:00:00Z',
+        '2026-03-04T12:55:00Z'
       ]
     })
     const result = detectSessions(parsed, 10)
@@ -277,7 +313,11 @@ describe('detectSessions', () => {
   it('should split long gap when progress events only exist at start (tool went idle)', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 45 min gap — progress only at the start, then silence
       makeMessage('2026-03-04T10:46:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:47:00Z', { type: 'user' })
@@ -295,7 +335,11 @@ describe('detectSessions', () => {
   it('should NOT bridge gap when tool_use has no matching tool_result (interrupted tool)', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Agent'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Agent']
+      }),
       // 25 min gap — but next message is a NEW user prompt, not a tool result
       makeMessage('2026-03-04T10:26:00Z', { type: 'user' })
     ]
@@ -309,7 +353,11 @@ describe('detectSessions', () => {
   it('should use exclusive boundaries for progress events (edge timestamps dont count)', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', { type: 'user' }),
-      makeMessage('2026-03-04T10:01:00Z', { type: 'assistant', hasToolUse: true, toolNames: ['Bash'] }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
       // 20 min gap
       makeMessage('2026-03-04T10:21:00Z', { type: 'user', isToolResult: true }),
       makeMessage('2026-03-04T10:22:00Z', { type: 'user' })
@@ -328,24 +376,44 @@ describe('detectSessions', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', {
         type: 'assistant',
-        usage: { inputTokens: 100, outputTokens: 200, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+        usage: {
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
       }),
       // 20 min gap
       makeMessage('2026-03-04T10:20:00Z', {
         type: 'assistant',
-        usage: { inputTokens: 300, outputTokens: 600, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+        usage: {
+          inputTokens: 300,
+          outputTokens: 600,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
       })
     ]
     const parsed = makeParsedSession(messages, {
-      totalTokenUsage: { inputTokens: 400, outputTokens: 800, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
-      subagentTokenUsage: { inputTokens: 1000, outputTokens: 2000, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+      totalTokenUsage: {
+        inputTokens: 400,
+        outputTokens: 800,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      },
+      subagentTokenUsage: {
+        inputTokens: 1000,
+        outputTokens: 2000,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      }
     })
     const result = detectSessions(parsed, 10)
 
     expect(result).toHaveLength(2)
     // First segment: 300 main tokens / 1200 total main = 25% → gets 25% of 3000 subagent = 750
-    expect(result[0].inputTokens).toBe(100 + 250)  // 100 main + 250 subagent input
-    expect(result[0].outputTokens).toBe(200 + 500)  // 200 main + 500 subagent output
+    expect(result[0].inputTokens).toBe(100 + 250) // 100 main + 250 subagent input
+    expect(result[0].outputTokens).toBe(200 + 500) // 200 main + 500 subagent output
     // Second segment: 900 main tokens / 1200 total main = 75% → gets 75% of 3000 subagent = 2250
     expect(result[1].inputTokens).toBe(300 + 750)
     expect(result[1].outputTokens).toBe(600 + 1500)
@@ -473,16 +541,31 @@ describe('detectSessions', () => {
     const messages = [
       makeMessage('2026-03-04T10:00:00Z', {
         type: 'assistant',
-        usage: { inputTokens: 100, outputTokens: 200, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+        usage: {
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
       }),
       makeMessage('2026-03-04T10:05:00Z', {
         type: 'assistant',
-        usage: { inputTokens: 150, outputTokens: 300, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+        usage: {
+          inputTokens: 150,
+          outputTokens: 300,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
       }),
       // 20 min gap
       makeMessage('2026-03-04T10:25:00Z', {
         type: 'assistant',
-        usage: { inputTokens: 50, outputTokens: 80, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }
+        usage: {
+          inputTokens: 50,
+          outputTokens: 80,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
       })
     ]
     const parsed = makeParsedSession(messages)
@@ -499,17 +582,11 @@ describe('detectSessions', () => {
 describe('detectSessionsFromMultiple', () => {
   it('should combine sessions from multiple parsed files', () => {
     const parsed1 = makeParsedSession(
-      [
-        makeMessage('2026-03-04T10:00:00Z'),
-        makeMessage('2026-03-04T10:05:00Z')
-      ],
+      [makeMessage('2026-03-04T10:00:00Z'), makeMessage('2026-03-04T10:05:00Z')],
       { sessionId: 'session-1', sourceFile: 'file1.jsonl' }
     )
     const parsed2 = makeParsedSession(
-      [
-        makeMessage('2026-03-04T11:00:00Z'),
-        makeMessage('2026-03-04T11:05:00Z')
-      ],
+      [makeMessage('2026-03-04T11:00:00Z'), makeMessage('2026-03-04T11:05:00Z')],
       { sessionId: 'session-2', sourceFile: 'file2.jsonl' }
     )
 
@@ -557,15 +634,11 @@ describe('decodeProjectPath', () => {
   })
 
   it('should decode Unix path with leading dash as root', () => {
-    expect(decodeProjectPath('-home-user-projects-myapp')).toBe(
-      '/home/user/projects/myapp'
-    )
+    expect(decodeProjectPath('-home-user-projects-myapp')).toBe('/home/user/projects/myapp')
   })
 
   it('should decode plain dashes as forward slashes', () => {
-    expect(decodeProjectPath('home-user-projects-myapp')).toBe(
-      'home/user/projects/myapp'
-    )
+    expect(decodeProjectPath('home-user-projects-myapp')).toBe('home/user/projects/myapp')
   })
 
   it('should return "unknown" for empty string', () => {

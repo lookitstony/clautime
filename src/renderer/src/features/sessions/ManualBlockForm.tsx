@@ -133,7 +133,17 @@ export function ManualBlockForm({ open, onOpenChange }: ManualBlockFormProps): R
         }
       )
     },
-    [projectId, date, startTime, endTime, description, allProjects, createSession, resetForm, onOpenChange]
+    [
+      projectId,
+      date,
+      startTime,
+      endTime,
+      description,
+      allProjects,
+      createSession,
+      resetForm,
+      onOpenChange
+    ]
   )
 
   const isValid = projectId && startTime && endTime
@@ -244,17 +254,11 @@ export function ManualBlockForm({ open, onOpenChange }: ManualBlockFormProps): R
               />
             </div>
 
-            {error && (
-              <p className="text-[12px] text-[var(--destructive)]">{error}</p>
-            )}
+            {error && <p className="text-[12px] text-[var(--destructive)]">{error}</p>}
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => handleClose(false)}
-            >
+            <Button type="button" variant="ghost" onClick={() => handleClose(false)}>
               Cancel
             </Button>
             <Button

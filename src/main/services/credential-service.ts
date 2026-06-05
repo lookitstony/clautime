@@ -151,7 +151,10 @@ export const credentialService = {
    */
   removeStripeKey(mode?: 'live' | 'test'): void {
     const target = mode ?? this.getStripeMode()
-    settingsService.setSetting(target === 'test' ? 'stripe_api_key_test' : 'stripe_api_key_live', '')
+    settingsService.setSetting(
+      target === 'test' ? 'stripe_api_key_test' : 'stripe_api_key_live',
+      ''
+    )
     log.info(`Stripe ${target} API key removed`)
   },
 

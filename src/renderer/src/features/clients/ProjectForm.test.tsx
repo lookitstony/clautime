@@ -37,7 +37,9 @@ beforeEach(() => {
     projects: {
       getAll: vi.fn().mockResolvedValue({ success: true, data: [] }),
       create: vi.fn().mockResolvedValue({ success: true, data: mockProject }),
-      update: vi.fn().mockResolvedValue({ success: true, data: { ...mockProject, name: 'Updated' } }),
+      update: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { ...mockProject, name: 'Updated' } }),
       delete: vi.fn(),
       attributeSessions: vi.fn()
     },
@@ -49,29 +51,26 @@ beforeEach(() => {
 
 describe('ProjectForm', () => {
   it('renders create mode with empty fields', () => {
-    render(
-      <ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />, {
+      wrapper: createWrapper()
+    })
     expect(screen.getByText('Add Project')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Project name')).toHaveValue('')
   })
 
   it('renders edit mode with pre-filled values', () => {
-    render(
-      <ProjectForm open={true} onClose={vi.fn()} clientId={1} project={mockProject} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={mockProject} />, {
+      wrapper: createWrapper()
+    })
     expect(screen.getByText('Edit Project')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Project name')).toHaveValue('ClauTime')
   })
 
   it('Browse button calls dialog.openFolder and populates path', async () => {
     const user = userEvent.setup()
-    render(
-      <ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />, {
+      wrapper: createWrapper()
+    })
 
     await user.click(screen.getByRole('button', { name: 'Browse' }))
 
@@ -87,10 +86,9 @@ describe('ProjectForm', () => {
   })
 
   it('billable toggle defaults to checked in create mode', () => {
-    render(
-      <ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />, {
+      wrapper: createWrapper()
+    })
     const toggles = screen.getAllByRole('switch')
     // First switch is Billable (should be checked by default), second is Exclude (unchecked)
     expect(toggles[0]).toBeChecked()
@@ -101,10 +99,9 @@ describe('ProjectForm', () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
 
-    render(
-      <ProjectForm open={true} onClose={onClose} clientId={1} project={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ProjectForm open={true} onClose={onClose} clientId={1} project={null} />, {
+      wrapper: createWrapper()
+    })
 
     await user.type(screen.getByPlaceholderText('Project name'), 'My Project')
     await user.click(screen.getByRole('button', { name: 'Browse' }))

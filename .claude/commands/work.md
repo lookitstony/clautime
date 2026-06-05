@@ -31,6 +31,7 @@ Wait for both agents. Synthesize their findings into a brief implementation plan
 Read `.claude/agents/clautime-developer.md` for coding standards and patterns.
 
 Implement the changes following the developer agent's checklist:
+
 - Follow existing patterns exactly
 - Use IpcResult for all IPC
 - Services as singleton objects
@@ -40,6 +41,7 @@ Implement the changes following the developer agent's checklist:
 ## Phase 3: Tests
 
 Launch a **QA Agent** — Read `.claude/agents/clautime-qa.md` for role instructions.
+
 - Write tests for new service methods
 - Write tests for new components if applicable
 - Run `npm run test` and fix any failures

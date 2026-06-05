@@ -16,20 +16,39 @@ export default function HoursByProjectChart({ sessionData }: WidgetProps): React
       .sort((a, b) => b.hours - a.hours)
   }, [sessionData])
 
-  if (data.length === 0) return <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">No data for this period</div>
+  if (data.length === 0)
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+        No data for this period
+      </div>
+    )
 
   const total = data.reduce((s, d) => s + d.hours, 0)
 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
-        <Pie data={data} dataKey="hours" nameKey="name" cx="50%" cy="45%" innerRadius={60} outerRadius={90} paddingAngle={2}>
+        <Pie
+          data={data}
+          dataKey="hours"
+          nameKey="name"
+          cx="50%"
+          cy="45%"
+          innerRadius={60}
+          outerRadius={90}
+          paddingAngle={2}
+        >
           {data.map((_, i) => (
             <Cell key={i} fill={palette[i % palette.length]} />
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{ backgroundColor: 'var(--background-elevated)', border: '1px solid var(--surface-border)', color: textColor, fontSize: 12 }}
+          contentStyle={{
+            backgroundColor: 'var(--background-elevated)',
+            border: '1px solid var(--surface-border)',
+            color: textColor,
+            fontSize: 12
+          }}
           itemStyle={{ color: textColor }}
           labelStyle={{ color: textColor }}
           formatter={(value: number) => {

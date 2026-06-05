@@ -9,7 +9,13 @@ import type { IpcResult } from '../../shared/types/ipc'
 export function registerReportHandlers(): void {
   ipcMain.handle(
     'report:exportFile',
-    async (_event, content: string, defaultFilename: string, filterName: string, extension: string): Promise<IpcResult<string | null>> => {
+    async (
+      _event,
+      content: string,
+      defaultFilename: string,
+      filterName: string,
+      extension: string
+    ): Promise<IpcResult<string | null>> => {
       try {
         const { filePath } = await dialog.showSaveDialog({
           title: 'Save Report',

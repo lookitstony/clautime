@@ -31,8 +31,16 @@ export function ConfirmDialog({
   onCancel
 }: ConfirmDialogProps): React.JSX.Element {
   return (
-    <AlertDialog open={open} onOpenChange={(v) => { if (!v) onCancel() }}>
-      <AlertDialogContent size="sm" className="border-[var(--surface-border)] bg-[var(--background-elevated)]">
+    <AlertDialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onCancel()
+      }}
+    >
+      <AlertDialogContent
+        size="sm"
+        className="border-[var(--surface-border)] bg-[var(--background-elevated)]"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="text-[var(--text-primary)]">{title}</AlertDialogTitle>
           <AlertDialogDescription className="text-[var(--text-muted)]">

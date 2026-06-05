@@ -1,11 +1,6 @@
 import { useCallback } from 'react'
 import { Activity, BarChart3, FileText, Monitor, Settings, Users } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useCompleteSetup } from './use-onboarding'
 
@@ -71,7 +66,10 @@ export function WelcomeWizard({ onComplete }: WelcomeWizardProps): React.JSX.Ele
 
           <div className="grid gap-3">
             {features.map(({ icon: Icon, title, desc }) => (
-              <div key={title} className="flex items-start gap-3 rounded-lg px-3 py-2 bg-[var(--background-secondary)]">
+              <div
+                key={title}
+                className="flex items-start gap-3 rounded-lg px-3 py-2 bg-[var(--background-secondary)]"
+              >
                 <Icon size={18} className="mt-0.5 shrink-0 text-[var(--accent)]" />
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold">{title}</p>

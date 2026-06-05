@@ -34,8 +34,6 @@ export function clearStripeCache(): void {
   cachedKey = null
 }
 
-
-
 function validateInvoiceId(invoiceId: string): void {
   if (!invoiceId || !/^in_[a-zA-Z0-9]+$/.test(invoiceId)) {
     throw new AppError('INVALID_INVOICE_ID', 'Invalid Stripe invoice ID format')
@@ -86,7 +84,7 @@ export const stripeService = {
 
     // In test mode, override email with test email if configured
     const effectiveEmail = credentialService.isStripeTestMode()
-      ? (credentialService.getStripeTestEmail() || client.email)
+      ? credentialService.getStripeTestEmail() || client.email
       : client.email
 
     const stripe = getStripeClient()
@@ -103,7 +101,7 @@ export const stripeService = {
           }
         }
         log.warn(`Stripe customer ${client.stripeCustomerId} was deleted, creating new one`)
-      } catch (err: unknown) {
+      } catch (_err: unknown) {
         // Customer doesn't exist (e.g. switching from test to live mode)
         log.warn(`Stripe customer ${client.stripeCustomerId} not found, creating new one`)
       }
@@ -165,7 +163,14 @@ export const stripeService = {
 
     // Add line items
     for (const item of request.lineItems) {
-      if (item.hours && item.rateCents && item.hours > 0 && item.rateCents > 0 && isFinite(item.hours) && isFinite(item.rateCents)) {
+      if (
+        item.hours &&
+        item.rateCents &&
+        item.hours > 0 &&
+        item.rateCents > 0 &&
+        isFinite(item.hours) &&
+        isFinite(item.rateCents)
+      ) {
         // Decimal qty (hours) × unit rate (hourly rate in cents)
         // quantity_decimal exists in Stripe API but not yet in SDK v20 types — remove cast when upgraded
         await stripe.invoiceItems.create({
@@ -251,7 +256,9 @@ export const stripeService = {
     const stripe = getStripeClient()
     const result = await stripe.invoices.list({ limit, expand: ['data.lines'] })
     if (result.has_more) {
-      log.warn(`Stripe has more than ${limit} invoices — only the most recent ${limit} were fetched`)
+      log.warn(
+        `Stripe has more than ${limit} invoices — only the most recent ${limit} were fetched`
+      )
     }
     return result.data
   }

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [1.1.0] - 2026-06-05
 
 ### Added
+
 - **Session billable flag** — toggle individual sessions billable/non-billable from the detail panel
 - **Stripe test/sandbox mode** — separate keys per mode, dedicated test email override, mode-aware overlap checks
 - **Invoice PDF support** — store and link to Stripe's hosted invoice PDF URL
@@ -28,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Donate button on invoicing page
 
 ### Fixed
+
 - Stripe 500-char line description cap — dynamic per-line budgets, combined summary mode for high-ticket days, deterministic fallback
 - Ticket extraction filters out non-ticket prefixes (UTF-8, ISO-8859, etc.)
 - AI hallucinating work based on project names instead of actual commits
@@ -41,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Cap Stripe memo at 500 chars to avoid API rejection
 
 ### Changed
+
 - Invoice amount column is now read-only (driven by hours x rate)
 - Removed manual sync button from invoice list (auto-syncs now)
 - Hours display uses 2 decimal precision
@@ -49,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [1.0.0] - 2026-03-24
 
 ### Added
+
 - **Session Detection** — Automatic discovery of Claude Code sessions from JSONL conversation files with tool-type-aware gap detection (5/10/30 min idle limits)
 - **Client & Project Management** — Organize work by client and project with billable rates, auto-attribution of sessions to projects
 - **Live Dashboard** — Real-time session monitoring with floating desktop widgets, activity glow indicators, and configurable alerts

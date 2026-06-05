@@ -29,9 +29,7 @@ describe('EmptyState', () => {
   })
 
   it('does not render action section when no action prop', () => {
-    const { container } = render(
-      <EmptyState icon={Activity} title="Empty" description="desc" />
-    )
+    const { container } = render(<EmptyState icon={Activity} title="Empty" description="desc" />)
     expect(container.querySelectorAll('button')).toHaveLength(0)
   })
 })

@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ============================================
    ClauTime Design System
@@ -7,7 +7,8 @@
 
 @theme {
   /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', 'Fira Code', monospace;
 
   /* Responsive breakpoints */
@@ -81,7 +82,7 @@
    Light Theme
    Apply via data attribute: <html data-theme="light">
    ============================================ */
-[data-theme="light"] {
+[data-theme='light'] {
   /* Background layers — light blue-grey, mirrors dark theme structure */
   --background-primary: #dce1e8;
   --background-secondary: #cdd4de;
@@ -109,22 +110,22 @@
    Accent Theme Variants
    Apply via data attribute: <html data-accent="amber">
    ============================================ */
-[data-accent="amber"] {
+[data-accent='amber'] {
   --accent: #f59e0b;
   --accent-rgb: 245, 158, 11;
 }
 
-[data-accent="purple"] {
+[data-accent='purple'] {
   --accent: #a78bfa;
   --accent-rgb: 167, 139, 250;
 }
 
-[data-accent="blue"] {
+[data-accent='blue'] {
   --accent: #3b82f6;
   --accent-rgb: 59, 130, 246;
 }
 
-[data-accent="teal"] {
+[data-accent='teal'] {
   --accent: #14b8a6;
   --accent-rgb: 20, 184, 166;
 }

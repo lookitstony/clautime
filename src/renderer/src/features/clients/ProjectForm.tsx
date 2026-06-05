@@ -88,7 +88,14 @@ export function ProjectForm({
       if (isEdit && project) {
         await updateProject.mutateAsync({
           id: project.id,
-          data: { name: trimmedName, invoiceName: invoiceName.trim() || null, directoryPath: trimmedPath, isBillable, isActive: !isExcluded, clientId: selectedClientId }
+          data: {
+            name: trimmedName,
+            invoiceName: invoiceName.trim() || null,
+            directoryPath: trimmedPath,
+            isBillable,
+            isActive: !isExcluded,
+            clientId: selectedClientId
+          }
         })
         toast.success('Project updated')
       } else {
@@ -103,7 +110,10 @@ export function ProjectForm({
       onClose()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save project'
-      if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('already exists')) {
+      if (
+        message.toLowerCase().includes('unique') ||
+        message.toLowerCase().includes('already exists')
+      ) {
         setError('A project with this directory path already exists')
       } else {
         toast.error(message)
@@ -120,9 +130,7 @@ export function ProjectForm({
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Project' : 'Add Project'}</DialogTitle>
           <DialogDescription>
-            {isEdit
-              ? 'Update the project details.'
-              : 'Add a new project to this client.'}
+            {isEdit ? 'Update the project details.' : 'Add a new project to this client.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -169,7 +177,9 @@ export function ProjectForm({
                 'border-[var(--surface-border)]'
               )}
             />
-            <p className="text-[11px] text-[var(--text-muted)]">Display name on invoices. Leave blank to use project name.</p>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Display name on invoices. Leave blank to use project name.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -191,9 +201,7 @@ export function ProjectForm({
                   'bg-[var(--background-secondary)] text-[var(--text-primary)]',
                   'placeholder:text-[var(--text-muted)]',
                   'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
-                  error
-                    ? 'border-red-500'
-                    : 'border-[var(--surface-border)]'
+                  error ? 'border-red-500' : 'border-[var(--surface-border)]'
                 )}
               />
               <Button
@@ -235,11 +243,7 @@ export function ProjectForm({
             <label htmlFor="project-billable" className="text-[13px] font-medium">
               Billable
             </label>
-            <Switch
-              id="project-billable"
-              checked={isBillable}
-              onCheckedChange={setIsBillable}
-            />
+            <Switch id="project-billable" checked={isBillable} onCheckedChange={setIsBillable} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -251,11 +255,7 @@ export function ProjectForm({
                 Hide this project from sessions, reports, and live view.
               </p>
             </div>
-            <Switch
-              id="project-excluded"
-              checked={isExcluded}
-              onCheckedChange={setIsExcluded}
-            />
+            <Switch id="project-excluded" checked={isExcluded} onCheckedChange={setIsExcluded} />
           </div>
         </div>
 
@@ -263,10 +263,7 @@ export function ProjectForm({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!isValid || isPending}
-          >
+          <Button onClick={handleSubmit} disabled={!isValid || isPending}>
             {isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Project'}
           </Button>
         </DialogFooter>

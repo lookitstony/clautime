@@ -88,12 +88,15 @@ export const fileWatcherService = {
       }
 
       clientProjectService.attributeSessions()
-      gitService.scanCommits().then((r) => {
-        const correlated = gitService.correlateCommitsWithSessions()
-        log.info(`Startup git scan: ${r.newCommits} new commits, ${correlated} correlated`)
-      }).catch((err) => {
-        log.warn('Startup git scan failed (non-critical):', err)
-      })
+      gitService
+        .scanCommits()
+        .then((r) => {
+          const correlated = gitService.correlateCommitsWithSessions()
+          log.info(`Startup git scan: ${r.newCommits} new commits, ${correlated} correlated`)
+        })
+        .catch((err) => {
+          log.warn('Startup git scan failed (non-critical):', err)
+        })
       this._notifyRenderer()
       log.info('File watcher: startup scan complete')
     } catch (err) {
@@ -153,11 +156,14 @@ export const fileWatcherService = {
 
       // Pick up any new git commits for this project, then correlate.
       // Without this, long-running app sessions never see commits made after startup.
-      gitService.scanCommits().then(() => {
-        gitService.correlateCommitsWithSessions()
-      }).catch((err) => {
-        log.warn('Incremental git scan failed (non-critical):', err)
-      })
+      gitService
+        .scanCommits()
+        .then(() => {
+          gitService.correlateCommitsWithSessions()
+        })
+        .catch((err) => {
+          log.warn('Incremental git scan failed (non-critical):', err)
+        })
 
       // Notify renderer to refresh data
       this._notifyRenderer()

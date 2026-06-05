@@ -114,16 +114,12 @@
       "indexes": {
         "idx_sessions_project_path": {
           "name": "idx_sessions_project_path",
-          "columns": [
-            "project_path"
-          ],
+          "columns": ["project_path"],
           "isUnique": false
         },
         "idx_sessions_started_at": {
           "name": "idx_sessions_started_at",
-          "columns": [
-            "started_at"
-          ],
+          "columns": ["started_at"],
           "isUnique": false
         }
       },

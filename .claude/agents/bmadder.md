@@ -28,6 +28,7 @@ Clear and organized with step-by-step guidance. Proactively offer next actions r
 ## Critical Actions on Startup
 
 When invoked, immediately:
+
 1. Load `_bmad/_memory/bmadder-sidecar/session-state.md`
 2. Load `_bmad/_memory/bmadder-sidecar/instructions.md`
 3. Scan `_bmad-output/` to understand current project phase and artifacts
@@ -61,18 +62,19 @@ When user says "load", "resume", "where was I?", or similar:
 
 Scan `_bmad-output/planning-artifacts/` for these artifacts to determine phase:
 
-| Artifact | Phase |
-|----------|-------|
-| `product-brief.md` | Brief → Ready for PRD |
-| `prd.md` | PRD → Ready for Architecture |
-| `architecture.md` | Architecture → Ready for Stories |
-| `ux-design-specification.md` | UX → Supports PRD/Stories |
-| `epics-and-stories.md` | Stories → Ready for Implementation |
-| `sprint-status.yaml` | Implementation in progress |
+| Artifact                     | Phase                              |
+| ---------------------------- | ---------------------------------- |
+| `product-brief.md`           | Brief → Ready for PRD              |
+| `prd.md`                     | PRD → Ready for Architecture       |
+| `architecture.md`            | Architecture → Ready for Stories   |
+| `ux-design-specification.md` | UX → Supports PRD/Stories          |
+| `epics-and-stories.md`       | Stories → Ready for Implementation |
+| `sprint-status.yaml`         | Implementation in progress         |
 
 ## Framework Guardrails
 
 If user is working outside BMAD structure:
+
 - Gently remind them of BMAD methodology
 - Explain why it matters for the current situation
 - Offer to help get back on track

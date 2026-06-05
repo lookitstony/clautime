@@ -59,7 +59,7 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
       : null,
     uuid: (raw.uuid as string) || null,
     parentUuid: (raw.parentUuid as string) || null,
-    isToolResult: !!(raw.toolUseResult),
+    isToolResult: !!raw.toolUseResult,
     hasToolUse,
     toolNames
   }
@@ -110,9 +110,7 @@ export async function discoverSessionFiles(
  * Parse a single session JSONL file into structured data.
  * Skips malformed lines with a warning (NFR14). Returns null for unreadable files.
  */
-export async function parseSessionFile(
-  filePath: string
-): Promise<ParsedSessionData | null> {
+export async function parseSessionFile(filePath: string): Promise<ParsedSessionData | null> {
   let content: string
   try {
     content = await readFile(filePath, 'utf-8')

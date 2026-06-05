@@ -44,12 +44,7 @@ describe('SessionRow', () => {
   })
 
   it('renders Manual badge for manual sessions', () => {
-    render(
-      <SessionRow
-        {...defaultProps}
-        session={{ ...mockSession, source: 'manual' }}
-      />
-    )
+    render(<SessionRow {...defaultProps} session={{ ...mockSession, source: 'manual' }} />)
     expect(screen.getByText('Manual')).toBeInTheDocument()
   })
 
@@ -84,12 +79,7 @@ describe('SessionRow', () => {
   })
 
   it('hides prompt count when zero', () => {
-    render(
-      <SessionRow
-        {...defaultProps}
-        session={{ ...mockSession, promptCount: 0 }}
-      />
-    )
+    render(<SessionRow {...defaultProps} session={{ ...mockSession, promptCount: 0 }} />)
     expect(screen.queryByText(/prompts?/)).not.toBeInTheDocument()
   })
 })

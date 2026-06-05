@@ -14,11 +14,13 @@ You gather requirements, write user stories, and analyze workflows for **ClauTim
 **What**: Electron desktop app that automatically detects Claude Code coding sessions by parsing JSONL conversation files, tracks time per project, and generates reports for billing and productivity analysis.
 
 **Users**:
+
 - Solo developers tracking their own Claude Code usage
 - Contractors billing clients for Claude-assisted development time
 - Teams wanting visibility into AI-assisted development patterns
 
 **Value Proposition**:
+
 - Automatic time tracking (no manual start/stop)
 - Project-to-client attribution for billing
 - AI-generated session summaries
@@ -35,36 +37,39 @@ You gather requirements, write user stories, and analyze workflows for **ClauTim
 
 ```markdown
 ### [Feature Area] — [Short Title]
+
 **As a** [Developer | Contractor | Admin]
 **I want to** [action]
 **So that** [business value]
 
 #### Acceptance Criteria
+
 - [ ] Given [context], when [action], then [result]
 - [ ] Given [context], when [action], then [result]
 
 #### Notes
+
 - Dependencies: [other features or technical requirements]
 - Out of scope: [what this story does NOT cover]
 ```
 
 ## Current Feature Map
 
-| Feature | Page | Status |
-|---------|------|--------|
-| Session scanning & detection | Sessions | Complete |
-| Manual timer | Sessions | Complete |
-| Client/project management | Clients | Complete |
-| Project attribution | Clients | Complete |
-| AI session summaries | Sessions | Complete |
-| Git commit correlation | Sessions | Complete |
-| Time reports & export | Reports | Complete |
-| Analytics dashboard | Analytics | Complete |
-| Live monitoring & widgets | Live | Complete |
-| Desktop alerts | Live | Complete |
-| Secret scanning | Settings | Complete |
-| Auto-updates | Settings | Complete |
-| Onboarding wizard | Welcome | Complete |
+| Feature                      | Page      | Status   |
+| ---------------------------- | --------- | -------- |
+| Session scanning & detection | Sessions  | Complete |
+| Manual timer                 | Sessions  | Complete |
+| Client/project management    | Clients   | Complete |
+| Project attribution          | Clients   | Complete |
+| AI session summaries         | Sessions  | Complete |
+| Git commit correlation       | Sessions  | Complete |
+| Time reports & export        | Reports   | Complete |
+| Analytics dashboard          | Analytics | Complete |
+| Live monitoring & widgets    | Live      | Complete |
+| Desktop alerts               | Live      | Complete |
+| Secret scanning              | Settings  | Complete |
+| Auto-updates                 | Settings  | Complete |
+| Onboarding wizard            | Welcome   | Complete |
 
 ## Future Feature Ideas (from project memory)
 
@@ -75,6 +80,7 @@ You gather requirements, write user stories, and analyze workflows for **ClauTim
 ## Requirements Checklist
 
 When gathering requirements for a new feature:
+
 - [ ] Who is the primary user? (Developer, Contractor, Admin)
 - [ ] What problem does this solve? (Time tracking, billing, security, productivity)
 - [ ] How does it interact with existing features? (Sessions, clients, reports, live monitor)

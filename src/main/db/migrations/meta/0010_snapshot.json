@@ -46,9 +46,7 @@
       "indexes": {
         "idx_ai_summaries_session_id": {
           "name": "idx_ai_summaries_session_id",
-          "columns": [
-            "session_id"
-          ],
+          "columns": ["session_id"],
           "isUnique": false
         }
       },
@@ -57,12 +55,8 @@
           "name": "ai_summaries_session_id_sessions_id_fk",
           "tableFrom": "ai_summaries",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -159,16 +153,12 @@
       "indexes": {
         "clients_name_unique": {
           "name": "clients_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         },
         "idx_clients_name": {
           "name": "idx_clients_name",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": false
         }
       },
@@ -247,30 +237,22 @@
       "indexes": {
         "idx_git_commits_project_id": {
           "name": "idx_git_commits_project_id",
-          "columns": [
-            "project_id"
-          ],
+          "columns": ["project_id"],
           "isUnique": false
         },
         "idx_git_commits_hash": {
           "name": "idx_git_commits_hash",
-          "columns": [
-            "hash"
-          ],
+          "columns": ["hash"],
           "isUnique": false
         },
         "idx_git_commits_committed_at": {
           "name": "idx_git_commits_committed_at",
-          "columns": [
-            "committed_at"
-          ],
+          "columns": ["committed_at"],
           "isUnique": false
         },
         "idx_git_commits_session_id": {
           "name": "idx_git_commits_session_id",
-          "columns": [
-            "session_id"
-          ],
+          "columns": ["session_id"],
           "isUnique": false
         }
       },
@@ -279,12 +261,8 @@
           "name": "git_commits_project_id_projects_id_fk",
           "tableFrom": "git_commits",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -330,9 +308,7 @@
       "indexes": {
         "idx_project_alert_config_project_id": {
           "name": "idx_project_alert_config_project_id",
-          "columns": [
-            "project_id"
-          ],
+          "columns": ["project_id"],
           "isUnique": true
         }
       },
@@ -341,12 +317,8 @@
           "name": "project_alert_config_project_id_projects_id_fk",
           "tableFrom": "project_alert_config",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -420,23 +392,17 @@
       "indexes": {
         "projects_directory_path_unique": {
           "name": "projects_directory_path_unique",
-          "columns": [
-            "directory_path"
-          ],
+          "columns": ["directory_path"],
           "isUnique": true
         },
         "idx_projects_client_id": {
           "name": "idx_projects_client_id",
-          "columns": [
-            "client_id"
-          ],
+          "columns": ["client_id"],
           "isUnique": false
         },
         "idx_projects_directory_path": {
           "name": "idx_projects_directory_path",
-          "columns": [
-            "directory_path"
-          ],
+          "columns": ["directory_path"],
           "isUnique": false
         }
       },
@@ -445,12 +411,8 @@
           "name": "projects_client_id_clients_id_fk",
           "tableFrom": "projects",
           "tableTo": "clients",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["client_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -495,19 +457,12 @@
       "indexes": {
         "idx_progress_events_source_timestamp": {
           "name": "idx_progress_events_source_timestamp",
-          "columns": [
-            "source_file",
-            "timestamp"
-          ],
+          "columns": ["source_file", "timestamp"],
           "isUnique": false
         },
         "idx_progress_events_unique": {
           "name": "idx_progress_events_unique",
-          "columns": [
-            "source_file",
-            "timestamp",
-            "is_subagent"
-          ],
+          "columns": ["source_file", "timestamp", "is_subagent"],
           "isUnique": true
         }
       },
@@ -670,17 +625,12 @@
       "indexes": {
         "idx_raw_messages_source_timestamp": {
           "name": "idx_raw_messages_source_timestamp",
-          "columns": [
-            "source_file",
-            "timestamp"
-          ],
+          "columns": ["source_file", "timestamp"],
           "isUnique": false
         },
         "idx_raw_messages_claude_session_id": {
           "name": "idx_raw_messages_claude_session_id",
-          "columns": [
-            "claude_session_id"
-          ],
+          "columns": ["claude_session_id"],
           "isUnique": false
         }
       },
@@ -740,16 +690,12 @@
       "indexes": {
         "scan_state_file_path_unique": {
           "name": "scan_state_file_path_unique",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": true
         },
         "idx_scan_state_file_path": {
           "name": "idx_scan_state_file_path",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": false
         }
       },
@@ -836,23 +782,17 @@
       "indexes": {
         "idx_secret_findings_source_file": {
           "name": "idx_secret_findings_source_file",
-          "columns": [
-            "source_file"
-          ],
+          "columns": ["source_file"],
           "isUnique": false
         },
         "idx_secret_findings_severity": {
           "name": "idx_secret_findings_severity",
-          "columns": [
-            "severity"
-          ],
+          "columns": ["severity"],
           "isUnique": false
         },
         "idx_secret_findings_status": {
           "name": "idx_secret_findings_status",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
@@ -912,16 +852,12 @@
       "indexes": {
         "secret_scan_state_file_path_unique": {
           "name": "secret_scan_state_file_path_unique",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": true
         },
         "idx_secret_scan_state_file_path": {
           "name": "idx_secret_scan_state_file_path",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": false
         }
       },
@@ -1061,37 +997,27 @@
       "indexes": {
         "idx_sessions_project_path": {
           "name": "idx_sessions_project_path",
-          "columns": [
-            "project_path"
-          ],
+          "columns": ["project_path"],
           "isUnique": false
         },
         "idx_sessions_started_at": {
           "name": "idx_sessions_started_at",
-          "columns": [
-            "started_at"
-          ],
+          "columns": ["started_at"],
           "isUnique": false
         },
         "idx_sessions_claude_session_id": {
           "name": "idx_sessions_claude_session_id",
-          "columns": [
-            "claude_session_id"
-          ],
+          "columns": ["claude_session_id"],
           "isUnique": false
         },
         "idx_sessions_project_id": {
           "name": "idx_sessions_project_id",
-          "columns": [
-            "project_id"
-          ],
+          "columns": ["project_id"],
           "isUnique": false
         },
         "idx_sessions_client_id": {
           "name": "idx_sessions_client_id",
-          "columns": [
-            "client_id"
-          ],
+          "columns": ["client_id"],
           "isUnique": false
         }
       },
@@ -1100,12 +1026,8 @@
           "name": "sessions_project_id_projects_id_fk",
           "tableFrom": "sessions",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1113,12 +1035,8 @@
           "name": "sessions_client_id_clients_id_fk",
           "tableFrom": "sessions",
           "tableTo": "clients",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["client_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }

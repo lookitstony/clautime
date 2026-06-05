@@ -120,9 +120,7 @@ describe('useUnassignedDirectories', () => {
   })
 
   it('matches projects case-insensitively with backslash normalization', () => {
-    mockUseSessions.mockReturnValue(
-      mockQuery([{ projectPath: 'C:/Apps/ClauTime' }]) as any
-    )
+    mockUseSessions.mockReturnValue(mockQuery([{ projectPath: 'C:/Apps/ClauTime' }]) as any)
     mockUseProjects.mockReturnValue(
       mockQuery([{ directoryPath: 'c:\\apps\\clautime', clientId: 1 }]) as any
     )

@@ -34,7 +34,10 @@ interface InvoiceListViewProps {
   onSelectInvoice: (id: number) => void
 }
 
-export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListViewProps): React.JSX.Element {
+export function InvoiceListView({
+  onCreateNew,
+  onSelectInvoice
+}: InvoiceListViewProps): React.JSX.Element {
   const queryClient = useQueryClient()
   const [sortKey, setSortKey] = useState<SortKey>('period')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -69,7 +72,11 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success(count > 0 ? `Imported ${count} invoice${count > 1 ? 's' : ''} from Stripe` : 'No new invoices to import')
+      toast.success(
+        count > 0
+          ? `Imported ${count} invoice${count > 1 ? 's' : ''} from Stripe`
+          : 'No new invoices to import'
+      )
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Import failed')
   })
@@ -82,21 +89,32 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
       const r = await window.api.invoice.getAll()
       return r.success ? r.data : []
     },
-    staleTime: 30_000  // Re-sync at most every 30s
+    staleTime: 30_000 // Re-sync at most every 30s
   })
 
   const sortedInvoices = useMemo(() => {
-    const filtered = activeStatuses.size === 0
-      ? invoices
-      : invoices.filter((inv) => activeStatuses.has(inv.status as StatusFilter))
+    const filtered =
+      activeStatuses.size === 0
+        ? invoices
+        : invoices.filter((inv) => activeStatuses.has(inv.status as StatusFilter))
     const sorted = [...filtered].sort((a, b) => {
       let cmp = 0
       switch (sortKey) {
-        case 'date': cmp = a.createdAt.localeCompare(b.createdAt); break
-        case 'client': cmp = a.clientName.localeCompare(b.clientName); break
-        case 'period': cmp = (a.periodStart ?? '').localeCompare(b.periodStart ?? ''); break
-        case 'amount': cmp = a.amountDueCents - b.amountDueCents; break
-        case 'status': cmp = a.status.localeCompare(b.status); break
+        case 'date':
+          cmp = a.createdAt.localeCompare(b.createdAt)
+          break
+        case 'client':
+          cmp = a.clientName.localeCompare(b.clientName)
+          break
+        case 'period':
+          cmp = (a.periodStart ?? '').localeCompare(b.periodStart ?? '')
+          break
+        case 'amount':
+          cmp = a.amountDueCents - b.amountDueCents
+          break
+        case 'status':
+          cmp = a.status.localeCompare(b.status)
+          break
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
@@ -119,7 +137,8 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
             disabled={importFromStripe.isPending}
             className="text-[var(--text-secondary)]"
           >
-            <Download className="mr-1 h-3.5 w-3.5" /> {importFromStripe.isPending ? 'Importing...' : 'Import from Stripe'}
+            <Download className="mr-1 h-3.5 w-3.5" />{' '}
+            {importFromStripe.isPending ? 'Importing...' : 'Import from Stripe'}
           </Button>
           <Button
             size="sm"
@@ -152,22 +171,40 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
       {invoices.length === 0 ? (
         <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--background-elevated)] p-8 text-center">
           <p className="text-[14px] text-[var(--text-primary)]">No invoices yet</p>
-          <p className="mt-1 text-[12px] text-[var(--text-muted)]">Create your first invoice to get started.</p>
+          <p className="mt-1 text-[12px] text-[var(--text-muted)]">
+            Create your first invoice to get started.
+          </p>
         </div>
       ) : (
         <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--background-elevated)]">
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-medium text-[var(--text-muted)]">
-                {([['date', 'Date', ''], ['client', 'Client', ''], ['period', 'Period', ''], ['amount', 'Amount', 'text-right'], ['status', 'Status', '']] as const).map(([key, label, extra]) => (
+                {(
+                  [
+                    ['date', 'Date', ''],
+                    ['client', 'Client', ''],
+                    ['period', 'Period', ''],
+                    ['amount', 'Amount', 'text-right'],
+                    ['status', 'Status', '']
+                  ] as const
+                ).map(([key, label, extra]) => (
                   <th
                     key={key}
                     onClick={() => toggleSort(key)}
-                    className={cn('px-4 py-2 cursor-pointer select-none hover:text-[var(--text-primary)] transition-colors', extra)}
+                    className={cn(
+                      'px-4 py-2 cursor-pointer select-none hover:text-[var(--text-primary)] transition-colors',
+                      extra
+                    )}
                   >
                     <span className="inline-flex items-center gap-1">
                       {label}
-                      {sortKey === key && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                      {sortKey === key &&
+                        (sortDir === 'asc' ? (
+                          <ArrowUp className="h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="h-3 w-3" />
+                        ))}
                     </span>
                   </th>
                 ))}
@@ -196,7 +233,12 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
                       ${(inv.amountDueCents / 100).toFixed(2)}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', STATUS_STYLES[displayStatus] ?? STATUS_STYLES.draft)}>
+                      <span
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-[11px] font-medium',
+                          STATUS_STYLES[displayStatus] ?? STATUS_STYLES.draft
+                        )}
+                      >
                         {displayStatus}
                       </span>
                     </td>
@@ -206,7 +248,10 @@ export function InvoiceListView({ onCreateNew, onSelectInvoice }: InvoiceListVie
                           onClick={(e) => {
                             e.stopPropagation()
                             const url = inv.hostedUrl!
-                            if (url.startsWith('https://invoice.stripe.com/') || url.startsWith('https://pay.stripe.com/')) {
+                            if (
+                              url.startsWith('https://invoice.stripe.com/') ||
+                              url.startsWith('https://pay.stripe.com/')
+                            ) {
                               window.open(url, '_blank')
                             }
                           }}

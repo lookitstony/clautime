@@ -87,11 +87,14 @@ function setupTestDb(): void {
   testDb = drizzle(testSqlite, { schema })
   migrate(testDb, { migrationsFolder: join(__dirname, '../db/migrations') })
   // Seed a dummy raw_messages row so _backfillIfNeeded skips (avoids consuming mocks)
-  testDb.insert(rawMessages).values({
-    sourceFile: '__seed__',
-    type: 'user',
-    timestamp: '2026-01-01T00:00:00Z'
-  }).run()
+  testDb
+    .insert(rawMessages)
+    .values({
+      sourceFile: '__seed__',
+      type: 'user',
+      timestamp: '2026-01-01T00:00:00Z'
+    })
+    .run()
 }
 
 function makeMessage(timestamp: string): ParsedMessage {
@@ -111,10 +114,7 @@ function makeMessage(timestamp: string): ParsedMessage {
   }
 }
 
-function makeParsedSession(
-  sourceFile: string,
-  messages: ParsedMessage[]
-): ParsedSessionData {
+function makeParsedSession(sourceFile: string, messages: ParsedMessage[]): ParsedSessionData {
   const ts = messages.filter((m) => m.timestamp).map((m) => m.timestamp)
   return {
     sessionId: 'sess-1',
@@ -354,11 +354,7 @@ describe('sessionService', () => {
 
       await sessionService.scanSessions('/home/user/.claude')
 
-      const scanRecord = testDb
-        .select()
-        .from(scanState)
-        .where(eq(scanState.filePath, file1))
-        .get()
+      const scanRecord = testDb.select().from(scanState).where(eq(scanState.filePath, file1)).get()
 
       expect(scanRecord).toBeDefined()
       expect(scanRecord!.sessionCount).toBe(1)

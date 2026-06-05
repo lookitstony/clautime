@@ -1,6 +1,15 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { IpcResult } from '../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult, DiscoveredProject, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../shared/types/session'
+import type {
+  Session,
+  SessionFilters,
+  ScanResult,
+  DiscoveredProject,
+  PromptTiming,
+  UpdateSession,
+  GapAnalysis,
+  TimeBreakdownDay
+} from '../shared/types/session'
 import type { GitCommit, GitScanResult, GitIdentity } from '../shared/types/git'
 import type {
   Client,
@@ -12,8 +21,23 @@ import type {
 } from '../shared/types/client-project'
 import type { ReportFilters, ReportFormat, ReportResult } from '../shared/types/report'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../shared/types/live'
-import type { SecretScanResult, SecretFinding, SecretScanSummary, CustomSecretPattern, PatternTestResult } from '../shared/types/secret-scan'
-import type { StripeCustomerInfo, CreateInvoiceRequest, DraftInvoice, InvoiceStatus, GeneratedLineItem, GenerateLineItemsResult, LocalInvoice, LocalInvoiceDetail, InvoiceOverlap } from '../shared/types/invoice'
+import type {
+  SecretScanResult,
+  SecretFinding,
+  SecretScanSummary,
+  CustomSecretPattern,
+  PatternTestResult
+} from '../shared/types/secret-scan'
+import type {
+  StripeCustomerInfo,
+  CreateInvoiceRequest,
+  DraftInvoice,
+  InvoiceStatus,
+  GenerateLineItemsResult,
+  LocalInvoice,
+  LocalInvoiceDetail,
+  InvoiceOverlap
+} from '../shared/types/invoice'
 
 interface DialogApi {
   openFolder(): Promise<IpcResult<string | null>>
@@ -67,16 +91,20 @@ interface AiApi {
   getSummary(sessionId: number): Promise<IpcResult<{ summary: string; tier: string }>>
   generateSummary(sessionId: number): Promise<IpcResult<string | null>>
   generateBatch(sessionIds: number[]): Promise<IpcResult<number>>
-  generateReportSummary(filters: {
-    startDate: string
-    endDate: string
-    projectId?: number
-    clientId?: number
-  }, useAi?: boolean, summaryOptions?: {
-    includeOverall?: boolean
-    includeDailyBreakdown?: boolean
-    brief?: boolean
-  }): Promise<IpcResult<string | null>>
+  generateReportSummary(
+    filters: {
+      startDate: string
+      endDate: string
+      projectId?: number
+      clientId?: number
+    },
+    useAi?: boolean,
+    summaryOptions?: {
+      includeOverall?: boolean
+      includeDailyBreakdown?: boolean
+      brief?: boolean
+    }
+  ): Promise<IpcResult<string | null>>
 }
 
 interface GitApi {
@@ -102,7 +130,12 @@ interface UpdaterApi {
 interface ReportsApi {
   generate(filters: ReportFilters, format: ReportFormat): Promise<IpcResult<ReportResult>>
   exportPdf(html: string, filename?: string): Promise<IpcResult<string | null>>
-  exportFile(content: string, defaultFilename: string, filterName: string, extension: string): Promise<IpcResult<string | null>>
+  exportFile(
+    content: string,
+    defaultFilename: string,
+    filterName: string,
+    extension: string
+  ): Promise<IpcResult<string | null>>
   openFile(filePath: string): Promise<IpcResult<boolean>>
 }
 
@@ -116,7 +149,9 @@ interface LiveApi {
   playTestSound(): Promise<IpcResult<void>>
   selectCustomSound(): Promise<IpcResult<string | null>>
   onSessionsUpdated(callback: () => void): void
-  onNewProject(callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void): void
+  onNewProject(
+    callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void
+  ): void
   timerStarted(projectName: string, startedAt: string): Promise<IpcResult<void>>
   timerStopped(): Promise<IpcResult<void>>
   toggleWidget(projectId: number): Promise<IpcResult<void>>
@@ -159,7 +194,12 @@ interface InvoiceApi {
   sendInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   getInvoiceStatus(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   voidInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
-  generateLineItems(request: { clientId: number; startDate: string; endDate: string; projectId?: number }): Promise<IpcResult<GenerateLineItemsResult>>
+  generateLineItems(request: {
+    clientId: number
+    startDate: string
+    endDate: string
+    projectId?: number
+  }): Promise<IpcResult<GenerateLineItemsResult>>
   getAll(filters?: { clientId?: number; status?: string }): Promise<IpcResult<LocalInvoice[]>>
   getById(localId: number): Promise<IpcResult<LocalInvoiceDetail | null>>
   syncLocalStatus(localId: number): Promise<IpcResult<LocalInvoice>>
@@ -172,7 +212,11 @@ interface InvoiceApi {
   importFromStripe(): Promise<IpcResult<number>>
   getStripeTestEmail(): Promise<IpcResult<string | null>>
   setStripeTestEmail(email: string): Promise<IpcResult<void>>
-  checkOverlap(request: { clientId: number; startDate: string; endDate: string }): Promise<IpcResult<InvoiceOverlap[]>>
+  checkOverlap(request: {
+    clientId: number
+    startDate: string
+    endDate: string
+  }): Promise<IpcResult<InvoiceOverlap[]>>
 }
 
 interface SecretScanApi {
@@ -184,9 +228,15 @@ interface SecretScanApi {
   redactFinding(id: number): Promise<IpcResult<void>>
   redactAll(): Promise<IpcResult<number>>
   getCustomPatterns(): Promise<IpcResult<CustomSecretPattern[]>>
-  upsertCustomPattern(pattern: CustomSecretPattern): Promise<IpcResult<{ success: boolean; warnings: string[] }>>
+  upsertCustomPattern(
+    pattern: CustomSecretPattern
+  ): Promise<IpcResult<{ success: boolean; warnings: string[] }>>
   deleteCustomPattern(id: string): Promise<IpcResult<void>>
-  testPattern(source: string, flags: string, testString: string): Promise<IpcResult<PatternTestResult>>
+  testPattern(
+    source: string,
+    flags: string,
+    testString: string
+  ): Promise<IpcResult<PatternTestResult>>
 }
 
 interface Api {

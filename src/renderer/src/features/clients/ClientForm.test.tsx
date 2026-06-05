@@ -31,7 +31,9 @@ beforeEach(() => {
     clients: {
       getAll: vi.fn().mockResolvedValue({ success: true, data: [mockClient] }),
       create: vi.fn().mockResolvedValue({ success: true, data: mockClient }),
-      update: vi.fn().mockResolvedValue({ success: true, data: { ...mockClient, name: 'Updated' } }),
+      update: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { ...mockClient, name: 'Updated' } }),
       delete: vi.fn()
     },
     projects: {
@@ -46,28 +48,21 @@ beforeEach(() => {
 
 describe('ClientForm', () => {
   it('renders create mode with empty fields', () => {
-    render(
-      <ClientForm open={true} onClose={vi.fn()} client={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ClientForm open={true} onClose={vi.fn()} client={null} />, { wrapper: createWrapper() })
     expect(screen.getByText('Add Client')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Client name')).toHaveValue('')
   })
 
   it('renders edit mode with pre-filled values', () => {
-    render(
-      <ClientForm open={true} onClose={vi.fn()} client={mockClient} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ClientForm open={true} onClose={vi.fn()} client={mockClient} />, {
+      wrapper: createWrapper()
+    })
     expect(screen.getByText('Edit Client')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Client name')).toHaveValue('Acme Corp')
   })
 
   it('submit button disabled when name is empty', () => {
-    render(
-      <ClientForm open={true} onClose={vi.fn()} client={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ClientForm open={true} onClose={vi.fn()} client={null} />, { wrapper: createWrapper() })
     const createButton = screen.getByRole('button', { name: 'Create Client' })
     expect(createButton).toBeDisabled()
   })
@@ -76,10 +71,7 @@ describe('ClientForm', () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
 
-    render(
-      <ClientForm open={true} onClose={onClose} client={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ClientForm open={true} onClose={onClose} client={null} />, { wrapper: createWrapper() })
 
     await user.type(screen.getByPlaceholderText('Client name'), 'New Client')
     await user.click(screen.getByRole('button', { name: 'Create Client' }))
@@ -92,20 +84,14 @@ describe('ClientForm', () => {
   })
 
   it('renders color picker with 8 swatches', () => {
-    render(
-      <ClientForm open={true} onClose={vi.fn()} client={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ClientForm open={true} onClose={vi.fn()} client={null} />, { wrapper: createWrapper() })
     const swatches = screen.getAllByRole('button', { name: /Select color / })
     expect(swatches).toHaveLength(8)
   })
 
   it('selects a color when swatch clicked', async () => {
     const user = userEvent.setup()
-    render(
-      <ClientForm open={true} onClose={vi.fn()} client={null} />,
-      { wrapper: createWrapper() }
-    )
+    render(<ClientForm open={true} onClose={vi.fn()} client={null} />, { wrapper: createWrapper() })
     const swatches = screen.getAllByRole('button', { name: /Select color / })
     await user.click(swatches[2]) // Click 3rd color
 

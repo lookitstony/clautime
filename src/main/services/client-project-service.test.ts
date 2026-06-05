@@ -117,9 +117,7 @@ describe('ClientProjectService — Clients', () => {
   })
 
   it('throws when deleting non-existent client', () => {
-    expect(() => clientProjectService.deleteClient(9999)).toThrow(
-      'Client with id 9999 not found'
-    )
+    expect(() => clientProjectService.deleteClient(9999)).toThrow('Client with id 9999 not found')
   })
 
   it('enforces unique client name', () => {
@@ -259,9 +257,7 @@ describe('ClientProjectService — Projects', () => {
   })
 
   it('throws when deleting non-existent project', () => {
-    expect(() => clientProjectService.deleteProject(9999)).toThrow(
-      'Project with id 9999 not found'
-    )
+    expect(() => clientProjectService.deleteProject(9999)).toThrow('Project with id 9999 not found')
   })
 
   it('returns the existing project when creating a duplicate directory under the same client', () => {

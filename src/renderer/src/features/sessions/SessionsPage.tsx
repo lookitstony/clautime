@@ -1,6 +1,14 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router'
-import { AlertTriangle, LayoutList, ArrowRight, ChevronDown, ChevronUp, ChevronRight, Plus } from 'lucide-react'
+import {
+  AlertTriangle,
+  LayoutList,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+  Plus
+} from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -125,14 +133,16 @@ export function SessionsPage(): React.JSX.Element {
   )
 
   const allGroupKeys = useMemo(
-    () => groups.map((g) => g.projectId != null ? `project:${g.projectId}` : `path:${g.projectPath}`),
+    () =>
+      groups.map((g) => (g.projectId != null ? `project:${g.projectId}` : `path:${g.projectPath}`)),
     [groups]
   )
 
   const allDayKeys = useMemo(() => {
     const keys: string[] = []
     for (const group of groups) {
-      const groupKey = group.projectId != null ? `project:${group.projectId}` : `path:${group.projectPath}`
+      const groupKey =
+        group.projectId != null ? `project:${group.projectId}` : `path:${group.projectPath}`
       for (const session of group.sessions) {
         const dk = `${groupKey}:${getDateKey(session.startedAt)}`
         if (!keys.includes(dk)) keys.push(dk)
@@ -195,10 +205,7 @@ export function SessionsPage(): React.JSX.Element {
       />
 
       {!isLoading && (hasResults || hasFilters) && (
-        <SessionFilterBar
-          clients={clients ?? []}
-          projects={allProjects ?? []}
-        />
+        <SessionFilterBar clients={clients ?? []} projects={allProjects ?? []} />
       )}
 
       {hasResults && (
@@ -206,10 +213,7 @@ export function SessionsPage(): React.JSX.Element {
           <span className="mr-auto text-[11px] text-[var(--text-muted)]">
             {groups.length} project{groups.length !== 1 ? 's' : ''}
           </span>
-          <Button
-            size="xs"
-            onClick={() => setShowManualForm(true)}
-          >
+          <Button size="xs" onClick={() => setShowManualForm(true)}>
             <Plus className="mr-0.5 h-3 w-3" />
             Manual Block
           </Button>
@@ -251,10 +255,7 @@ export function SessionsPage(): React.JSX.Element {
             title="No Matching Sessions"
             description="No sessions match the current filters"
             action={
-              <Button
-                onClick={() => useFilterStore.getState().clearFilters()}
-                variant="ghost"
-              >
+              <Button onClick={() => useFilterStore.getState().clearFilters()} variant="ghost">
                 Clear Filters
               </Button>
             }
@@ -266,20 +267,15 @@ export function SessionsPage(): React.JSX.Element {
             icon={LayoutList}
             title="No Sessions Found"
             description="Scan for your Claude Code projects and import session history"
-            action={
-              <Button onClick={() => showWizard.mutate()}>
-                Scan for Projects
-              </Button>
-            }
+            action={<Button onClick={() => showWizard.mutate()}>Scan for Projects</Button>}
           />
         )}
 
         {hasResults && (
           <div className="divide-y divide-[var(--surface-border)]">
             {groups.map((group) => {
-              const groupKey = group.projectId != null
-                ? `project:${group.projectId}`
-                : `path:${group.projectPath}`
+              const groupKey =
+                group.projectId != null ? `project:${group.projectId}` : `path:${group.projectPath}`
               const color = group.clientColor ?? getProjectColor(group.projectPath)
 
               return (
@@ -300,7 +296,10 @@ export function SessionsPage(): React.JSX.Element {
                     {group.isUnassigned && (
                       <button
                         type="button"
-                        onClick={() => { setActiveView('/clients'); navigate('/clients') }}
+                        onClick={() => {
+                          setActiveView('/clients')
+                          navigate('/clients')
+                        }}
                         className="flex w-full items-center gap-2 px-10 py-2 text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent)]"
                       >
                         <ArrowRight size={12} />
@@ -330,29 +329,32 @@ export function SessionsPage(): React.JSX.Element {
                               </span>
                             </span>
                             <span className="text-[11px] text-[var(--text-muted)]">
-                              {dayGroup.sessions.length} session{dayGroup.sessions.length !== 1 ? 's' : ''} · {formatDuration(dayGroup.totalMinutes)}
+                              {dayGroup.sessions.length} session
+                              {dayGroup.sessions.length !== 1 ? 's' : ''} ·{' '}
+                              {formatDuration(dayGroup.totalMinutes)}
                             </span>
                           </button>
-                          {isDayExpanded && dayGroup.sessions.map((session) => (
-                            <React.Fragment key={session.id}>
-                              <SessionRow
-                                session={session}
-                                projectColor={color}
-                                isSelected={selectedSessionId === session.id}
-                                hasCommits={sessionIdsWithCommits?.has(session.id)}
-                                onSelect={(e) => selectSession(session.id, e?.currentTarget)}
-                              />
-                              {selectedSessionId === session.id && (
-                                <SessionDetailPanel
+                          {isDayExpanded &&
+                            dayGroup.sessions.map((session) => (
+                              <React.Fragment key={session.id}>
+                                <SessionRow
                                   session={session}
-                                  projectName={group.projectName}
-                                  clientName={group.clientName}
                                   projectColor={color}
-                                  onClose={handleCloseDetail}
+                                  isSelected={selectedSessionId === session.id}
+                                  hasCommits={sessionIdsWithCommits?.has(session.id)}
+                                  onSelect={(e) => selectSession(session.id, e?.currentTarget)}
                                 />
-                              )}
-                            </React.Fragment>
-                          ))}
+                                {selectedSessionId === session.id && (
+                                  <SessionDetailPanel
+                                    session={session}
+                                    projectName={group.projectName}
+                                    clientName={group.clientName}
+                                    projectColor={color}
+                                    onClose={handleCloseDetail}
+                                  />
+                                )}
+                              </React.Fragment>
+                            ))}
                         </div>
                       )
                     })}

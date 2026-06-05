@@ -22,7 +22,11 @@ import {
 } from '../../shared/types/invoice'
 
 /** Map a Stripe Invoice object to local saveInvoice format */
-function mapStripeInvoiceToLocal(inv: import('stripe').Stripe.Invoice, clientId: number, isTest: boolean) {
+function mapStripeInvoiceToLocal(
+  inv: import('stripe').Stripe.Invoice,
+  clientId: number,
+  isTest: boolean
+) {
   const status = INVOICE_STATUSES.has(inv.status as InvoiceStatus['status'])
     ? (inv.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible')
     : 'draft'
@@ -39,7 +43,8 @@ function mapStripeInvoiceToLocal(inv: import('stripe').Stripe.Invoice, clientId:
   if (inv.lines?.data?.length) {
     const starts = inv.lines.data.map((l) => l.period?.start).filter((s): s is number => !!s)
     const ends = inv.lines.data.map((l) => l.period?.end).filter((e): e is number => !!e)
-    if (starts.length > 0) periodStart = new Date(Math.min(...starts) * 1000).toISOString().split('T')[0]
+    if (starts.length > 0)
+      periodStart = new Date(Math.min(...starts) * 1000).toISOString().split('T')[0]
     if (ends.length > 0) periodEnd = new Date(Math.max(...ends) * 1000).toISOString().split('T')[0]
   }
 
@@ -119,10 +124,14 @@ export const invoiceService = {
       return localDate >= startDate && localDate <= endDate
     })
 
-    log.info(`Invoice generateLineItems: ${allRows.length} total sessions for client, ${sessionRows.length} in ${startDate} to ${endDate}`)
+    log.info(
+      `Invoice generateLineItems: ${allRows.length} total sessions for client, ${sessionRows.length} in ${startDate} to ${endDate}`
+    )
     if (sessionRows.length > 0) {
       const dates = [...new Set(sessionRows.map((s) => toDateKey(s.startedAt)))].sort()
-      log.info(`Invoice date range found: ${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`)
+      log.info(
+        `Invoice date range found: ${dates[0]} to ${dates[dates.length - 1]} (${dates.length} days)`
+      )
     }
 
     if (sessionRows.length === 0) return { lineItems: [], memo: null }
@@ -135,15 +144,29 @@ export const invoiceService = {
     const groupKey = (dateKey: string, projId: number | null) => `${dateKey}::${projId ?? 0}`
     const dayProjectGroups = new Map<
       string,
-      { dateKey: string; projectId: number | null; projectName: string; sessions: typeof sessionRows; totalMinutes: number }
+      {
+        dateKey: string
+        projectId: number | null
+        projectName: string
+        sessions: typeof sessionRows
+        totalMinutes: number
+      }
     >()
 
     for (const session of sessionRows) {
       const dateKey = toDateKey(session.startedAt)
       const key = groupKey(dateKey, session.projectId)
       if (!dayProjectGroups.has(key)) {
-        const projectName = session.projectId ? projectMap.get(session.projectId) ?? 'Unknown' : 'Unknown'
-        dayProjectGroups.set(key, { dateKey, projectId: session.projectId, projectName, sessions: [], totalMinutes: 0 })
+        const projectName = session.projectId
+          ? (projectMap.get(session.projectId) ?? 'Unknown')
+          : 'Unknown'
+        dayProjectGroups.set(key, {
+          dateKey,
+          projectId: session.projectId,
+          projectName,
+          sessions: [],
+          totalMinutes: 0
+        })
       }
       const group = dayProjectGroups.get(key)!
       group.sessions.push(session)
@@ -154,15 +177,19 @@ export const invoiceService = {
     // For each unique projectId, get all commits and build commit-span attribution.
     // Result: commitsByDayProject maps "dateKey::projectId" → commit messages for that day.
     const commitsByDayProject = new Map<string, string[]>()
-    const uniqueProjectIds = [...new Set(
-      Array.from(dayProjectGroups.values())
-        .map((g) => g.projectId)
-        .filter((id): id is number => id != null)
-    )]
+    const uniqueProjectIds = [
+      ...new Set(
+        Array.from(dayProjectGroups.values())
+          .map((g) => g.projectId)
+          .filter((id): id is number => id != null)
+      )
+    ]
 
     for (const projId of uniqueProjectIds) {
       // Get all commits for this project, sorted
-      const allCommits = db.select().from(gitCommits)
+      const allCommits = db
+        .select()
+        .from(gitCommits)
         .where(eq(gitCommits.projectId, projId))
         .orderBy(gitCommits.committedAt)
         .all()
@@ -180,11 +207,13 @@ export const invoiceService = {
       const commitDateKeys = Array.from(commitsByDateKey.keys()).sort()
 
       // Get session days for this project
-      const sessionDays = [...new Set(
-        Array.from(dayProjectGroups.values())
-          .filter((g) => g.projectId === projId)
-          .map((g) => g.dateKey)
-      )].sort()
+      const sessionDays = [
+        ...new Set(
+          Array.from(dayProjectGroups.values())
+            .filter((g) => g.projectId === projId)
+            .map((g) => g.dateKey)
+        )
+      ].sort()
 
       // Map each session day → next commit date on or after
       const commitSpans = new Map<string, string[]>() // commitDateKey → session days
@@ -236,8 +265,13 @@ export const invoiceService = {
       const dateFormatted = formatDateShort(group.dateKey)
 
       // Get the attributed commit messages for this day+project
-      const dayCommitMsgs = commitsByDayProject.get(`${group.dateKey}::${group.projectId ?? 0}`) ?? []
-      const ticketsForGroup = [...new Set(dayCommitMsgs.map((m) => m.match(/\b[A-Z]{2,10}-\d{1,6}\b/)?.[0]).filter(Boolean))]
+      const dayCommitMsgs =
+        commitsByDayProject.get(`${group.dateKey}::${group.projectId ?? 0}`) ?? []
+      const ticketsForGroup = [
+        ...new Set(
+          dayCommitMsgs.map((m) => m.match(/\b[A-Z]{2,10}-\d{1,6}\b/)?.[0]).filter(Boolean)
+        )
+      ]
 
       const header = `${dateFormatted} ${group.projectName}:`
       // When N tickets > MAX_PER_TICKET_LINES (4), ai-service returns a single
@@ -254,14 +288,22 @@ export const invoiceService = {
       } else {
         const overheadPerLine = 15 // 2 spaces + "TICKET-NUM: " (~12) + 1 newline
         const reservedForLines = STRIPE_LINE_DESC_LIMIT - header.length - 1
-        const dynamicPerLineCap = Math.max(40, Math.floor(reservedForLines / expectedLines) - overheadPerLine)
+        const dynamicPerLineCap = Math.max(
+          40,
+          Math.floor(reservedForLines / expectedLines) - overheadPerLine
+        )
         aiPerLineCap = Math.min(80, dynamicPerLineCap)
       }
 
       // Try AI description
       let description = ''
       try {
-        const result = await aiService.summarizeSessionGroup(sessionIds, group.projectName, dayCommitMsgs, aiPerLineCap)
+        const result = await aiService.summarizeSessionGroup(
+          sessionIds,
+          group.projectName,
+          dayCommitMsgs,
+          aiPerLineCap
+        )
         if (result && result.lines.length > 0) {
           if (result.combinedTickets && result.combinedTickets.length > 0) {
             // Many-tickets mode: render the ticket list inline, then the summary
@@ -280,12 +322,17 @@ export const invoiceService = {
           }
         }
       } catch (err) {
-        log.warn(`AI description failed for ${group.dateKey}/${group.projectName}, using fallback:`, err)
+        log.warn(
+          `AI description failed for ${group.dateKey}/${group.projectName}, using fallback:`,
+          err
+        )
       }
 
       // Verify final assembled length. If over, drop AI and use the deterministic fallback.
       if (description && description.length > STRIPE_LINE_DESC_LIMIT) {
-        log.warn(`Assembled line description over Stripe cap (${description.length} > ${STRIPE_LINE_DESC_LIMIT}) for ${group.dateKey}/${group.projectName}; using deterministic fallback`)
+        log.warn(
+          `Assembled line description over Stripe cap (${description.length} > ${STRIPE_LINE_DESC_LIMIT}) for ${group.dateKey}/${group.projectName}; using deterministic fallback`
+        )
         description = ''
       }
 
@@ -316,9 +363,33 @@ export const invoiceService = {
     // non-ticket prefixes that share the same shape (UTF-8, ISO-8859, etc.).
     const ticketPattern = /\b[A-Z]{2,10}-\d{1,6}\b/g
     const NON_TICKET_PREFIXES = new Set([
-      'UTF', 'ASCII', 'ISO', 'COVID', 'HTTP', 'HTTPS', 'IPV', 'TLS', 'SSL',
-      'AES', 'RSA', 'SHA', 'MD', 'RFC', 'OAUTH', 'JWT', 'API', 'REST',
-      'JSON', 'XML', 'YAML', 'CSV', 'HTML', 'CSS', 'JS', 'TS', 'EOL'
+      'UTF',
+      'ASCII',
+      'ISO',
+      'COVID',
+      'HTTP',
+      'HTTPS',
+      'IPV',
+      'TLS',
+      'SSL',
+      'AES',
+      'RSA',
+      'SHA',
+      'MD',
+      'RFC',
+      'OAUTH',
+      'JWT',
+      'API',
+      'REST',
+      'JSON',
+      'XML',
+      'YAML',
+      'CSV',
+      'HTML',
+      'CSS',
+      'JS',
+      'TS',
+      'EOL'
     ])
     const isLikelyTicket = (token: string): boolean => {
       const prefix = token.split('-')[0].toUpperCase()
@@ -326,7 +397,9 @@ export const invoiceService = {
     }
     const allTickets = [
       ...new Set(
-        lineItems.flatMap((li) => (li.description.match(ticketPattern) ?? []).filter(isLikelyTicket))
+        lineItems.flatMap((li) =>
+          (li.description.match(ticketPattern) ?? []).filter(isLikelyTicket)
+        )
       )
     ]
 
@@ -343,21 +416,24 @@ export const invoiceService = {
     const apiKey = credentialService.getApiKey()
     if (apiKey && lineItems.length > 1) {
       const summaryContext = lineItems.map((li) => li.description).join('\n')
-      const buildPrompt = (charLimit: number): string => [
-        `Summarize the following invoice line items into a brief overall memo (2-3 sentences) for a client.`,
-        `HARD LIMIT: your entire response MUST be ${charLimit} characters or fewer. This is non-negotiable — anything longer breaks the invoice.`,
-        `This invoice covers ${periodLabel} for: ${uniqueProjects.join(', ')}.`,
-        allTickets.length > 0 ? `Tickets worked: ${allTickets.join(', ')}.` : '',
-        `CRITICAL: Only describe work that is explicitly mentioned in the line items below. Do NOT infer or invent work based on project names.`,
-        `Use business-friendly language but stay accurate to what was actually done. Do NOT list individual days.`,
-        `NEVER use "we" or "our" — this is a solo contractor. Omit the subject or use passive voice.`,
-        `Output plain text only — no markdown, no bullets, no asterisks, no formatting.`,
-        `Start the FIRST line with exactly: ${periodLabel}`,
-        `Then on the next line(s), summarize what was accomplished. Do NOT mention total hours — that's appended separately.`,
-        '',
-        'Line items:',
-        summaryContext
-      ].filter(Boolean).join('\n')
+      const buildPrompt = (charLimit: number): string =>
+        [
+          `Summarize the following invoice line items into a brief overall memo (2-3 sentences) for a client.`,
+          `HARD LIMIT: your entire response MUST be ${charLimit} characters or fewer. This is non-negotiable — anything longer breaks the invoice.`,
+          `This invoice covers ${periodLabel} for: ${uniqueProjects.join(', ')}.`,
+          allTickets.length > 0 ? `Tickets worked: ${allTickets.join(', ')}.` : '',
+          `CRITICAL: Only describe work that is explicitly mentioned in the line items below. Do NOT infer or invent work based on project names.`,
+          `Use business-friendly language but stay accurate to what was actually done. Do NOT list individual days.`,
+          `NEVER use "we" or "our" — this is a solo contractor. Omit the subject or use passive voice.`,
+          `Output plain text only — no markdown, no bullets, no asterisks, no formatting.`,
+          `Start the FIRST line with exactly: ${periodLabel}`,
+          `Then on the next line(s), summarize what was accomplished. Do NOT mention total hours — that's appended separately.`,
+          '',
+          'Line items:',
+          summaryContext
+        ]
+          .filter(Boolean)
+          .join('\n')
 
       const callAi = async (charLimit: number): Promise<string | null> => {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -375,19 +451,23 @@ export const invoiceService = {
         })
         if (!response.ok) return null
         const data = await response.json()
-        return data.content?.[0]?.type === 'text' ? data.content[0].text?.trim() ?? null : null
+        return data.content?.[0]?.type === 'text' ? (data.content[0].text?.trim() ?? null) : null
       }
 
       try {
         let aiMemo = await callAi(memoBudget)
         if (aiMemo && aiMemo.length > memoBudget) {
-          log.warn(`AI memo over budget (${aiMemo.length} > ${memoBudget}), regenerating with tighter cap`)
+          log.warn(
+            `AI memo over budget (${aiMemo.length} > ${memoBudget}), regenerating with tighter cap`
+          )
           aiMemo = await callAi(Math.max(200, memoBudget - 80))
         }
         if (aiMemo && aiMemo.length <= memoBudget) {
           memo = aiMemo
         } else if (aiMemo) {
-          log.warn(`AI memo still over budget after retry (${aiMemo.length} > ${memoBudget}); using fallback`)
+          log.warn(
+            `AI memo still over budget after retry (${aiMemo.length} > ${memoBudget}); using fallback`
+          )
         }
       } catch (err) {
         log.warn('AI invoice memo generation failed:', err)
@@ -508,15 +588,23 @@ export const invoiceService = {
       conditions.push(eq(invoices.clientId, filters.clientId))
     }
     if (filters?.status) {
-      conditions.push(eq(invoices.status, filters.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible'))
+      conditions.push(
+        eq(invoices.status, filters.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible')
+      )
     }
     if (filters?.testMode != null) {
       conditions.push(eq(invoices.testMode, filters.testMode ? 1 : 0))
     }
 
-    const rows = conditions.length > 0
-      ? db.select().from(invoices).where(and(...conditions)).orderBy(desc(invoices.createdAt)).all()
-      : db.select().from(invoices).orderBy(desc(invoices.createdAt)).all()
+    const rows =
+      conditions.length > 0
+        ? db
+            .select()
+            .from(invoices)
+            .where(and(...conditions))
+            .orderBy(desc(invoices.createdAt))
+            .all()
+        : db.select().from(invoices).orderBy(desc(invoices.createdAt)).all()
 
     // Join client names
     const clientRows = db.select().from(clients).all()
@@ -688,7 +776,11 @@ export const invoiceService = {
     const db = getDb()
 
     const existingIds = new Set(
-      db.select({ sid: invoices.stripeInvoiceId }).from(invoices).all().map((r) => r.sid)
+      db
+        .select({ sid: invoices.stripeInvoiceId })
+        .from(invoices)
+        .all()
+        .map((r) => r.sid)
     )
 
     // Build client lookup by stripeCustomerId
@@ -708,7 +800,9 @@ export const invoiceService = {
       const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id
       const clientId = customerId ? clientByStripeId.get(customerId) : undefined
       if (!clientId) {
-        log.info(`Skipping Stripe invoice ${inv.id} — no matching local client for customer ${customerId}`)
+        log.info(
+          `Skipping Stripe invoice ${inv.id} — no matching local client for customer ${customerId}`
+        )
         continue
       }
 

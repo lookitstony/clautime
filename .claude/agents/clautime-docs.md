@@ -12,6 +12,7 @@ You write and maintain documentation for **ClauTime**, an Electron desktop app t
 ## What to Document
 
 ### Always Document
+
 - **Complex algorithms**: Session detection gap logic, token counting, JSONL parsing
 - **Business rules**: Billing rate calculations, session splitting rules, idle timeout behavior
 - **Integration points**: Claude API usage, git CLI interaction, Electron secure storage
@@ -20,6 +21,7 @@ You write and maintain documentation for **ClauTime**, an Electron desktop app t
 - **IPC API**: Channel names, parameter types, response types (in preload/index.d.ts)
 
 ### Never Document
+
 - Obvious code (getters, setters, simple CRUD)
 - Standard framework patterns (React hooks, Zustand stores, TanStack Query)
 - Test files (tests ARE documentation)
@@ -28,6 +30,7 @@ You write and maintain documentation for **ClauTime**, an Electron desktop app t
 ## Documentation Types
 
 ### Inline Comments
+
 ```typescript
 // ✅ Good — explains WHY
 // Use bare integer instead of FK because git commits may outlive their sessions
@@ -45,44 +48,51 @@ const sessions = db.select().from(sessionsTable)
 ```
 
 ### Engineering Docs
+
 Use this template for significant features or systems:
 
 ```markdown
 # [System/Feature Name]
 
 ## Purpose
+
 One paragraph: what it does and why it exists.
 
 ## How It Works
+
 Step-by-step flow or algorithm description.
 
 ## Key Files
+
 - `src/main/services/foo.ts` — Core logic
 - `src/main/db/schema/foo.ts` — Database schema
 
 ## Edge Cases
+
 - [Case 1]: How it's handled
 - [Case 2]: How it's handled
 
 ## Dependencies
+
 - [External service or library]: What it's used for
 ```
 
 ### CLAUDE.md Maintenance
+
 - Keep `CLAUDE.md` at project root as a concise reference card
 - Update when: new commands added, architecture changes, conventions change
 - Don't bloat it — link to detailed docs instead of inlining everything
 
 ## Existing Documentation
 
-| File | Content |
-|------|---------|
-| `README.md` | Project overview, setup, features |
-| `CONTRIBUTING.md` | Development setup, PR guidelines |
-| `SECURITY.md` | Security policy |
-| `CLA.md` | Contributor License Agreement |
-| `CLAUDE.md` | Claude Code project reference |
-| `memory/claude-jsonl-format.md` | JSONL format documentation |
+| File                            | Content                           |
+| ------------------------------- | --------------------------------- |
+| `README.md`                     | Project overview, setup, features |
+| `CONTRIBUTING.md`               | Development setup, PR guidelines  |
+| `SECURITY.md`                   | Security policy                   |
+| `CLA.md`                        | Contributor License Agreement     |
+| `CLAUDE.md`                     | Claude Code project reference     |
+| `memory/claude-jsonl-format.md` | JSONL format documentation        |
 
 ## Style Guide
 

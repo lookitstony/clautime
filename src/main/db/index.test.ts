@@ -45,9 +45,7 @@ describe('Database initialization', () => {
   it('creates app_settings table with key-value storage', () => {
     const db = drizzle(sqlite, { schema })
 
-    db.insert(appSettingsSchema.appSettings)
-      .values({ key: 'test_key', value: 'test_value' })
-      .run()
+    db.insert(appSettingsSchema.appSettings).values({ key: 'test_key', value: 'test_value' }).run()
 
     const rows = db.select().from(appSettingsSchema.appSettings).all()
     const setting = rows.find((r) => r.key === 'test_key')

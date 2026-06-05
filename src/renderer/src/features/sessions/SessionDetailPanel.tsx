@@ -1,4 +1,11 @@
-import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type KeyboardEvent,
+  type ChangeEvent
+} from 'react'
 import { ChevronRight, Pencil, Trash2, GitCommitHorizontal, DollarSign } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -26,7 +33,12 @@ function StatCard({ label, value }: { label: string; value: string }): React.JSX
 }
 
 function formatTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  return new Date(isoString).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
 }
 
 /** Convert HH:MM or HH:MM:SS to an ISO string on the same date as the reference. */
@@ -40,8 +52,6 @@ function timeStringToIso(timeStr: string, referenceIso: string): string | null {
   return d.toISOString()
 }
 
-
-
 function formatLatency(seconds: number | null): string {
   if (seconds == null) return '—'
   if (seconds < 60) return `${seconds}s`
@@ -54,10 +64,7 @@ function PromptTimeline({ timings }: { timings: PromptTiming[] }): React.JSX.Ele
   return (
     <div className="space-y-0">
       {timings.map((t, i) => (
-        <div
-          key={i}
-          className="flex items-center gap-3 px-1 py-1 text-[12px]"
-        >
+        <div key={i} className="flex items-center gap-3 px-1 py-1 text-[12px]">
           <span className="w-5 shrink-0 text-right font-mono text-[var(--text-muted)]">
             {i + 1}
           </span>
@@ -68,12 +75,14 @@ function PromptTimeline({ timings }: { timings: PromptTiming[] }): React.JSX.Ele
           <span className="shrink-0 font-mono text-[var(--text-secondary)]">
             {t.responseAt ? formatTime(t.responseAt) : '—'}
           </span>
-          <span className={cn(
-            'shrink-0 font-mono font-semibold',
-            t.latencySeconds != null && t.latencySeconds > 60
-              ? 'text-[#f59e0b]'
-              : 'text-[var(--accent)]'
-          )}>
+          <span
+            className={cn(
+              'shrink-0 font-mono font-semibold',
+              t.latencySeconds != null && t.latencySeconds > 60
+                ? 'text-[#f59e0b]'
+                : 'text-[var(--accent)]'
+            )}
+          >
             {formatLatency(t.latencySeconds)}
           </span>
         </div>
@@ -91,9 +100,12 @@ export function SessionDetailPanel({
 }: SessionDetailPanelProps): React.JSX.Element {
   const panelRef = useRef<HTMLDivElement>(null)
   const [showTimings, setShowTimings] = useState(false)
-  const { data: timings, isLoading: timingsLoading, isError, error } = usePromptTimings(
-    showTimings ? session.id : null
-  )
+  const {
+    data: timings,
+    isLoading: timingsLoading,
+    isError,
+    error
+  } = usePromptTimings(showTimings ? session.id : null)
 
   // Git commits - always load for description fallback
   const [showCommits, setShowCommits] = useState(false)
@@ -315,7 +327,14 @@ export function SessionDetailPanel({
               <Button size="xs" onClick={saveTimeEdit}>
                 Save
               </Button>
-              <Button size="xs" variant="ghost" onClick={() => { setIsEditingTime(false); setEditError(null) }}>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => {
+                  setIsEditingTime(false)
+                  setEditError(null)
+                }}
+              >
                 Cancel
               </Button>
             </div>
@@ -323,7 +342,10 @@ export function SessionDetailPanel({
         ) : (
           <>
             <StatCard label="Duration" value={formatDuration(session.durationMinutes)} />
-            <StatCard label="Time Range" value={formatTimeRange(session.startedAt, session.endedAt)} />
+            <StatCard
+              label="Time Range"
+              value={formatTimeRange(session.startedAt, session.endedAt)}
+            />
           </>
         )}
         {isAuto && <StatCard label="Prompts" value={String(session.promptCount)} />}
@@ -333,10 +355,7 @@ export function SessionDetailPanel({
             value={formatCompactNumber(session.inputTokens + session.outputTokens)}
           />
         )}
-        <StatCard
-          label="Source"
-          value={isAuto ? 'Auto-detected' : 'Manual'}
-        />
+        <StatCard label="Source" value={isAuto ? 'Auto-detected' : 'Manual'} />
       </div>
 
       {/* Project / Client attribution */}
@@ -426,7 +445,9 @@ export function SessionDetailPanel({
               )}
               {timings && timings.length > 0 && <PromptTimeline timings={timings} />}
               {timings && timings.length === 0 && (
-                <p className="text-[12px] italic text-[var(--text-muted)]">No prompt data found in source file</p>
+                <p className="text-[12px] italic text-[var(--text-muted)]">
+                  No prompt data found in source file
+                </p>
               )}
             </div>
           )}
@@ -453,7 +474,10 @@ export function SessionDetailPanel({
                 <div className="space-y-1">
                   {gitCommitsData.map((c) => (
                     <div key={c.id} className="flex items-start gap-2 text-[12px]">
-                      <GitCommitHorizontal size={12} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                      <GitCommitHorizontal
+                        size={12}
+                        className="mt-0.5 shrink-0 text-[var(--text-muted)]"
+                      />
                       {remoteUrl ? (
                         <a
                           href={`${remoteUrl}/commit/${c.hash}`}
@@ -473,7 +497,9 @@ export function SessionDetailPanel({
                   ))}
                 </div>
               ) : gitCommitsData && gitCommitsData.length === 0 ? (
-                <p className="text-[12px] italic text-[var(--text-muted)]">No commits found for this session</p>
+                <p className="text-[12px] italic text-[var(--text-muted)]">
+                  No commits found for this session
+                </p>
               ) : (
                 <p className="text-[12px] text-[var(--text-muted)]">Loading...</p>
               )}
@@ -486,39 +512,22 @@ export function SessionDetailPanel({
       <div className="flex items-center gap-2">
         {isAuto ? null : (
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={startEditDesc}
-              disabled={isEditingDesc}
-            >
+            <Button variant="ghost" size="sm" onClick={startEditDesc} disabled={isEditingDesc}>
               <Pencil className="mr-1 h-3 w-3" />
               Edit Description
             </Button>
             {isConfirmingDelete ? (
               <div className="flex items-center gap-1">
                 <span className="text-[12px] text-[var(--text-muted)]">Delete this session?</span>
-                <Button
-                  variant="destructive"
-                  size="xs"
-                  onClick={handleDelete}
-                >
+                <Button variant="destructive" size="xs" onClick={handleDelete}>
                   Confirm
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setIsConfirmingDelete(false)}
-                >
+                <Button variant="ghost" size="xs" onClick={() => setIsConfirmingDelete(false)}>
                   Cancel
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsConfirmingDelete(true)}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setIsConfirmingDelete(true)}>
                 <Trash2 className="mr-1 h-3 w-3" />
                 Delete
               </Button>
@@ -532,7 +541,10 @@ export function SessionDetailPanel({
           onClick={() => {
             updateSession.mutate(
               { id: session.id, data: { billable: !session.billable } },
-              { onSuccess: () => toast.success(session.billable ? 'Marked as non-billable' : 'Marked as billable') }
+              {
+                onSuccess: () =>
+                  toast.success(session.billable ? 'Marked as non-billable' : 'Marked as billable')
+              }
             )
           }}
           className={cn(

@@ -27,27 +27,24 @@ export const useFilterStore = create<FilterState>()((set, get) => ({
   projectId: null,
   weekStartDay: 1,
 
-  setDatePreset: (preset) =>
-    set({ datePreset: preset, startDate: null, endDate: null }),
+  setDatePreset: (preset) => set({ datePreset: preset, startDate: null, endDate: null }),
 
-  setCustomRange: (startDate, endDate) =>
-    set({ datePreset: null, startDate, endDate }),
+  setCustomRange: (startDate, endDate) => set({ datePreset: null, startDate, endDate }),
 
-  setClientId: (clientId) =>
-    set({ clientId, projectId: null }),
+  setClientId: (clientId) => set({ clientId, projectId: null }),
 
-  setProjectId: (projectId) =>
-    set({ projectId }),
+  setProjectId: (projectId) => set({ projectId }),
 
-  setWeekStartDay: (day) =>
-    set({ weekStartDay: day }),
+  setWeekStartDay: (day) => set({ weekStartDay: day }),
 
   clearFilters: () =>
     set({ datePreset: null, startDate: null, endDate: null, clientId: null, projectId: null }),
 
   toSessionFilters: (): SessionFilters => {
     const { datePreset, startDate, endDate, clientId, projectId, weekStartDay } = get()
-    const range = datePreset ? getDateRangeForPreset(datePreset, weekStartDay) : { startDate, endDate }
+    const range = datePreset
+      ? getDateRangeForPreset(datePreset, weekStartDay)
+      : { startDate, endDate }
     const filters: SessionFilters = {}
     if (range.startDate) filters.startDate = range.startDate
     if (range.endDate) filters.endDate = range.endDate
@@ -58,6 +55,12 @@ export const useFilterStore = create<FilterState>()((set, get) => ({
 
   hasActiveFilters: (): boolean => {
     const { datePreset, startDate, endDate, clientId, projectId } = get()
-    return datePreset != null || startDate != null || endDate != null || clientId != null || projectId != null
+    return (
+      datePreset != null ||
+      startDate != null ||
+      endDate != null ||
+      clientId != null ||
+      projectId != null
+    )
   }
 }))

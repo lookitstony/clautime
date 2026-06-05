@@ -78,7 +78,12 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
         })
         toast.success('Client updated')
       } else {
-        await createClient.mutateAsync({ name: trimmedName, color, billableRate: rateValue, email: trimmedEmail })
+        await createClient.mutateAsync({
+          name: trimmedName,
+          color,
+          billableRate: rateValue,
+          email: trimmedEmail
+        })
         toast.success('Client created')
       }
       onClose()
@@ -130,9 +135,7 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
                 'bg-[var(--background-secondary)] text-[var(--text-primary)]',
                 'placeholder:text-[var(--text-muted)]',
                 'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
-                error
-                  ? 'border-red-500'
-                  : 'border-[var(--surface-border)]'
+                error ? 'border-red-500' : 'border-[var(--surface-border)]'
               )}
             />
             {error && <p className="text-[12px] text-red-400">{error}</p>}
@@ -171,7 +174,8 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
                   className={cn(
                     'flex h-8 w-8 items-center justify-center rounded-full transition-transform',
                     'hover:scale-110',
-                    color === c && 'ring-2 ring-white ring-offset-2 ring-offset-[var(--background-primary)]'
+                    color === c &&
+                      'ring-2 ring-white ring-offset-2 ring-offset-[var(--background-primary)]'
                   )}
                   style={{ backgroundColor: c }}
                 >
@@ -212,10 +216,7 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!isValid || isPending}
-          >
+          <Button onClick={handleSubmit} disabled={!isValid || isPending}>
             {isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Client'}
           </Button>
         </DialogFooter>

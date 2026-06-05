@@ -24,7 +24,7 @@ Claude Code writes to JSONL log files as you work. ClauTime reads those files an
 
 ## Screenshots
 
-*Coming soon*
+_Coming soon_
 
 ## Getting Started
 

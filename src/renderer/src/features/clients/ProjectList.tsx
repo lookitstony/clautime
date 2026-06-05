@@ -53,10 +53,7 @@ export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
             {project.directoryPath}
           </span>
           {!project.isActive && (
-            <Badge
-              variant="secondary"
-              className="shrink-0 bg-red-500/15 text-[10px] text-red-400"
-            >
+            <Badge variant="secondary" className="shrink-0 bg-red-500/15 text-[10px] text-red-400">
               <EyeOff size={10} className="mr-1" />
               Excluded
             </Badge>
@@ -81,10 +78,20 @@ export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
       ))}
 
       <div className="flex gap-2 px-10 pt-1">
-        <Button variant="ghost" size="sm" onClick={() => setPickerOpen(true)} className="gap-1.5 text-[12px]">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setPickerOpen(true)}
+          className="gap-1.5 text-[12px]"
+        >
           + Assign Projects
         </Button>
-        <Button variant="ghost" size="sm" onClick={handleAddProject} className="gap-1.5 text-[12px]">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleAddProject}
+          className="gap-1.5 text-[12px]"
+        >
           + Add Manually
         </Button>
       </div>

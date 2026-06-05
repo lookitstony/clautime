@@ -10,7 +10,15 @@ import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
-import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../../shared/types/session'
+import type {
+  Session,
+  SessionFilters,
+  ScanResult,
+  PromptTiming,
+  UpdateSession,
+  GapAnalysis,
+  TimeBreakdownDay
+} from '../../shared/types/session'
 
 /** Map DB session row (billable as 0/1) to Session type (billable as boolean) */
 function mapSession(row: Record<string, unknown>): Session {
@@ -29,12 +37,17 @@ export function registerSessionHandlers(): void {
         const result = await sessionService.scanSessions(claudeDir, projectFilter)
         const attributedCount = clientProjectService.attributeSessions()
         // Auto-trigger git scan after session scan (non-blocking)
-        gitService.scanCommits().then((scanResult) => {
-          const correlated = gitService.correlateCommitsWithSessions()
-          log.info(`Auto git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`)
-        }).catch((err) => {
-          log.warn('Auto git scan failed (non-critical):', err)
-        })
+        gitService
+          .scanCommits()
+          .then((scanResult) => {
+            const correlated = gitService.correlateCommitsWithSessions()
+            log.info(
+              `Auto git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`
+            )
+          })
+          .catch((err) => {
+            log.warn('Auto git scan failed (non-critical):', err)
+          })
         return ipcSuccess({ ...result, attributedCount })
       } catch (error) {
         log.error('IPC session:scan failed:', error)
@@ -77,12 +90,17 @@ export function registerSessionHandlers(): void {
     try {
       const result = await sessionService.rebuildSessionsFromRaw()
       const attributedCount = clientProjectService.attributeSessions()
-      gitService.scanCommits().then((scanResult) => {
-        const correlated = gitService.correlateCommitsWithSessions()
-        log.info(`Post-rebuild git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`)
-      }).catch((err) => {
-        log.warn('Post-rebuild git scan failed (non-critical):', err)
-      })
+      gitService
+        .scanCommits()
+        .then((scanResult) => {
+          const correlated = gitService.correlateCommitsWithSessions()
+          log.info(
+            `Post-rebuild git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`
+          )
+        })
+        .catch((err) => {
+          log.warn('Post-rebuild git scan failed (non-critical):', err)
+        })
       return ipcSuccess({ ...result, attributedCount })
     } catch (error) {
       log.error('IPC session:rebuild failed:', error)
@@ -94,12 +112,17 @@ export function registerSessionHandlers(): void {
     try {
       const result = await sessionService.scanAndRebuild()
       const attributedCount = clientProjectService.attributeSessions()
-      gitService.scanCommits().then((scanResult) => {
-        const correlated = gitService.correlateCommitsWithSessions()
-        log.info(`Post-rebuild git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`)
-      }).catch((err) => {
-        log.warn('Post-rebuild git scan failed (non-critical):', err)
-      })
+      gitService
+        .scanCommits()
+        .then((scanResult) => {
+          const correlated = gitService.correlateCommitsWithSessions()
+          log.info(
+            `Post-rebuild git scan: ${scanResult.newCommits} new commits, ${correlated} correlated`
+          )
+        })
+        .catch((err) => {
+          log.warn('Post-rebuild git scan failed (non-critical):', err)
+        })
       return ipcSuccess({ ...result, attributedCount })
     } catch (error) {
       log.error('IPC session:scanAndRebuild failed:', error)
@@ -146,18 +169,15 @@ export function registerSessionHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'session:delete',
-    async (_event, id: number): Promise<IpcResult<void>> => {
-      try {
-        sessionService.deleteSession(id)
-        return ipcSuccess(undefined)
-      } catch (error) {
-        log.error('IPC session:delete failed:', error)
-        return ipcError('SESSION_DELETE_ERROR', String(error))
-      }
+  ipcMain.handle('session:delete', async (_event, id: number): Promise<IpcResult<void>> => {
+    try {
+      sessionService.deleteSession(id)
+      return ipcSuccess(undefined)
+    } catch (error) {
+      log.error('IPC session:delete failed:', error)
+      return ipcError('SESSION_DELETE_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'session:split',
@@ -185,18 +205,15 @@ export function registerSessionHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'session:getGapAnalysis',
-    async (): Promise<IpcResult<GapAnalysis>> => {
-      try {
-        const result = sessionService.getGapAnalysis()
-        return ipcSuccess(result)
-      } catch (error) {
-        log.error('IPC session:getGapAnalysis failed:', error)
-        return ipcError('SESSION_GAP_ANALYSIS_ERROR', String(error))
-      }
+  ipcMain.handle('session:getGapAnalysis', async (): Promise<IpcResult<GapAnalysis>> => {
+    try {
+      const result = sessionService.getGapAnalysis()
+      return ipcSuccess(result)
+    } catch (error) {
+      log.error('IPC session:getGapAnalysis failed:', error)
+      return ipcError('SESSION_GAP_ANALYSIS_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'session:create',

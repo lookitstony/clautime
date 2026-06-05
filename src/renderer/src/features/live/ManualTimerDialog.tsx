@@ -62,9 +62,7 @@ function StartTimerDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Start Timer</DialogTitle>
-          <DialogDescription>
-            Track manual work on {project.projectName}
-          </DialogDescription>
+          <DialogDescription>Track manual work on {project.projectName}</DialogDescription>
         </DialogHeader>
         <div>
           <label className="mb-1.5 block text-[13px] text-[var(--text-muted)]">
@@ -166,9 +164,7 @@ function StopTimerDialog({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What did you work on?"
             className={`w-full rounded-md border bg-[var(--background-primary)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] ${
-              descriptionRequired && !canSave
-                ? 'border-red-500'
-                : 'border-[var(--surface-border)]'
+              descriptionRequired && !canSave ? 'border-red-500' : 'border-[var(--surface-border)]'
             }`}
           />
           {descriptionRequired && !canSave && (

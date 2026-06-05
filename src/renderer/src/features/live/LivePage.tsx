@@ -13,11 +13,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { LiveStatsBar } from './LiveStatsBar'
 import { ProjectWatchList } from './ProjectWatchList'
 import { useTodayStats, useProjectStatuses } from './use-live'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useLiveStore } from '@/stores/use-live-store'
 import { useCreateSession } from '@/features/sessions/use-sessions'
 import { formatDuration } from '@/lib/format'
@@ -45,9 +41,7 @@ export function LivePage(): React.JSX.Element {
     const timerData = { ...activeTimer }
 
     const now = new Date().toISOString()
-    const durationMinutes = Math.round(
-      (Date.now() - Date.parse(timerData.startedAt)) / 60_000
-    )
+    const durationMinutes = Math.round((Date.now() - Date.parse(timerData.startedAt)) / 60_000)
 
     createSession.mutate(
       {
@@ -98,7 +92,10 @@ export function LivePage(): React.JSX.Element {
                   {allWidgetsOpen ? (
                     <MonitorOff size={16} className="text-[var(--accent)]" />
                   ) : (
-                    <MonitorUp size={16} className="text-[var(--text-muted)] hover:text-[var(--accent)]" />
+                    <MonitorUp
+                      size={16}
+                      className="text-[var(--text-muted)] hover:text-[var(--accent)]"
+                    />
                   )}
                 </button>
               </TooltipTrigger>
@@ -129,8 +126,13 @@ export function LivePage(): React.JSX.Element {
               {activeTimer?.startedAt
                 ? new Date(activeTimer.startedAt).toLocaleString()
                 : 'unknown'}{' '}
-              was still running ({activeTimer ? formatDuration(Math.round((Date.now() - Date.parse(activeTimer.startedAt)) / 60_000)) : ''}).
-              Would you like to save it or discard?
+              was still running (
+              {activeTimer
+                ? formatDuration(
+                    Math.round((Date.now() - Date.parse(activeTimer.startedAt)) / 60_000)
+                  )
+                : ''}
+              ). Would you like to save it or discard?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

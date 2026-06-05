@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { Session, SessionFilters, ScanResult, PromptTiming, UpdateSession } from '../../../../shared/types/session'
+import type {
+  Session,
+  SessionFilters,
+  ScanResult,
+  PromptTiming,
+  UpdateSession
+} from '../../../../shared/types/session'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import { formatDuration, getProjectName } from '@/lib/format'
 
@@ -222,7 +228,10 @@ export function useSessionStats(
 
   const totalMinutes = sessions.reduce((sum, s) => sum + s.durationMinutes, 0)
   const totalPrompts = sessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0)
-  const totalTokens = sessions.reduce((sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0), 0)
+  const totalTokens = sessions.reduce(
+    (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),
+    0
+  )
   const humanMinutes = computeHumanMinutes(sessions)
 
   const commitSessions = sessionIdsWithCommits
@@ -257,9 +266,7 @@ export function useGroupedSessions(
 
   for (const session of sessions) {
     const key =
-      session.projectId != null
-        ? `project:${session.projectId}`
-        : `path:${session.projectPath}`
+      session.projectId != null ? `project:${session.projectId}` : `path:${session.projectPath}`
     const existing = groups.get(key)
     if (existing) {
       existing.sessions.push(session)
@@ -273,10 +280,8 @@ export function useGroupedSessions(
   }
 
   const result: ProjectGroup[] = Array.from(groups.entries()).map(([, group]) => {
-    const project =
-      group.projectId != null ? projectMap.get(group.projectId) : undefined
-    const client =
-      group.clientId != null ? clientMap.get(group.clientId) : undefined
+    const project = group.projectId != null ? projectMap.get(group.projectId) : undefined
+    const client = group.clientId != null ? clientMap.get(group.clientId) : undefined
 
     return {
       projectPath: group.sessions[0].projectPath,
@@ -289,14 +294,8 @@ export function useGroupedSessions(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       ),
       sessionCount: group.sessions.length,
-      totalDurationMinutes: group.sessions.reduce(
-        (sum, s) => sum + s.durationMinutes,
-        0
-      ),
-      totalPrompts: group.sessions.reduce(
-        (sum, s) => sum + (s.promptCount ?? 0),
-        0
-      ),
+      totalDurationMinutes: group.sessions.reduce((sum, s) => sum + s.durationMinutes, 0),
+      totalPrompts: group.sessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0),
       totalTokens: group.sessions.reduce(
         (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),
         0

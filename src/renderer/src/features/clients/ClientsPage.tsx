@@ -79,11 +79,7 @@ export function ClientsPage(): React.JSX.Element {
             icon={Users}
             title="No clients configured"
             description="Add clients and projects to organize your sessions"
-            action={
-              <Button onClick={handleAddClient}>
-                Add Client
-              </Button>
-            }
+            action={<Button onClick={handleAddClient}>Add Client</Button>}
           />
         )}
 
@@ -102,11 +98,7 @@ export function ClientsPage(): React.JSX.Element {
         )}
       </div>
 
-      <ClientForm
-        open={clientFormOpen}
-        onClose={handleFormClose}
-        client={editingClient}
-      />
+      <ClientForm open={clientFormOpen} onClose={handleFormClose} client={editingClient} />
     </div>
   )
 }

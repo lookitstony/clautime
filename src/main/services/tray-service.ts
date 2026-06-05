@@ -87,12 +87,14 @@ export const trayService = {
               new Notification({
                 title: 'ClauTime — Secrets Found',
                 body: `${result.newFindings} new finding${result.newFindings === 1 ? '' : 's'} detected in ${result.filesScanned} files.`
-              }).on('click', () => {
-                if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-                  mainWindowRef.show()
-                  mainWindowRef.focus()
-                }
-              }).show()
+              })
+                .on('click', () => {
+                  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+                    mainWindowRef.show()
+                    mainWindowRef.focus()
+                  }
+                })
+                .show()
             } else {
               new Notification({
                 title: 'ClauTime — Scan Complete',

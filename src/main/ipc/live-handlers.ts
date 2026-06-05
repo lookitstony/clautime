@@ -12,31 +12,25 @@ import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../shared/types/live'
 
 export function registerLiveHandlers(): void {
-  ipcMain.handle(
-    'live:getTodayStats',
-    async (): Promise<IpcResult<TodayStats>> => {
-      try {
-        const stats = liveMonitorService.getTodayStats()
-        return ipcSuccess(stats)
-      } catch (error) {
-        log.error('IPC live:getTodayStats failed:', error)
-        return ipcError('LIVE_STATS_ERROR', String(error))
-      }
+  ipcMain.handle('live:getTodayStats', async (): Promise<IpcResult<TodayStats>> => {
+    try {
+      const stats = liveMonitorService.getTodayStats()
+      return ipcSuccess(stats)
+    } catch (error) {
+      log.error('IPC live:getTodayStats failed:', error)
+      return ipcError('LIVE_STATS_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'live:getProjectStatuses',
-    async (): Promise<IpcResult<ProjectLiveStatus[]>> => {
-      try {
-        const statuses = await liveMonitorService.getProjectLiveStatuses()
-        return ipcSuccess(statuses)
-      } catch (error) {
-        log.error('IPC live:getProjectStatuses failed:', error)
-        return ipcError('LIVE_STATUSES_ERROR', String(error))
-      }
+  ipcMain.handle('live:getProjectStatuses', async (): Promise<IpcResult<ProjectLiveStatus[]>> => {
+    try {
+      const statuses = await liveMonitorService.getProjectLiveStatuses()
+      return ipcSuccess(statuses)
+    } catch (error) {
+      log.error('IPC live:getProjectStatuses failed:', error)
+      return ipcError('LIVE_STATUSES_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'live:setWatching',
@@ -107,47 +101,41 @@ export function registerLiveHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'live:playTestSound',
-    async (): Promise<IpcResult<void>> => {
-      try {
-        liveMonitorService.playSound('chime')
-        return ipcSuccess(undefined)
-      } catch (error) {
-        log.error('IPC live:playTestSound failed:', error)
-        return ipcError('LIVE_TEST_SOUND_ERROR', String(error))
-      }
+  ipcMain.handle('live:playTestSound', async (): Promise<IpcResult<void>> => {
+    try {
+      liveMonitorService.playSound('chime')
+      return ipcSuccess(undefined)
+    } catch (error) {
+      log.error('IPC live:playTestSound failed:', error)
+      return ipcError('LIVE_TEST_SOUND_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'live:selectCustomSound',
-    async (): Promise<IpcResult<string | null>> => {
-      try {
-        const result = await dialog.showOpenDialog({
-          filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }],
-          properties: ['openFile']
-        })
+  ipcMain.handle('live:selectCustomSound', async (): Promise<IpcResult<string | null>> => {
+    try {
+      const result = await dialog.showOpenDialog({
+        filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }],
+        properties: ['openFile']
+      })
 
-        if (result.canceled || result.filePaths.length === 0) {
-          return ipcSuccess(null)
-        }
-
-        const filePath = result.filePaths[0]
-
-        // Validate file size < 10MB
-        const fileStat = statSync(filePath)
-        if (fileStat.size > 10 * 1024 * 1024) {
-          return ipcError('FILE_TOO_LARGE', 'Audio file must be smaller than 10MB')
-        }
-
-        return ipcSuccess(filePath)
-      } catch (error) {
-        log.error('IPC live:selectCustomSound failed:', error)
-        return ipcError('LIVE_SELECT_SOUND_ERROR', String(error))
+      if (result.canceled || result.filePaths.length === 0) {
+        return ipcSuccess(null)
       }
+
+      const filePath = result.filePaths[0]
+
+      // Validate file size < 10MB
+      const fileStat = statSync(filePath)
+      if (fileStat.size > 10 * 1024 * 1024) {
+        return ipcError('FILE_TOO_LARGE', 'Audio file must be smaller than 10MB')
+      }
+
+      return ipcSuccess(filePath)
+    } catch (error) {
+      log.error('IPC live:selectCustomSound failed:', error)
+      return ipcError('LIVE_SELECT_SOUND_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'live:timerStarted',
@@ -157,13 +145,10 @@ export function registerLiveHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'live:timerStopped',
-    async (): Promise<IpcResult<void>> => {
-      trayService.clearTimer()
-      return ipcSuccess(undefined)
-    }
-  )
+  ipcMain.handle('live:timerStopped', async (): Promise<IpcResult<void>> => {
+    trayService.clearTimer()
+    return ipcSuccess(undefined)
+  })
 
   ipcMain.handle(
     'live:toggleWidget',
@@ -181,20 +166,14 @@ export function registerLiveHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'live:hideAllWidgets',
-    async (): Promise<IpcResult<void>> => {
-      widgetService.hideAll()
-      return ipcSuccess(undefined)
-    }
-  )
+  ipcMain.handle('live:hideAllWidgets', async (): Promise<IpcResult<void>> => {
+    widgetService.hideAll()
+    return ipcSuccess(undefined)
+  })
 
-  ipcMain.handle(
-    'live:getWidgetHotkey',
-    async (): Promise<IpcResult<string>> => {
-      return ipcSuccess(widgetService.getHotkey())
-    }
-  )
+  ipcMain.handle('live:getWidgetHotkey', async (): Promise<IpcResult<string>> => {
+    return ipcSuccess(widgetService.getHotkey())
+  })
 
   ipcMain.handle(
     'live:setWidgetHotkey',

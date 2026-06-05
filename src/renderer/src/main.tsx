@@ -8,7 +8,5 @@ import { FloatingWidget } from './features/live/FloatingWidget'
 const isWidget = window.location.hash.startsWith('#widget/')
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {isWidget ? <FloatingWidget /> : <App />}
-  </StrictMode>
+  <StrictMode>{isWidget ? <FloatingWidget /> : <App />}</StrictMode>
 )

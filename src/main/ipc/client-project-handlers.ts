@@ -23,17 +23,14 @@ export function registerClientProjectHandlers(): void {
     }
   })
 
-  ipcMain.handle(
-    'client:create',
-    async (_event, data: NewClient): Promise<IpcResult<Client>> => {
-      try {
-        return ipcSuccess(clientProjectService.createClient(data))
-      } catch (error) {
-        log.error('IPC client:create failed:', error)
-        return ipcError('CLIENT_CREATE_ERROR', String(error))
-      }
+  ipcMain.handle('client:create', async (_event, data: NewClient): Promise<IpcResult<Client>> => {
+    try {
+      return ipcSuccess(clientProjectService.createClient(data))
+    } catch (error) {
+      log.error('IPC client:create failed:', error)
+      return ipcError('CLIENT_CREATE_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'client:update',

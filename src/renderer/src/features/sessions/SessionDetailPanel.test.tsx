@@ -5,15 +5,20 @@ import { SessionDetailPanel } from './SessionDetailPanel'
 import type { Session } from '../../../../shared/types/session'
 
 // Mock browser APIs for Radix components
-vi.stubGlobal('ResizeObserver', class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-})
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+)
 // Radix Select accesses window.HTMLSelectElement.prototype — mock for happy-dom
 const HtmlSelectProto = {} as any
 Object.defineProperty(HtmlSelectProto, 'value', {
-  get() { return '' },
+  get() {
+    return ''
+  },
   set(_v: string) {},
   configurable: true,
   enumerable: true
@@ -31,7 +36,9 @@ vi.stubGlobal('window', {
       update: mockUpdate
     },
     git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) },
-    ai: { getSummary: vi.fn().mockResolvedValue({ success: true, data: { summary: '', tier: 'none' } }) }
+    ai: {
+      getSummary: vi.fn().mockResolvedValue({ success: true, data: { summary: '', tier: 'none' } })
+    }
   }
 })
 
@@ -135,7 +142,9 @@ describe('SessionDetailPanel', () => {
   describe('Manual Session Actions', () => {
     it('shows edit description textarea when Edit Description is clicked', () => {
       const session = { ...baseSession, source: 'manual' as const, description: 'Test desc' }
-      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+      render(<SessionDetailPanel {...defaultProps} session={session} />, {
+        wrapper: createWrapper()
+      })
 
       fireEvent.click(screen.getByRole('button', { name: /edit description/i }))
 
@@ -146,7 +155,9 @@ describe('SessionDetailPanel', () => {
 
     it('shows delete confirmation when Delete is clicked', () => {
       const session = { ...baseSession, source: 'manual' as const }
-      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+      render(<SessionDetailPanel {...defaultProps} session={session} />, {
+        wrapper: createWrapper()
+      })
 
       fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
 
@@ -156,7 +167,9 @@ describe('SessionDetailPanel', () => {
 
     it('cancels delete confirmation', () => {
       const session = { ...baseSession, source: 'manual' as const }
-      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+      render(<SessionDetailPanel {...defaultProps} session={session} />, {
+        wrapper: createWrapper()
+      })
 
       fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
@@ -193,14 +206,9 @@ describe('SessionDetailPanel', () => {
   })
 
   it('does not render project/client section when both are null', () => {
-    render(
-      <SessionDetailPanel
-        {...defaultProps}
-        projectName={null}
-        clientName={null}
-      />,
-      { wrapper: createWrapper() }
-    )
+    render(<SessionDetailPanel {...defaultProps} projectName={null} clientName={null} />, {
+      wrapper: createWrapper()
+    })
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument()
   })
 
@@ -213,7 +221,9 @@ describe('SessionDetailPanel', () => {
 
     it('does not show Prompt Timeline for manual sessions', () => {
       const session = { ...baseSession, source: 'manual' as const, promptCount: 0 }
-      render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
+      render(<SessionDetailPanel {...defaultProps} session={session} />, {
+        wrapper: createWrapper()
+      })
 
       expect(screen.queryByText('Prompt Timeline')).not.toBeInTheDocument()
     })
@@ -227,5 +237,4 @@ describe('SessionDetailPanel', () => {
       expect(screen.getByText('Loading timings...')).toBeInTheDocument()
     })
   })
-
 })

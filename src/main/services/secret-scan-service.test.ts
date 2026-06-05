@@ -125,7 +125,10 @@ describe('secret-scan-service', () => {
   describe('pattern detection', () => {
     it('detects Anthropic API keys', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: 'my key is sk-ant-api03-abc123def456ghijklmnop' } })
+        'test.jsonl': jsonl({
+          type: 'user',
+          message: { content: 'my key is sk-ant-api03-abc123def456ghijklmnop' }
+        })
       })
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
@@ -137,15 +140,16 @@ describe('secret-scan-service', () => {
       expect(result.newFindings).toBeGreaterThan(0)
 
       // Check that insert was called with correct secret type
-      const findingInsert = mockInsertValues.find(
-        (v: any) => v.secretType === 'anthropic-api-key'
-      )
+      const findingInsert = mockInsertValues.find((v: any) => v.secretType === 'anthropic-api-key')
       expect(findingInsert).toBeTruthy()
     })
 
     it('detects OpenAI API keys', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: 'key: sk-proj-abc123def456ghijklmnopqrstuv' } })
+        'test.jsonl': jsonl({
+          type: 'user',
+          message: { content: 'key: sk-proj-abc123def456ghijklmnopqrstuv' }
+        })
       })
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
@@ -160,7 +164,10 @@ describe('secret-scan-service', () => {
 
     it('detects Google/Gemini API keys', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: 'key: AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7' } })
+        'test.jsonl': jsonl({
+          type: 'user',
+          message: { content: 'key: AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7' }
+        })
       })
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
@@ -190,7 +197,10 @@ describe('secret-scan-service', () => {
 
     it('detects GitHub PATs', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: 'token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL' } })
+        'test.jsonl': jsonl({
+          type: 'user',
+          message: { content: 'token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL' }
+        })
       })
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
@@ -204,7 +214,8 @@ describe('secret-scan-service', () => {
     })
 
     it('detects JWT tokens', async () => {
-      const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+      const jwt =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
       const claudeDir = await setupTestDir(tmpDir, {
         'test.jsonl': jsonl({ type: 'user', message: { content: `Bearer ${jwt}` } })
       })
@@ -221,7 +232,10 @@ describe('secret-scan-service', () => {
 
     it('detects connection strings', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: 'postgres://user:secret@localhost:5432/mydb' } })
+        'test.jsonl': jsonl({
+          type: 'user',
+          message: { content: 'postgres://user:secret@localhost:5432/mydb' }
+        })
       })
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
@@ -236,7 +250,10 @@ describe('secret-scan-service', () => {
 
     it('detects private keys', async () => {
       const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: '-----BEGIN RSA PRIVATE KEY-----' } })
+        'test.jsonl': jsonl({
+          type: 'user',
+          message: { content: '-----BEGIN RSA PRIVATE KEY-----' }
+        })
       })
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
@@ -250,11 +267,15 @@ describe('secret-scan-service', () => {
     })
 
     it('detects multiple secrets in one file (AC 9)', async () => {
-      const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+      const jwt =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
       const claudeDir = await setupTestDir(tmpDir, {
         'test.jsonl': jsonl(
           { type: 'user', message: { content: `JWT: ${jwt}` } },
-          { type: 'user', message: { content: 'token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL' } },
+          {
+            type: 'user',
+            message: { content: 'token: ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkL' }
+          },
           { type: 'user', message: { content: 'db: postgres://user:pass@host/db' } }
         )
       })
@@ -267,9 +288,7 @@ describe('secret-scan-service', () => {
       const result = await secretScanService.runScan()
       expect(result.newFindings).toBe(3)
 
-      const types = mockInsertValues
-        .filter((v: any) => v.secretType)
-        .map((v: any) => v.secretType)
+      const types = mockInsertValues.filter((v: any) => v.secretType).map((v: any) => v.secretType)
       expect(types).toContain('jwt-token')
       expect(types).toContain('github-pat')
       expect(types).toContain('connection-string')
@@ -319,9 +338,16 @@ describe('secret-scan-service', () => {
 
   describe('file filtering', () => {
     it('skips files modified today (AC 2)', async () => {
-      const claudeDir = await setupTestDir(tmpDir, {
-        'test.jsonl': jsonl({ type: 'user', message: { content: 'sk-ant-api03-abc123def456ghij' } })
-      }, false) // Don't backdate — keep as today
+      const claudeDir = await setupTestDir(
+        tmpDir,
+        {
+          'test.jsonl': jsonl({
+            type: 'user',
+            message: { content: 'sk-ant-api03-abc123def456ghij' }
+          })
+        },
+        false
+      ) // Don't backdate — keep as today
       mockGetSetting.mockImplementation((key: string) => {
         if (key === 'claude_dir') return claudeDir
         if (key === 'secret_scan_mode') return 'monitor'
@@ -370,10 +396,13 @@ describe('secret-scan-service', () => {
   describe('scanFile', () => {
     it('returns finding count for file with secrets', async () => {
       const filePath = join(tmpDir, 'test.jsonl')
-      await writeFile(filePath, jsonl(
-        { type: 'user', message: { content: 'key: sk-ant-api03-abc123def456ghij' } },
-        { type: 'user', message: { content: 'AKIAIOSFODNN7EXAMPLE' } }
-      ))
+      await writeFile(
+        filePath,
+        jsonl(
+          { type: 'user', message: { content: 'key: sk-ant-api03-abc123def456ghij' } },
+          { type: 'user', message: { content: 'AKIAIOSFODNN7EXAMPLE' } }
+        )
+      )
 
       // scanFile no longer depends on _isScanning (F07 fix)
       const count = await secretScanService.scanFile(filePath)
@@ -382,9 +411,10 @@ describe('secret-scan-service', () => {
 
     it('returns 0 for file with no secrets', async () => {
       const filePath = join(tmpDir, 'clean.jsonl')
-      await writeFile(filePath, jsonl(
-        { type: 'user', message: { content: 'just some normal text' } }
-      ))
+      await writeFile(
+        filePath,
+        jsonl({ type: 'user', message: { content: 'just some normal text' } })
+      )
 
       secretScanService._isScanning = true
       const count = await secretScanService.scanFile(filePath)
@@ -395,9 +425,15 @@ describe('secret-scan-service', () => {
   describe('context extraction', () => {
     it('stores no surrounding text to prevent leaking adjacent secrets', async () => {
       const filePath = join(tmpDir, 'ctx.jsonl')
-      await writeFile(filePath, jsonl(
-        { type: 'user', message: { content: 'the api key is sk-ant-api03-abc123def456ghijklmnop and here is more text' } }
-      ))
+      await writeFile(
+        filePath,
+        jsonl({
+          type: 'user',
+          message: {
+            content: 'the api key is sk-ant-api03-abc123def456ghijklmnop and here is more text'
+          }
+        })
+      )
 
       await secretScanService.scanFile(filePath)
 

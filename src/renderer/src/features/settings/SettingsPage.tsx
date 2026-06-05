@@ -1,9 +1,24 @@
 import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react'
 import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Volume2, VolumeX, LoaderCircle, Shield, X, Plus, Trash2, FlaskConical, AlertTriangle, Pencil, RotateCcw } from 'lucide-react'
+import {
+  Volume2,
+  VolumeX,
+  LoaderCircle,
+  Shield,
+  X,
+  Plus,
+  Trash2,
+  FlaskConical,
+  AlertTriangle,
+  Pencil,
+  RotateCcw
+} from 'lucide-react'
 import type { CustomSecretPattern, PatternTestResult } from '../../../../shared/types/secret-scan'
-import { DEFAULT_AI_SUMMARY_INSTRUCTIONS, DEFAULT_AI_BRIEF_INSTRUCTIONS } from '../../../../shared/constants'
+import {
+  DEFAULT_AI_SUMMARY_INSTRUCTIONS,
+  DEFAULT_AI_BRIEF_INSTRUCTIONS
+} from '../../../../shared/constants'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -17,9 +32,7 @@ const ACCENT_THEMES = [
 ] as const
 
 function SectionHeader({ title }: { title: string }): React.JSX.Element {
-  return (
-    <h2 className="mb-3 text-[14px] font-semibold text-[var(--text-primary)]">{title}</h2>
-  )
+  return <h2 className="mb-3 text-[14px] font-semibold text-[var(--text-primary)]">{title}</h2>
 }
 
 function SectionCard({ children }: { children: React.ReactNode }): React.JSX.Element {
@@ -57,7 +70,9 @@ export function SettingsPage(): React.JSX.Element {
   const [savedAiInstructions, setSavedAiInstructions] = useState(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
   const [showAiInstructions, setShowAiInstructions] = useState(false)
   const [aiBriefInstructions, setAiBriefInstructions] = useState(DEFAULT_AI_BRIEF_INSTRUCTIONS)
-  const [savedAiBriefInstructions, setSavedAiBriefInstructions] = useState(DEFAULT_AI_BRIEF_INSTRUCTIONS)
+  const [savedAiBriefInstructions, setSavedAiBriefInstructions] = useState(
+    DEFAULT_AI_BRIEF_INSTRUCTIONS
+  )
   const [showAiBriefInstructions, setShowAiBriefInstructions] = useState(false)
 
   const storeKey = useMutation({
@@ -94,7 +109,7 @@ export function SettingsPage(): React.JSX.Element {
     queryKey: ['stripe', 'mode'],
     queryFn: async () => {
       const r = await window.api.invoice.getStripeMode()
-      return r.success ? r.data : 'live' as const
+      return r.success ? r.data : ('live' as const)
     }
   })
 
@@ -148,7 +163,9 @@ export function SettingsPage(): React.JSX.Element {
   })
 
   const [stripeKeyInput, setStripeKeyInput] = useState('')
-  const [stripeTestResult, setStripeTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [stripeTestResult, setStripeTestResult] = useState<
+    'idle' | 'testing' | 'success' | 'error'
+  >('idle')
   const [confirmRemoveStripeKey, setConfirmRemoveStripeKey] = useState(false)
 
   const storeStripeKey = useMutation({
@@ -318,7 +335,9 @@ export function SettingsPage(): React.JSX.Element {
         const d = r.data
         const summaryR = await window.api.secretScan.getSummary()
         const unresolved = summaryR.success ? summaryR.data.found : 0
-        toast.success(`Scan completed: ${d.filesScanned} files scanned, ${d.newFindings} new findings, ${unresolved} unresolved findings.`)
+        toast.success(
+          `Scan completed: ${d.filesScanned} files scanned, ${d.newFindings} new findings, ${unresolved} unresolved findings.`
+        )
         refetchSummary()
         refetchFindings()
         queryClient.invalidateQueries({ queryKey: ['settings'] })
@@ -332,19 +351,31 @@ export function SettingsPage(): React.JSX.Element {
     }
   }, [refetchSummary, refetchFindings, queryClient])
 
-  const handleIgnoreFinding = useCallback(async (id: number) => {
-    const r = await window.api.secretScan.ignoreFinding(id)
-    if (!r.success) { toast.error('Failed to ignore finding'); return }
-    refetchFindings()
-    refetchSummary()
-  }, [refetchFindings, refetchSummary])
+  const handleIgnoreFinding = useCallback(
+    async (id: number) => {
+      const r = await window.api.secretScan.ignoreFinding(id)
+      if (!r.success) {
+        toast.error('Failed to ignore finding')
+        return
+      }
+      refetchFindings()
+      refetchSummary()
+    },
+    [refetchFindings, refetchSummary]
+  )
 
-  const handleRedactFinding = useCallback(async (id: number) => {
-    const r = await window.api.secretScan.redactFinding(id)
-    if (!r.success) { toast.error('Failed to redact finding'); return }
-    refetchFindings()
-    refetchSummary()
-  }, [refetchFindings, refetchSummary])
+  const handleRedactFinding = useCallback(
+    async (id: number) => {
+      const r = await window.api.secretScan.redactFinding(id)
+      if (!r.success) {
+        toast.error('Failed to redact finding')
+        return
+      }
+      refetchFindings()
+      refetchSummary()
+    },
+    [refetchFindings, refetchSummary]
+  )
 
   const handleRedactAll = useCallback(async () => {
     setIsRedacting(true)
@@ -407,7 +438,11 @@ export function SettingsPage(): React.JSX.Element {
 
   const handleTestPattern = useCallback(async () => {
     if (!patternForm.source) return
-    const r = await window.api.secretScan.testPattern(patternForm.source, patternForm.flags, testString)
+    const r = await window.api.secretScan.testPattern(
+      patternForm.source,
+      patternForm.flags,
+      testString
+    )
     if (r.success) {
       setPatternTestResult(r.data)
       setPatternWarnings(r.data.warnings)
@@ -421,7 +456,12 @@ export function SettingsPage(): React.JSX.Element {
       toast.error('Label and regex pattern are required')
       return
     }
-    const id = editingPattern?.id ?? patternForm.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const id =
+      editingPattern?.id ??
+      patternForm.label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
     const pattern: CustomSecretPattern = {
       id,
       label: patternForm.label,
@@ -447,17 +487,23 @@ export function SettingsPage(): React.JSX.Element {
     }
   }, [patternForm, editingPattern, resetPatternForm, refetchCustomPatterns])
 
-  const handleDeletePattern = useCallback(async (id: string) => {
-    await window.api.secretScan.deleteCustomPattern(id)
-    refetchCustomPatterns()
-    toast.success('Pattern deleted')
-    setConfirmDeletePattern(null)
-  }, [refetchCustomPatterns])
+  const handleDeletePattern = useCallback(
+    async (id: string) => {
+      await window.api.secretScan.deleteCustomPattern(id)
+      refetchCustomPatterns()
+      toast.success('Pattern deleted')
+      setConfirmDeletePattern(null)
+    },
+    [refetchCustomPatterns]
+  )
 
-  const handleTogglePattern = useCallback(async (pattern: CustomSecretPattern) => {
-    await window.api.secretScan.upsertCustomPattern({ ...pattern, enabled: !pattern.enabled })
-    refetchCustomPatterns()
-  }, [refetchCustomPatterns])
+  const handleTogglePattern = useCallback(
+    async (pattern: CustomSecretPattern) => {
+      await window.api.secretScan.upsertCustomPattern({ ...pattern, enabled: !pattern.enabled })
+      refetchCustomPatterns()
+    },
+    [refetchCustomPatterns]
+  )
 
   // ============= Notification Volume =============
   const [notifVolume, setNotifVolume] = useState(50)
@@ -504,8 +550,8 @@ export function SettingsPage(): React.JSX.Element {
         <SectionHeader title="AI Configuration" />
         <SectionCard>
           <p className="mb-3 text-[12px] text-[var(--text-muted)]">
-            Add an Anthropic API key to enable AI-powered summaries when exporting reports.
-            Without a key, you can still generate work summaries from git commits.
+            Add an Anthropic API key to enable AI-powered summaries when exporting reports. Without
+            a key, you can still generate work summaries from git commits.
           </p>
           <div className="space-y-2">
             <label className="text-[12px] font-semibold text-[var(--text-primary)]">
@@ -516,12 +562,7 @@ export function SettingsPage(): React.JSX.Element {
                 <span className="font-mono text-[13px] text-[var(--text-secondary)]">
                   sk-•••••••••••••••
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={testConnection}
-                  className="text-[11px]"
-                >
+                <Button size="sm" variant="ghost" onClick={testConnection} className="text-[11px]">
                   {testResult === 'testing' ? 'Testing...' : 'Test Connection'}
                 </Button>
                 {testResult === 'success' && (
@@ -585,7 +626,10 @@ export function SettingsPage(): React.JSX.Element {
                   variant="ghost"
                   onClick={() => {
                     setAiInstructions(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
-                    saveSetting.mutate({ key: 'ai_summary_instructions', value: DEFAULT_AI_SUMMARY_INSTRUCTIONS })
+                    saveSetting.mutate({
+                      key: 'ai_summary_instructions',
+                      value: DEFAULT_AI_SUMMARY_INSTRUCTIONS
+                    })
                     setSavedAiInstructions(DEFAULT_AI_SUMMARY_INSTRUCTIONS)
                     toast.success('Reset to default instructions')
                   }}
@@ -613,7 +657,9 @@ export function SettingsPage(): React.JSX.Element {
               </p>
               <textarea
                 value={aiInstructions}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setAiInstructions(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                  setAiInstructions(e.target.value)
+                }
                 rows={8}
                 className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               />
@@ -645,7 +691,10 @@ export function SettingsPage(): React.JSX.Element {
                   variant="ghost"
                   onClick={() => {
                     setAiBriefInstructions(DEFAULT_AI_BRIEF_INSTRUCTIONS)
-                    saveSetting.mutate({ key: 'ai_brief_instructions', value: DEFAULT_AI_BRIEF_INSTRUCTIONS })
+                    saveSetting.mutate({
+                      key: 'ai_brief_instructions',
+                      value: DEFAULT_AI_BRIEF_INSTRUCTIONS
+                    })
                     setSavedAiBriefInstructions(DEFAULT_AI_BRIEF_INSTRUCTIONS)
                     toast.success('Reset to default brief instructions')
                   }}
@@ -668,12 +717,14 @@ export function SettingsPage(): React.JSX.Element {
           {showAiBriefInstructions && (
             <>
               <p className="mt-2 mb-2 text-[11px] text-[var(--text-muted)]">
-                Customize the prompt used when generating brief summaries for timesheets.
-                Controls audience, tone, and how work is described to non-technical readers.
+                Customize the prompt used when generating brief summaries for timesheets. Controls
+                audience, tone, and how work is described to non-technical readers.
               </p>
               <textarea
                 value={aiBriefInstructions}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setAiBriefInstructions(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                  setAiBriefInstructions(e.target.value)
+                }
                 rows={8}
                 className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               />
@@ -687,8 +738,8 @@ export function SettingsPage(): React.JSX.Element {
         <SectionHeader title="Invoicing" />
         <SectionCard>
           <p className="mb-3 text-[12px] text-[var(--text-muted)]">
-            Add Stripe secret keys to enable invoicing directly from ClauTime.
-            Toggle between live and sandbox modes.
+            Add Stripe secret keys to enable invoicing directly from ClauTime. Toggle between live
+            and sandbox modes.
           </p>
 
           {/* Mode Toggle */}
@@ -774,7 +825,10 @@ export function SettingsPage(): React.JSX.Element {
                 <Button
                   size="sm"
                   onClick={() => stripeKeyInput && storeStripeKey.mutate(stripeKeyInput)}
-                  disabled={!stripeKeyInput || !stripeKeyInput.startsWith(isStripeTestMode ? 'sk_test_' : 'sk_live_')}
+                  disabled={
+                    !stripeKeyInput ||
+                    !stripeKeyInput.startsWith(isStripeTestMode ? 'sk_test_' : 'sk_live_')
+                  }
                   className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
                 >
                   Save Key
@@ -790,7 +844,8 @@ export function SettingsPage(): React.JSX.Element {
                 Sandbox Email Override
               </label>
               <p className="text-[11px] text-[var(--text-muted)]">
-                In sandbox mode, this email replaces all client emails when creating Stripe customers. Keeps real emails out of test data.
+                In sandbox mode, this email replaces all client emails when creating Stripe
+                customers. Keeps real emails out of test data.
               </p>
               <div className="flex items-center gap-2">
                 <input
@@ -806,7 +861,11 @@ export function SettingsPage(): React.JSX.Element {
                 <Button
                   size="sm"
                   onClick={() => saveTestEmail.mutate(testEmailInput.trim())}
-                  disabled={!testEmailInput.trim() || testEmailInput.trim() === stripeTestEmail || saveTestEmail.isPending}
+                  disabled={
+                    !testEmailInput.trim() ||
+                    testEmailInput.trim() === stripeTestEmail ||
+                    saveTestEmail.isPending
+                  }
                   className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
                 >
                   {saveTestEmail.isPending ? 'Saving...' : 'Save'}
@@ -826,14 +885,17 @@ export function SettingsPage(): React.JSX.Element {
               Start of Week
             </label>
             <p className="mb-2 text-[11px] text-[var(--text-muted)]">
-              Used for &ldquo;This Week&rdquo; and &ldquo;Last Week&rdquo; filters across sessions, reports, and analytics.
+              Used for &ldquo;This Week&rdquo; and &ldquo;Last Week&rdquo; filters across sessions,
+              reports, and analytics.
             </p>
             <div className="flex gap-1">
-              {([
-                { value: '1', label: 'Monday' },
-                { value: '0', label: 'Sunday' },
-                { value: '6', label: 'Saturday' }
-              ] as const).map((opt) => (
+              {(
+                [
+                  { value: '1', label: 'Monday' },
+                  { value: '0', label: 'Sunday' },
+                  { value: '6', label: 'Saturday' }
+                ] as const
+              ).map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
@@ -862,7 +924,8 @@ export function SettingsPage(): React.JSX.Element {
               Human Time Allowance (minutes)
             </label>
             <p className="mb-2 text-[11px] text-[var(--text-muted)]">
-              Max time between prompts before a new session starts. Covers reading responses, testing, and thinking.
+              Max time between prompts before a new session starts. Covers reading responses,
+              testing, and thinking.
             </p>
             <div className="flex items-center gap-3">
               <input
@@ -870,7 +933,9 @@ export function SettingsPage(): React.JSX.Element {
                 min={1}
                 max={15}
                 value={idleTimeout}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setIdleTimeout(parseInt(e.target.value, 10))}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setIdleTimeout(parseInt(e.target.value, 10))
+                }
                 className="flex-1"
               />
               <span className="w-12 text-right font-mono text-[13px] text-[var(--text-primary)]">
@@ -991,8 +1056,15 @@ export function SettingsPage(): React.JSX.Element {
                     min={1}
                     max={120}
                     value={alertMinutes}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setAlertMinutes(parseInt(e.target.value, 10) || 1)}
-                    onBlur={() => saveSetting.mutate({ key: 'alert_threshold_minutes', value: String(alertMinutes) })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      setAlertMinutes(parseInt(e.target.value, 10) || 1)
+                    }
+                    onBlur={() =>
+                      saveSetting.mutate({
+                        key: 'alert_threshold_minutes',
+                        value: String(alertMinutes)
+                      })
+                    }
                     className="w-16 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-2 py-1 text-center font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                   />
                   <span className="text-[12px] text-[var(--text-muted)]">min</span>
@@ -1013,7 +1085,10 @@ export function SettingsPage(): React.JSX.Element {
             <Switch
               checked={settings?.['widget_glow_enabled'] !== 'false'}
               onCheckedChange={(checked) =>
-                saveSetting.mutate({ key: 'widget_glow_enabled', value: checked ? 'true' : 'false' })
+                saveSetting.mutate({
+                  key: 'widget_glow_enabled',
+                  value: checked ? 'true' : 'false'
+                })
               }
             />
           </div>
@@ -1030,7 +1105,10 @@ export function SettingsPage(): React.JSX.Element {
             <Switch
               checked={settings?.['hide_inactive_widgets'] !== 'false'}
               onCheckedChange={(checked) =>
-                saveSetting.mutate({ key: 'hide_inactive_widgets', value: checked ? 'true' : 'false' })
+                saveSetting.mutate({
+                  key: 'hide_inactive_widgets',
+                  value: checked ? 'true' : 'false'
+                })
               }
             />
           </div>
@@ -1051,7 +1129,9 @@ export function SettingsPage(): React.JSX.Element {
                     : 'border-[var(--surface-border)] bg-[var(--background-primary)] text-[var(--text-secondary)]'
                 )}
               >
-                {isRecordingHotkey ? 'Press keys...' : widgetHotkey.replace('CommandOrControl', 'Ctrl')}
+                {isRecordingHotkey
+                  ? 'Press keys...'
+                  : widgetHotkey.replace('CommandOrControl', 'Ctrl')}
               </kbd>
               <Button
                 size="sm"
@@ -1076,7 +1156,10 @@ export function SettingsPage(): React.JSX.Element {
                     setIsRecordingHotkey(false)
                     window.removeEventListener('keydown', handler, true)
                     window.api.live.setWidgetHotkey(accelerator).then((r) => {
-                      if (r.success) toast.success(`Hotkey set to ${accelerator.replace('CommandOrControl', 'Ctrl')}`)
+                      if (r.success)
+                        toast.success(
+                          `Hotkey set to ${accelerator.replace('CommandOrControl', 'Ctrl')}`
+                        )
                       else toast.error('Failed to register hotkey')
                     })
                   }
@@ -1101,7 +1184,10 @@ export function SettingsPage(): React.JSX.Element {
               <Switch
                 checked={settings?.['desktop_alerts_enabled'] !== 'false'}
                 onCheckedChange={(checked) =>
-                  saveSetting.mutate({ key: 'desktop_alerts_enabled', value: checked ? 'true' : 'false' })
+                  saveSetting.mutate({
+                    key: 'desktop_alerts_enabled',
+                    value: checked ? 'true' : 'false'
+                  })
                 }
               />
             </div>
@@ -1119,9 +1205,14 @@ export function SettingsPage(): React.JSX.Element {
                   onClick={() => {
                     const newVal = notifVolume === 0 ? 50 : 0
                     setNotifVolume(newVal)
-                    saveSetting.mutate({ key: 'notification_volume', value: String(newVal) }, {
-                      onSuccess: () => { if (newVal > 0) window.api.live.playTestSound() }
-                    })
+                    saveSetting.mutate(
+                      { key: 'notification_volume', value: String(newVal) },
+                      {
+                        onSuccess: () => {
+                          if (newVal > 0) window.api.live.playTestSound()
+                        }
+                      }
+                    )
                   }}
                   className="rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
                   aria-label={notifVolume === 0 ? 'Unmute' : 'Mute'}
@@ -1137,13 +1228,29 @@ export function SettingsPage(): React.JSX.Element {
                   min={0}
                   max={100}
                   value={notifVolume}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setNotifVolume(parseInt(e.target.value, 10))}
-                  onMouseUp={() => saveSetting.mutate({ key: 'notification_volume', value: String(notifVolume) }, {
-                    onSuccess: () => { if (notifVolume > 0) window.api.live.playTestSound() }
-                  })}
-                  onTouchEnd={() => saveSetting.mutate({ key: 'notification_volume', value: String(notifVolume) }, {
-                    onSuccess: () => { if (notifVolume > 0) window.api.live.playTestSound() }
-                  })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setNotifVolume(parseInt(e.target.value, 10))
+                  }
+                  onMouseUp={() =>
+                    saveSetting.mutate(
+                      { key: 'notification_volume', value: String(notifVolume) },
+                      {
+                        onSuccess: () => {
+                          if (notifVolume > 0) window.api.live.playTestSound()
+                        }
+                      }
+                    )
+                  }
+                  onTouchEnd={() =>
+                    saveSetting.mutate(
+                      { key: 'notification_volume', value: String(notifVolume) },
+                      {
+                        onSuccess: () => {
+                          if (notifVolume > 0) window.api.live.playTestSound()
+                        }
+                      }
+                    )
+                  }
                   className="flex-1"
                 />
                 <span className="w-12 text-right font-mono text-[13px] text-[var(--text-primary)]">
@@ -1160,7 +1267,8 @@ export function SettingsPage(): React.JSX.Element {
         <SectionHeader title="Privacy & Security" />
         <SectionCard>
           <p className="mb-3 text-[12px] text-[var(--text-muted)]">
-            Scan JSONL conversation files for accidentally exposed secrets like API keys, tokens, and passwords.
+            Scan JSONL conversation files for accidentally exposed secrets like API keys, tokens,
+            and passwords.
           </p>
 
           <div className="mb-4">
@@ -1168,11 +1276,11 @@ export function SettingsPage(): React.JSX.Element {
               Scan Mode
             </label>
             <div className="flex items-center gap-2">
-              {([
+              {[
                 { value: 'monitor' as const, label: 'Monitor' },
                 { value: 'monitor-alert' as const, label: 'Monitor & Alert' },
                 { value: 'auto-clean' as const, label: 'Auto-Clean' }
-              ]).map((opt) => (
+              ].map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
@@ -1193,29 +1301,42 @@ export function SettingsPage(): React.JSX.Element {
             </div>
             <p className="mt-1 text-[11px] text-[var(--text-muted)]">
               {scanMode === 'monitor' && 'Scan and log findings only.'}
-              {scanMode === 'monitor-alert' && 'Scan, log, and show desktop notification when secrets found.'}
-              {scanMode === 'auto-clean' && 'Scan and automatically redact detected secrets in-place.'}
+              {scanMode === 'monitor-alert' &&
+                'Scan, log, and show desktop notification when secrets found.'}
+              {scanMode === 'auto-clean' &&
+                'Scan and automatically redact detected secrets in-place.'}
             </p>
           </div>
 
           {scanSummary && scanSummary.total > 0 && (
             <div className="mb-3 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-              <span className="font-medium">{scanSummary.total} finding{scanSummary.total === 1 ? '' : 's'}</span>
+              <span className="font-medium">
+                {scanSummary.total} finding{scanSummary.total === 1 ? '' : 's'}
+              </span>
               {' — '}
-              {scanSummary.bySeverity.critical > 0 && <span className="text-red-400">{scanSummary.bySeverity.critical} critical</span>}
+              {scanSummary.bySeverity.critical > 0 && (
+                <span className="text-red-400">{scanSummary.bySeverity.critical} critical</span>
+              )}
               {scanSummary.bySeverity.critical > 0 && scanSummary.bySeverity.high > 0 && ', '}
-              {scanSummary.bySeverity.high > 0 && <span className="text-amber-400">{scanSummary.bySeverity.high} high</span>}
-              {(scanSummary.bySeverity.critical > 0 || scanSummary.bySeverity.high > 0) && scanSummary.bySeverity.medium > 0 && ', '}
-              {scanSummary.bySeverity.medium > 0 && <span className="text-yellow-300">{scanSummary.bySeverity.medium} medium</span>}
+              {scanSummary.bySeverity.high > 0 && (
+                <span className="text-amber-400">{scanSummary.bySeverity.high} high</span>
+              )}
+              {(scanSummary.bySeverity.critical > 0 || scanSummary.bySeverity.high > 0) &&
+                scanSummary.bySeverity.medium > 0 &&
+                ', '}
+              {scanSummary.bySeverity.medium > 0 && (
+                <span className="text-yellow-300">{scanSummary.bySeverity.medium} medium</span>
+              )}
               {' | '}
-              <span>{scanSummary.found} active, {scanSummary.redacted} redacted, {scanSummary.ignored} ignored</span>
+              <span>
+                {scanSummary.found} active, {scanSummary.redacted} redacted, {scanSummary.ignored}{' '}
+                ignored
+              </span>
             </div>
           )}
 
           {lastScanDate && (
-            <p className="mb-3 text-[11px] text-[var(--text-muted)]">
-              Last scan: {lastScanDate}
-            </p>
+            <p className="mb-3 text-[11px] text-[var(--text-muted)]">Last scan: {lastScanDate}</p>
           )}
 
           <div className="flex items-center gap-2">
@@ -1228,11 +1349,7 @@ export function SettingsPage(): React.JSX.Element {
               {isScanRunning && <LoaderCircle size={14} className="mr-1 animate-spin" />}
               {isScanRunning ? 'Scanning...' : 'Scan Now'}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowFindings(true)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => setShowFindings(true)}>
               <Shield size={14} className="mr-1" />
               View Findings
             </Button>
@@ -1252,7 +1369,10 @@ export function SettingsPage(): React.JSX.Element {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => { resetPatternForm(); setShowCustomPatterns(!showCustomPatterns) }}
+                onClick={() => {
+                  resetPatternForm()
+                  setShowCustomPatterns(!showCustomPatterns)
+                }}
               >
                 {showCustomPatterns ? 'Hide' : 'Manage'}
               </Button>
@@ -1262,26 +1382,43 @@ export function SettingsPage(): React.JSX.Element {
             {customPatterns && customPatterns.length > 0 && !showCustomPatterns && (
               <div className="space-y-1">
                 {customPatterns.map((p) => (
-                  <div key={p.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-[12px] bg-[var(--background-primary)]">
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-2 rounded px-2 py-1.5 text-[12px] bg-[var(--background-primary)]"
+                  >
                     <Switch
                       checked={p.enabled}
                       onCheckedChange={() => handleTogglePattern(p)}
                       className="scale-75"
                     />
-                    <span className={cn('font-medium', p.enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]')}>{p.label}</span>
-                    <span className="font-mono text-[10px] text-[var(--text-muted)] truncate max-w-[160px]">{p.source}</span>
-                    <span className={cn(
-                      'rounded px-1.5 py-0.5 text-[10px] font-medium',
-                      p.severity === 'critical' && 'bg-red-500/20 text-red-400',
-                      p.severity === 'high' && 'bg-amber-500/20 text-amber-400',
-                      p.severity === 'medium' && 'bg-yellow-500/20 text-yellow-300'
-                    )}>
+                    <span
+                      className={cn(
+                        'font-medium',
+                        p.enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+                      )}
+                    >
+                      {p.label}
+                    </span>
+                    <span className="font-mono text-[10px] text-[var(--text-muted)] truncate max-w-[160px]">
+                      {p.source}
+                    </span>
+                    <span
+                      className={cn(
+                        'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                        p.severity === 'critical' && 'bg-red-500/20 text-red-400',
+                        p.severity === 'high' && 'bg-amber-500/20 text-amber-400',
+                        p.severity === 'medium' && 'bg-yellow-500/20 text-yellow-300'
+                      )}
+                    >
                       {p.severity}
                     </span>
                     <div className="ml-auto flex gap-1">
                       <button
                         type="button"
-                        onClick={() => { startEditPattern(p); setShowCustomPatterns(true) }}
+                        onClick={() => {
+                          startEditPattern(p)
+                          setShowCustomPatterns(true)
+                        }}
                         className="flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-border)]/50 hover:text-[var(--text-primary)]"
                       >
                         <Pencil size={12} className="mr-0.5" />
@@ -1307,20 +1444,34 @@ export function SettingsPage(): React.JSX.Element {
                 {customPatterns && customPatterns.length > 0 && (
                   <div className="space-y-1">
                     {customPatterns.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-[12px] bg-[var(--background-primary)]">
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-2 rounded px-2 py-1.5 text-[12px] bg-[var(--background-primary)]"
+                      >
                         <Switch
                           checked={p.enabled}
                           onCheckedChange={() => handleTogglePattern(p)}
                           className="scale-75"
                         />
-                        <span className={cn('font-medium', p.enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]')}>{p.label}</span>
-                        <span className="font-mono text-[10px] text-[var(--text-muted)] truncate max-w-[160px]">{p.source}</span>
-                        <span className={cn(
-                          'rounded px-1.5 py-0.5 text-[10px] font-medium',
-                          p.severity === 'critical' && 'bg-red-500/20 text-red-400',
-                          p.severity === 'high' && 'bg-amber-500/20 text-amber-400',
-                          p.severity === 'medium' && 'bg-yellow-500/20 text-yellow-300'
-                        )}>
+                        <span
+                          className={cn(
+                            'font-medium',
+                            p.enabled ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'
+                          )}
+                        >
+                          {p.label}
+                        </span>
+                        <span className="font-mono text-[10px] text-[var(--text-muted)] truncate max-w-[160px]">
+                          {p.source}
+                        </span>
+                        <span
+                          className={cn(
+                            'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                            p.severity === 'critical' && 'bg-red-500/20 text-red-400',
+                            p.severity === 'high' && 'bg-amber-500/20 text-amber-400',
+                            p.severity === 'medium' && 'bg-yellow-500/20 text-yellow-300'
+                          )}
+                        >
                           {p.severity}
                         </span>
                         <div className="ml-auto flex gap-1">
@@ -1366,20 +1517,31 @@ export function SettingsPage(): React.JSX.Element {
 
                   <div className="flex gap-2">
                     <div className="flex-1">
-                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">Label</label>
+                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                        Label
+                      </label>
                       <input
                         type="text"
                         value={patternForm.label}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => setPatternForm((f) => ({ ...f, label: e.target.value }))}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                          setPatternForm((f) => ({ ...f, label: e.target.value }))
+                        }
                         placeholder="My Internal Token"
                         className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-elevated)] px-2 py-1.5 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                     <div className="w-24">
-                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">Severity</label>
+                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                        Severity
+                      </label>
                       <select
                         value={patternForm.severity}
-                        onChange={(e: ChangeEvent<HTMLSelectElement>) => setPatternForm((f) => ({ ...f, severity: e.target.value as 'critical' | 'high' | 'medium' }))}
+                        onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                          setPatternForm((f) => ({
+                            ...f,
+                            severity: e.target.value as 'critical' | 'high' | 'medium'
+                          }))
+                        }
                         className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-elevated)] px-2 py-1.5 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                       >
                         <option value="critical">Critical</option>
@@ -1391,12 +1553,15 @@ export function SettingsPage(): React.JSX.Element {
 
                   <div>
                     <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
-                      Regex Pattern <span className="text-[var(--text-muted)]">(without / delimiters)</span>
+                      Regex Pattern{' '}
+                      <span className="text-[var(--text-muted)]">(without / delimiters)</span>
                     </label>
                     <input
                       type="text"
                       value={patternForm.source}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setPatternForm((f) => ({ ...f, source: e.target.value }))}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                        setPatternForm((f) => ({ ...f, source: e.target.value }))
+                      }
                       placeholder="mytoken_[a-zA-Z0-9]{32,}"
                       className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-elevated)] px-2 py-1.5 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                     />
@@ -1404,21 +1569,29 @@ export function SettingsPage(): React.JSX.Element {
 
                   <div className="flex gap-2">
                     <div className="w-20">
-                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">Flags</label>
+                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                        Flags
+                      </label>
                       <input
                         type="text"
                         value={patternForm.flags}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => setPatternForm((f) => ({ ...f, flags: e.target.value }))}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                          setPatternForm((f) => ({ ...f, flags: e.target.value }))
+                        }
                         placeholder="i"
                         className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-elevated)] px-2 py-1.5 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                       />
                     </div>
                     <div className="flex-1">
-                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">Redact Label</label>
+                      <label className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                        Redact Label
+                      </label>
                       <input
                         type="text"
                         value={patternForm.redactLabel}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => setPatternForm((f) => ({ ...f, redactLabel: e.target.value }))}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                          setPatternForm((f) => ({ ...f, redactLabel: e.target.value }))
+                        }
                         placeholder="REDACTED-my-token (auto-generated)"
                         className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-elevated)] px-2 py-1.5 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                       />
@@ -1435,7 +1608,9 @@ export function SettingsPage(): React.JSX.Element {
                       <input
                         type="text"
                         value={testString}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => setTestString(e.target.value)}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                          setTestString(e.target.value)
+                        }
                         placeholder="Paste a sample string to test your regex..."
                         className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-elevated)] px-2 py-1.5 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                       />
@@ -1457,15 +1632,23 @@ export function SettingsPage(): React.JSX.Element {
                           <span className="text-[var(--text-muted)]">No matches found.</span>
                         ) : (
                           <div>
-                            <span className="font-medium text-[var(--accent)]">{patternTestResult.matchCount} match{patternTestResult.matchCount === 1 ? '' : 'es'}:</span>
+                            <span className="font-medium text-[var(--accent)]">
+                              {patternTestResult.matchCount} match
+                              {patternTestResult.matchCount === 1 ? '' : 'es'}:
+                            </span>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {patternTestResult.matches.slice(0, 10).map((m, i) => (
-                                <span key={i} className="rounded bg-[var(--accent)]/15 px-1.5 py-0.5 font-mono text-[10px] text-[var(--accent)]">
+                                <span
+                                  key={i}
+                                  className="rounded bg-[var(--accent)]/15 px-1.5 py-0.5 font-mono text-[10px] text-[var(--accent)]"
+                                >
                                   {m.length > 60 ? m.slice(0, 57) + '...' : m}
                                 </span>
                               ))}
                               {patternTestResult.matchCount > 10 && (
-                                <span className="text-[var(--text-muted)]">...and {patternTestResult.matchCount - 10} more</span>
+                                <span className="text-[var(--text-muted)]">
+                                  ...and {patternTestResult.matchCount - 10} more
+                                </span>
                               )}
                             </div>
                           </div>
@@ -1488,7 +1671,12 @@ export function SettingsPage(): React.JSX.Element {
 
                   <div className="flex justify-end gap-2">
                     {editingPattern && (
-                      <Button size="sm" variant="ghost" onClick={resetPatternForm} className="text-[11px]">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={resetPatternForm}
+                        className="text-[11px]"
+                      >
                         Cancel
                       </Button>
                     )}
@@ -1513,19 +1701,25 @@ export function SettingsPage(): React.JSX.Element {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
           onClick={() => setShowFindings(false)}
-          onKeyDown={(e) => { if (e.key === 'Escape') setShowFindings(false) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setShowFindings(false)
+          }}
           role="dialog"
           aria-modal="true"
           tabIndex={-1}
           ref={(el) => el?.focus()}
         >
-          <div className="mx-4 max-h-[80vh] w-full max-w-3xl overflow-hidden rounded-lg border border-[var(--surface-border)] bg-[var(--background-elevated)]" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="mx-4 max-h-[80vh] w-full max-w-3xl overflow-hidden rounded-lg border border-[var(--surface-border)] bg-[var(--background-elevated)]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-[var(--surface-border)] px-4 py-3">
               <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">
                 Secret Findings
                 {scanFindings && scanFindings.length > 0 && (
                   <span className="ml-2 text-[12px] font-normal text-[var(--text-muted)]">
-                    (showing {scanFindings.length}{scanFindings.length >= 100 ? '+' : ''})
+                    (showing {scanFindings.length}
+                    {scanFindings.length >= 100 ? '+' : ''})
                   </span>
                 )}
               </h3>
@@ -1538,7 +1732,7 @@ export function SettingsPage(): React.JSX.Element {
               </button>
             </div>
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
-              {(!scanFindings || scanFindings.length === 0) ? (
+              {!scanFindings || scanFindings.length === 0 ? (
                 <p className="py-8 text-center text-[13px] text-[var(--text-muted)]">
                   No secrets detected — your conversations are clean.
                 </p>
@@ -1558,28 +1752,35 @@ export function SettingsPage(): React.JSX.Element {
                     {scanFindings.map((f) => (
                       <tr key={f.id} className="border-b border-[var(--surface-border)]/50">
                         <td className="py-2 pr-3">
-                          <span className={cn(
-                            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-                            f.severity === 'critical' && 'bg-red-500/20 text-red-400',
-                            f.severity === 'high' && 'bg-amber-500/20 text-amber-400',
-                            f.severity === 'medium' && 'bg-yellow-500/20 text-yellow-300'
-                          )}>
+                          <span
+                            className={cn(
+                              'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
+                              f.severity === 'critical' && 'bg-red-500/20 text-red-400',
+                              f.severity === 'high' && 'bg-amber-500/20 text-amber-400',
+                              f.severity === 'medium' && 'bg-yellow-500/20 text-yellow-300'
+                            )}
+                          >
                             {f.secretType}
                           </span>
                         </td>
                         <td className="py-2 pr-3 font-mono text-[11px] text-[var(--text-secondary)]">
                           {f.redactedPreview}
                         </td>
-                        <td className="max-w-[120px] truncate py-2 pr-3 text-[var(--text-muted)]" title={f.sourceFile}>
+                        <td
+                          className="max-w-[120px] truncate py-2 pr-3 text-[var(--text-muted)]"
+                          title={f.sourceFile}
+                        >
                           {f.sourceFile.split(/[/\\]/).pop()}
                         </td>
                         <td className="py-2 pr-3">
-                          <span className={cn(
-                            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-                            f.status === 'found' && 'bg-blue-500/20 text-blue-400',
-                            f.status === 'redacted' && 'bg-green-500/20 text-green-400',
-                            f.status === 'ignored' && 'bg-gray-500/20 text-gray-400'
-                          )}>
+                          <span
+                            className={cn(
+                              'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
+                              f.status === 'found' && 'bg-blue-500/20 text-blue-400',
+                              f.status === 'redacted' && 'bg-green-500/20 text-green-400',
+                              f.status === 'ignored' && 'bg-gray-500/20 text-gray-400'
+                            )}
+                          >
                             {f.status}
                           </span>
                         </td>
@@ -1651,9 +1852,7 @@ export function SettingsPage(): React.JSX.Element {
                 style={{ backgroundColor: theme.color }}
                 title={theme.label}
               >
-                {currentAccent === theme.id && (
-                  <span className="text-[14px] text-white">✓</span>
-                )}
+                {currentAccent === theme.id && <span className="text-[14px] text-white">✓</span>}
               </button>
             ))}
           </div>

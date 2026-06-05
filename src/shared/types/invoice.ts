@@ -65,15 +65,21 @@ export interface InvoiceStatus {
 }
 
 /** Valid invoice statuses — shared between services */
-export const INVOICE_STATUSES = new Set<InvoiceStatus['status']>(['draft', 'open', 'paid', 'void', 'uncollectible'])
+export const INVOICE_STATUSES = new Set<InvoiceStatus['status']>([
+  'draft',
+  'open',
+  'paid',
+  'void',
+  'uncollectible'
+])
 
 // ── Phase 2: Local invoice history & generation ──
 
 /** Request to generate line items from sessions */
 export interface GenerateLineItemsRequest {
   clientId: number
-  startDate: string  // YYYY-MM-DD
-  endDate: string    // YYYY-MM-DD
+  startDate: string // YYYY-MM-DD
+  endDate: string // YYYY-MM-DD
   projectId?: number
 }
 

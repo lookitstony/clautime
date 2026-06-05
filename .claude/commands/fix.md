@@ -10,6 +10,7 @@ You are fixing: **$1**
 ## Phase 1: Assess Current State
 
 Run these in parallel:
+
 ```bash
 git status
 git diff
@@ -18,6 +19,7 @@ npm run typecheck
 ```
 
 Identify the problem category:
+
 - Build errors (TypeScript, missing imports)
 - Test failures
 - Runtime bugs (logic errors, missing handlers)
@@ -33,6 +35,7 @@ Identify the problem category:
 Read `.claude/agents/clautime-developer.md` for coding standards.
 
 For each fix:
+
 - Identify root cause before changing code
 - Make minimal, targeted changes
 - Verify the fix doesn't break other things
@@ -40,6 +43,7 @@ For each fix:
 ## Phase 3: Verify
 
 Run in sequence:
+
 ```bash
 npm run typecheck
 npm run test

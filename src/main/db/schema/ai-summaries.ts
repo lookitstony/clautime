@@ -14,9 +14,7 @@ export const aiSummaries = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString())
   },
-  (table) => [
-    index('idx_ai_summaries_session_id').on(table.sessionId)
-  ]
+  (table) => [index('idx_ai_summaries_session_id').on(table.sessionId)]
 )
 
 export type AiSummary = typeof aiSummaries.$inferSelect

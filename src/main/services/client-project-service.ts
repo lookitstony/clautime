@@ -201,7 +201,9 @@ export const clientProjectService = {
         .where(eq(sessions.projectId, existing.id))
         .run()
 
-      log.info(`Moved project: ${result.name} (id=${existing.id}) from client ${existing.clientId} to ${data.clientId}`)
+      log.info(
+        `Moved project: ${result.name} (id=${existing.id}) from client ${existing.clientId} to ${data.clientId}`
+      )
       return toProject(result)
     }
 
@@ -260,7 +262,9 @@ export const clientProjectService = {
         .set({ clientId: data.clientId, updatedAt: now })
         .where(eq(sessions.projectId, id))
         .run()
-      log.info(`Moved project: ${result.name} (id=${id}) from client ${existing.clientId} to ${data.clientId}`)
+      log.info(
+        `Moved project: ${result.name} (id=${id}) from client ${existing.clientId} to ${data.clientId}`
+      )
     } else {
       log.info(`Updated project: ${result.name} (id=${id})`)
     }
@@ -291,11 +295,7 @@ export const clientProjectService = {
 
   getOrCreateUnassignedClient(): Client {
     const db = getDb()
-    const existing = db
-      .select()
-      .from(clients)
-      .where(eq(clients.name, 'Unassigned'))
-      .get()
+    const existing = db.select().from(clients).where(eq(clients.name, 'Unassigned')).get()
     if (existing) return toClient(existing)
 
     const now = new Date().toISOString()
@@ -405,11 +405,7 @@ export const clientProjectService = {
    */
   attributeSessions(): number {
     const db = getDb()
-    const unattributed = db
-      .select()
-      .from(sessions)
-      .where(isNull(sessions.projectId))
-      .all()
+    const unattributed = db.select().from(sessions).where(isNull(sessions.projectId)).all()
 
     if (unattributed.length === 0) return 0
 

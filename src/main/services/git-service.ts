@@ -71,12 +71,7 @@ export const gitService = {
       return []
     }
 
-    const args = [
-      'log',
-      '--branches',
-      '--format=%H|%s|%an|%ae|%aI',
-      '--no-merges'
-    ]
+    const args = ['log', '--branches', '--format=%H|%s|%an|%ae|%aI', '--no-merges']
 
     if (since) {
       args.push(`--since=${since}`)
@@ -119,7 +114,9 @@ export const gitService = {
    */
   async detectGitIdentity(dirPath?: string): Promise<{ name: string; email: string } | null> {
     try {
-      const opts = dirPath ? { cwd: dirPath, encoding: 'utf8' as const } : { encoding: 'utf8' as const }
+      const opts = dirPath
+        ? { cwd: dirPath, encoding: 'utf8' as const }
+        : { encoding: 'utf8' as const }
       const [nameResult, emailResult] = await Promise.all([
         execFileAsync('git', ['config', 'user.name'], opts),
         execFileAsync('git', ['config', 'user.email'], opts)
@@ -129,7 +126,9 @@ export const gitService = {
         email: emailResult.stdout.trim()
       }
     } catch {
-      log.warn(`Could not detect git identity${dirPath ? ` for ${dirPath}` : ' from global config'}`)
+      log.warn(
+        `Could not detect git identity${dirPath ? ` for ${dirPath}` : ' from global config'}`
+      )
       return null
     }
   },
@@ -177,7 +176,9 @@ export const gitService = {
    * Scan commits for all projects and store in DB.
    * Processes in batches.
    */
-  async scanCommits(projectFilter?: number[]): Promise<{ newCommits: number; projectsScanned: number }> {
+  async scanCommits(
+    projectFilter?: number[]
+  ): Promise<{ newCommits: number; projectsScanned: number }> {
     const gitAvailable = await this.isGitAvailable()
     if (!gitAvailable) {
       log.warn('Git is not available on this system')
@@ -187,7 +188,10 @@ export const gitService = {
     const db = getDb()
 
     // One-time: normalize any committedAt values with timezone offsets to UTC ISO
-    const nonUtcCommits = db.select().from(gitCommits).all()
+    const nonUtcCommits = db
+      .select()
+      .from(gitCommits)
+      .all()
       .filter((c) => c.committedAt && !c.committedAt.endsWith('Z'))
     if (nonUtcCommits.length > 0) {
       log.info(`Normalizing ${nonUtcCommits.length} commit timestamps to UTC`)
@@ -214,11 +218,7 @@ export const gitService = {
 
         projectsScanned++
         const authorEmails = await this.getGitAuthorEmails(project.directoryPath)
-        const commits = await this.readCommits(
-          project.directoryPath,
-          undefined,
-          authorEmails
-        )
+        const commits = await this.readCommits(project.directoryPath, undefined, authorEmails)
 
         if (commits.length === 0) continue
 
@@ -281,15 +281,16 @@ export const gitService = {
     const allCommits = db.select().from(gitCommits).all()
     for (const commit of allCommits) {
       if (commit.sessionId != null && !validSessionIds.has(commit.sessionId)) {
-        db.update(gitCommits)
-          .set({ sessionId: null })
-          .where(eq(gitCommits.id, commit.id))
-          .run()
+        db.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.id, commit.id)).run()
       }
     }
 
     // Re-fetch after cleanup
-    const uncorrelated = db.select().from(gitCommits).all().filter((c) => c.sessionId == null)
+    const uncorrelated = db
+      .select()
+      .from(gitCommits)
+      .all()
+      .filter((c) => c.sessionId == null)
     let correlated = 0
 
     // 5-minute buffer: commits often happen shortly after a session ends
@@ -349,7 +350,9 @@ export const gitService = {
    */
   async getRemoteUrl(dirPath: string): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: dirPath })
+      const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
+        cwd: dirPath
+      })
       const raw = stdout.trim()
       if (!raw) return null
       // Normalize SSH (git@github.com:user/repo.git) to HTTPS
@@ -377,10 +380,7 @@ export const gitService = {
    */
   getSessionIdsWithCommits(): number[] {
     const db = getDb()
-    const rows = db
-      .selectDistinct({ sessionId: gitCommits.sessionId })
-      .from(gitCommits)
-      .all()
+    const rows = db.selectDistinct({ sessionId: gitCommits.sessionId }).from(gitCommits).all()
     return rows
       .filter((r): r is { sessionId: number } => r.sessionId != null)
       .map((r) => r.sessionId)

@@ -24,7 +24,12 @@ function getDateKey(isoString: string): string {
 
 function formatDateLabel(isoString: string): string {
   const d = new Date(isoString)
-  return d.toLocaleDateString([], { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString([], {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  })
 }
 
 export const reportService = {
@@ -44,9 +49,7 @@ export const reportService = {
     // Exclude inactive projects
     const excludedIds = clientProjectService.getExcludedProjectIds()
     if (excludedIds.length > 0) {
-      conditions.push(
-        or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!
-      )
+      conditions.push(or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!)
     }
 
     if (filters.clientId != null) {
@@ -114,11 +117,11 @@ export const reportService = {
       if (c.billableRate != null) clientRateMap.set(c.id, c.billableRate)
     }
 
-    const getProjectInfo = (row: typeof rows[0]) => {
+    const getProjectInfo = (row: (typeof rows)[0]) => {
       if (row.projectId != null) {
         const proj = projectMap.get(row.projectId)
         const projName = proj?.name ?? getProjectName(row.projectPath)
-        const clientName = row.clientId != null ? clientMap.get(row.clientId) ?? null : null
+        const clientName = row.clientId != null ? (clientMap.get(row.clientId) ?? null) : null
         return { projectName: projName, clientName }
       }
       return { projectName: getProjectName(row.projectPath), clientName: null }
@@ -154,23 +157,29 @@ export const reportService = {
       }
 
       case 'daily-summary': {
-        const dayMap = new Map<string, {
-          sessionCount: number
-          totalDuration: number
-          totalPrompts: number
-          totalInput: number
-          totalOutput: number
-          projects: Set<string>
-          breakdown: Map<string, {
-            clientName: string | null
-            projectName: string
+        const dayMap = new Map<
+          string,
+          {
             sessionCount: number
             totalDuration: number
             totalPrompts: number
             totalInput: number
             totalOutput: number
-          }>
-        }>()
+            projects: Set<string>
+            breakdown: Map<
+              string,
+              {
+                clientName: string | null
+                projectName: string
+                sessionCount: number
+                totalDuration: number
+                totalPrompts: number
+                totalInput: number
+                totalOutput: number
+              }
+            >
+          }
+        >()
 
         for (const row of rows) {
           const key = getDateKey(row.startedAt)
@@ -222,7 +231,11 @@ export const reportService = {
             totalOutputTokens: data.totalOutput,
             projects: Array.from(data.projects),
             breakdown: Array.from(data.breakdown.values())
-              .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') || a.projectName.localeCompare(b.projectName))
+              .sort(
+                (a, b) =>
+                  (a.clientName ?? '').localeCompare(b.clientName ?? '') ||
+                  a.projectName.localeCompare(b.projectName)
+              )
               .map((bp) => ({
                 clientName: bp.clientName,
                 projectName: bp.projectName,
@@ -239,14 +252,17 @@ export const reportService = {
       }
 
       case 'period-summary': {
-        const projectAgg = new Map<string, {
-          clientName: string | null
-          sessionCount: number
-          totalDuration: number
-          totalPrompts: number
-          totalInput: number
-          totalOutput: number
-        }>()
+        const projectAgg = new Map<
+          string,
+          {
+            clientName: string | null
+            sessionCount: number
+            totalDuration: number
+            totalPrompts: number
+            totalInput: number
+            totalOutput: number
+          }
+        >()
 
         for (const row of rows) {
           const { projectName, clientName } = getProjectInfo(row)
@@ -312,7 +328,12 @@ export const reportService = {
 
     const billedByClient = Array.from(billedAgg.values()).map((b) => {
       const hours = Math.round((b.minutes / 60) * 100) / 100
-      return { clientName: b.clientName, hours, rate: b.rate, cost: Math.round(hours * b.rate * 100) / 100 }
+      return {
+        clientName: b.clientName,
+        hours,
+        rate: b.rate,
+        cost: Math.round(hours * b.rate * 100) / 100
+      }
     })
 
     result.summary = {

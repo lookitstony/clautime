@@ -76,10 +76,7 @@ export function InvoicingPage(): React.JSX.Element {
       )}
 
       {view.type === 'detail' && (
-        <InvoiceDetailView
-          invoiceId={view.invoiceId}
-          onBack={() => setView({ type: 'list' })}
-        />
+        <InvoiceDetailView invoiceId={view.invoiceId} onBack={() => setView({ type: 'list' })} />
       )}
     </div>
   )

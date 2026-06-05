@@ -1,6 +1,10 @@
 import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../../../shared/types/live'
+import type {
+  TodayStats,
+  ProjectLiveStatus,
+  ProjectAlertConfig
+} from '../../../../shared/types/live'
 
 // Cross-window query invalidation
 const liveChannel = new BroadcastChannel('clautime-live-queries')

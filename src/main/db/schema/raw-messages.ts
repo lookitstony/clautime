@@ -42,7 +42,11 @@ export const progressEvents = sqliteTable(
   },
   (table) => [
     index('idx_progress_events_source_timestamp').on(table.sourceFile, table.timestamp),
-    uniqueIndex('idx_progress_events_unique').on(table.sourceFile, table.timestamp, table.isSubagent)
+    uniqueIndex('idx_progress_events_unique').on(
+      table.sourceFile,
+      table.timestamp,
+      table.isSubagent
+    )
   ]
 )
 

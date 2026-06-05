@@ -21,12 +21,18 @@ export function WidgetPanel({ layout, onToggle }: WidgetPanelProps): React.JSX.E
           Customize
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 border-[var(--surface-border)] bg-[var(--background-elevated)] p-2 text-[var(--text-primary)]">
+      <PopoverContent
+        align="end"
+        className="w-64 border-[var(--surface-border)] bg-[var(--background-elevated)] p-2 text-[var(--text-primary)]"
+      >
         <div className="space-y-1">
           {WIDGET_REGISTRY.map((widget) => {
             const Icon = widget.icon
             return (
-              <div key={widget.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--background-elevated)]">
+              <div
+                key={widget.id}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--background-elevated)]"
+              >
                 <Icon size={16} className="shrink-0 text-[var(--text-muted)]" />
                 <span className="flex-1 text-xs">{widget.title}</span>
                 <Switch

@@ -14,7 +14,14 @@ import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
-import type { SessionFilters, ScanResult, PromptTiming, UpdateSession, GapAnalysis, TimeBreakdownDay } from '../../shared/types/session'
+import type {
+  SessionFilters,
+  ScanResult,
+  PromptTiming,
+  UpdateSession,
+  GapAnalysis,
+  TimeBreakdownDay
+} from '../../shared/types/session'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
@@ -81,7 +88,13 @@ export const sessionService = {
     if (filesToProcess.length === 0) {
       const durationMs = Date.now() - startTime
       log.info(`Scan complete (no changes) in ${durationMs}ms`)
-      return { newSessions: 0, updatedFiles: 0, totalFiles: allFiles.length, durationMs, attributedCount: 0 }
+      return {
+        newSessions: 0,
+        updatedFiles: 0,
+        totalFiles: allFiles.length,
+        durationMs,
+        attributedCount: 0
+      }
     }
 
     // 3. Parse changed files
@@ -117,9 +130,7 @@ export const sessionService = {
             .map((r) => r.id)
 
           if (staleIds.length > 0) {
-            tx.delete(aiSummaries)
-              .where(inArray(aiSummaries.sessionId, staleIds))
-              .run()
+            tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, staleIds)).run()
             tx.update(gitCommits)
               .set({ sessionId: null })
               .where(inArray(gitCommits.sessionId, staleIds))
@@ -222,17 +233,33 @@ export const sessionService = {
 
     const idleTimeoutStr = settingsService.getSetting('idle_timeout_minutes')
     const parsedTimeout = idleTimeoutStr ? parseInt(idleTimeoutStr, 10) : NaN
-    const idleTimeoutMinutes = Number.isNaN(parsedTimeout) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsedTimeout
+    const idleTimeoutMinutes = Number.isNaN(parsedTimeout)
+      ? DEFAULT_IDLE_TIMEOUT_MINUTES
+      : parsedTimeout
 
     log.info(`Rebuilding sessions from raw messages (idle timeout: ${idleTimeoutMinutes}min)`)
 
     // 1. Query all raw messages grouped by sourceFile
-    const allRawMessages = db.select().from(rawMessages).orderBy(rawMessages.sourceFile, rawMessages.timestamp).all()
-    const allProgressEvents = db.select().from(progressEvents).orderBy(progressEvents.sourceFile, progressEvents.timestamp).all()
+    const allRawMessages = db
+      .select()
+      .from(rawMessages)
+      .orderBy(rawMessages.sourceFile, rawMessages.timestamp)
+      .all()
+    const allProgressEvents = db
+      .select()
+      .from(progressEvents)
+      .orderBy(progressEvents.sourceFile, progressEvents.timestamp)
+      .all()
 
     if (allRawMessages.length === 0) {
       log.info('No raw messages to rebuild from')
-      return { newSessions: 0, updatedFiles: 0, totalFiles: 0, durationMs: Date.now() - startTime, attributedCount: 0 }
+      return {
+        newSessions: 0,
+        updatedFiles: 0,
+        totalFiles: 0,
+        durationMs: Date.now() - startTime,
+        attributedCount: 0
+      }
     }
 
     // 2. Group by sourceFile (main messages only, isSubagent=0)
@@ -269,14 +296,18 @@ export const sessionService = {
         cwd: rm.cwd,
         gitBranch: rm.gitBranch,
         model: rm.model,
-        usage: (rm.inputTokens || rm.outputTokens || rm.cacheCreationInputTokens || rm.cacheReadInputTokens)
-          ? {
-              inputTokens: rm.inputTokens,
-              outputTokens: rm.outputTokens,
-              cacheCreationInputTokens: rm.cacheCreationInputTokens,
-              cacheReadInputTokens: rm.cacheReadInputTokens
-            }
-          : null,
+        usage:
+          rm.inputTokens ||
+          rm.outputTokens ||
+          rm.cacheCreationInputTokens ||
+          rm.cacheReadInputTokens
+            ? {
+                inputTokens: rm.inputTokens,
+                outputTokens: rm.outputTokens,
+                cacheCreationInputTokens: rm.cacheCreationInputTokens,
+                cacheReadInputTokens: rm.cacheReadInputTokens
+              }
+            : null,
         uuid: rm.uuid,
         parentUuid: rm.parentUuid,
         isToolResult: rm.isToolResult === 1,
@@ -316,12 +347,15 @@ export const sessionService = {
               cwd: sm.cwd,
               gitBranch: sm.gitBranch,
               model: sm.model,
-              usage: (sm.inputTokens || sm.outputTokens) ? {
-                inputTokens: sm.inputTokens,
-                outputTokens: sm.outputTokens,
-                cacheCreationInputTokens: sm.cacheCreationInputTokens,
-                cacheReadInputTokens: sm.cacheReadInputTokens
-              } : null,
+              usage:
+                sm.inputTokens || sm.outputTokens
+                  ? {
+                      inputTokens: sm.inputTokens,
+                      outputTokens: sm.outputTokens,
+                      cacheCreationInputTokens: sm.cacheCreationInputTokens,
+                      cacheReadInputTokens: sm.cacheReadInputTokens
+                    }
+                  : null,
               uuid: sm.uuid,
               parentUuid: sm.parentUuid,
               isToolResult: sm.isToolResult === 1,
@@ -372,11 +406,18 @@ export const sessionService = {
 
     // 5. Preserve user edits from existing auto sessions
     const existingAuto = db.select().from(sessions).where(eq(sessions.source, 'auto')).all()
-    const editsMap = new Map<string, { projectId: number | null; clientId: number | null; description: string | null }>()
+    const editsMap = new Map<
+      string,
+      { projectId: number | null; clientId: number | null; description: string | null }
+    >()
     for (const s of existingAuto) {
       if (s.projectId != null || s.clientId != null || s.description != null) {
         const key = `${s.claudeSessionId}|${s.startedAt}`
-        editsMap.set(key, { projectId: s.projectId, clientId: s.clientId, description: s.description })
+        editsMap.set(key, {
+          projectId: s.projectId,
+          clientId: s.clientId,
+          description: s.description
+        })
       }
     }
 
@@ -386,16 +427,12 @@ export const sessionService = {
     db.transaction((tx) => {
       if (autoIds.length > 0) {
         // FK cleanup before deleting auto sessions
-        tx.delete(aiSummaries)
-          .where(inArray(aiSummaries.sessionId, autoIds))
-          .run()
+        tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, autoIds)).run()
         tx.update(gitCommits)
           .set({ sessionId: null })
           .where(inArray(gitCommits.sessionId, autoIds))
           .run()
-        tx.delete(sessions)
-          .where(eq(sessions.source, 'auto'))
-          .run()
+        tx.delete(sessions).where(eq(sessions.source, 'auto')).run()
       }
 
       if (detected.length > 0) {
@@ -464,7 +501,10 @@ export const sessionService = {
    */
   async _backfillIfNeeded(claudeDir?: string, projectFilter?: string[]): Promise<void> {
     const db = getDb()
-    const count = db.select({ count: sql<number>`count(*)` }).from(rawMessages).get()
+    const count = db
+      .select({ count: sql<number>`count(*)` })
+      .from(rawMessages)
+      .get()
     if (count && count.count > 0) return
 
     log.info('Raw messages table empty — running backfill...')
@@ -483,7 +523,11 @@ export const sessionService = {
     // Synthesize records for compacted files (existing DB sessions with no raw_messages)
     const existingAutoSessions = db.select().from(sessions).where(eq(sessions.source, 'auto')).all()
     const filesWithRaw = new Set(
-      db.select({ sf: rawMessages.sourceFile }).from(rawMessages).all().map((r) => r.sf)
+      db
+        .select({ sf: rawMessages.sourceFile })
+        .from(rawMessages)
+        .all()
+        .map((r) => r.sf)
     )
 
     const compactedSessions = existingAutoSessions.filter(
@@ -584,9 +628,7 @@ export const sessionService = {
     // Exclude sessions belonging to inactive (excluded) projects
     const excludedIds = clientProjectService.getExcludedProjectIds()
     if (excludedIds.length > 0) {
-      conditions.push(
-        or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!
-      )
+      conditions.push(or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!)
     }
 
     if (filters?.projectPath) {
@@ -707,7 +749,10 @@ export const sessionService = {
    * Split a session into two at the given split point.
    * Returns both new sessions. The original is deleted.
    */
-  splitSession(id: number, splitAt: string): [typeof sessions.$inferSelect, typeof sessions.$inferSelect] {
+  splitSession(
+    id: number,
+    splitAt: string
+  ): [typeof sessions.$inferSelect, typeof sessions.$inferSelect] {
     const db = getDb()
     const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
     if (!existing) {
@@ -817,11 +862,13 @@ export const sessionService = {
       .all()
 
     if (dbMessages.length > 0) {
-      return buildTimingsFromMessages(dbMessages.map((rm) => ({
-        type: rm.type,
-        timestamp: rm.timestamp,
-        isToolResult: rm.isToolResult === 1
-      })))
+      return buildTimingsFromMessages(
+        dbMessages.map((rm) => ({
+          type: rm.type,
+          timestamp: rm.timestamp,
+          isToolResult: rm.isToolResult === 1
+        }))
+      )
     }
 
     // Fall back to JSONL file parsing
@@ -838,11 +885,13 @@ export const sessionService = {
       })
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
 
-    return buildTimingsFromMessages(msgs.map((m) => ({
-      type: m.type,
-      timestamp: m.timestamp,
-      isToolResult: m.isToolResult
-    })))
+    return buildTimingsFromMessages(
+      msgs.map((m) => ({
+        type: m.type,
+        timestamp: m.timestamp,
+        isToolResult: m.isToolResult
+      }))
+    )
   },
 
   /**
@@ -857,24 +906,31 @@ export const sessionService = {
 
     // Get sessions in date range (excluding inactive projects)
     const excludedIds = clientProjectService.getExcludedProjectIds()
-    const excludeCondition = excludedIds.length > 0
-      ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
-      : undefined
-    const sessionRows = db.select()
+    const excludeCondition =
+      excludedIds.length > 0
+        ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
+        : undefined
+    const sessionRows = db
+      .select()
       .from(sessions)
-      .where(and(
-        gte(sessions.startedAt, startDate),
-        lte(sessions.startedAt, endDate),
-        eq(sessions.source, 'auto'),
-        excludeCondition
-      ))
+      .where(
+        and(
+          gte(sessions.startedAt, startDate),
+          lte(sessions.startedAt, endDate),
+          eq(sessions.source, 'auto'),
+          excludeCondition
+        )
+      )
       .orderBy(sessions.startedAt)
       .all()
 
     if (sessionRows.length === 0) return []
 
     // For each session, get raw messages and compute breakdown
-    const dailyMap = new Map<string, { workMinutes: number; idleMinutes: number; totalMinutes: number }>()
+    const dailyMap = new Map<
+      string,
+      { workMinutes: number; idleMinutes: number; totalMinutes: number }
+    >()
 
     for (const session of sessionRows) {
       const date = session.startedAt.slice(0, 10)
@@ -888,7 +944,8 @@ export const sessionService = {
         conditions.push(eq(rawMessages.sourceFile, session.sourceFile))
       }
 
-      const msgs = db.select({ timestamp: rawMessages.timestamp })
+      const msgs = db
+        .select({ timestamp: rawMessages.timestamp })
         .from(rawMessages)
         .where(and(...conditions))
         .orderBy(rawMessages.timestamp)
@@ -899,7 +956,9 @@ export const sessionService = {
 
       if (msgs.length >= 2) {
         for (let i = 1; i < msgs.length; i++) {
-          const gap = (new Date(msgs[i].timestamp).getTime() - new Date(msgs[i - 1].timestamp).getTime()) / 60_000
+          const gap =
+            (new Date(msgs[i].timestamp).getTime() - new Date(msgs[i - 1].timestamp).getTime()) /
+            60_000
           if (gap > 0 && gap <= idleTimeout) {
             if (gap < WORK_THRESHOLD) {
               workMin += gap
@@ -933,7 +992,9 @@ export const sessionService = {
   /** @internal */
   _getIdleTimeout(): number {
     const setting = settingsService.getSetting('idle_timeout_minutes')
-    return setting ? parseInt(setting, 10) || DEFAULT_IDLE_TIMEOUT_MINUTES : DEFAULT_IDLE_TIMEOUT_MINUTES
+    return setting
+      ? parseInt(setting, 10) || DEFAULT_IDLE_TIMEOUT_MINUTES
+      : DEFAULT_IDLE_TIMEOUT_MINUTES
   },
 
   /**
@@ -962,7 +1023,8 @@ export const sessionService = {
       const prevTime = new Date(msgs[i - 1].timestamp).getTime()
       const currTime = new Date(msgs[i].timestamp).getTime()
       const gapMinutes = (currTime - prevTime) / 60_000
-      if (gapMinutes > 0 && gapMinutes < 480) { // Cap at 8 hours, ignore negatives
+      if (gapMinutes > 0 && gapMinutes < 480) {
+        // Cap at 8 hours, ignore negatives
         gaps.push(Math.round(gapMinutes * 10) / 10) // 1 decimal
       }
     }
@@ -982,7 +1044,9 @@ export const sessionService = {
 
     // Work time = sum of small gaps (< 2 min) — actual active coding time between prompts
     const WORK_THRESHOLD = 2
-    const workMinutes = Math.round(gaps.filter((g) => g < WORK_THRESHOLD).reduce((s, g) => s + g, 0))
+    const workMinutes = Math.round(
+      gaps.filter((g) => g < WORK_THRESHOLD).reduce((s, g) => s + g, 0)
+    )
 
     // Session counts at various timeout values
     const timeoutValues = [5, 10, 15, 20, 25, 30, 45, 60]
@@ -1003,7 +1067,9 @@ export const sessionService = {
   }
 }
 
-function buildTimingsFromMessages(msgs: { type: string; timestamp: string; isToolResult: boolean }[]): PromptTiming[] {
+function buildTimingsFromMessages(
+  msgs: { type: string; timestamp: string; isToolResult: boolean }[]
+): PromptTiming[] {
   const timings: PromptTiming[] = []
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
@@ -1090,8 +1156,9 @@ async function storeRawMessages(parsedSessions: ParsedSessionData[]): Promise<vo
       }
 
       // Store subagent messages
-      for (const msg of (parsed.subagentMessages ?? [])) {
-        const subSourceFile = (msg as ParsedMessage & { sourceFile?: string }).sourceFile || parsed.sourceFile
+      for (const msg of parsed.subagentMessages ?? []) {
+        const subSourceFile =
+          (msg as ParsedMessage & { sourceFile?: string }).sourceFile || parsed.sourceFile
 
         if (msg.uuid) {
           tx.run(
@@ -1149,7 +1216,7 @@ async function storeRawMessages(parsedSessions: ParsedSessionData[]): Promise<vo
       }
 
       // Store subagent progress events
-      for (const ts of (parsed.subagentProgressTimestamps ?? [])) {
+      for (const ts of parsed.subagentProgressTimestamps ?? []) {
         tx.run(
           sql`INSERT OR IGNORE INTO progress_events (source_file, timestamp, is_subagent) VALUES (${parsed.sourceFile}, ${ts}, ${1})`
         )
@@ -1195,11 +1262,7 @@ async function filterChangedFiles(
       const fileStat = await stat(filePath)
       const mtime = fileStat.mtime.toISOString()
 
-      const record = db
-        .select()
-        .from(scanState)
-        .where(eq(scanState.filePath, filePath))
-        .get()
+      const record = db.select().from(scanState).where(eq(scanState.filePath, filePath)).get()
 
       const isNew = !record
       const isModified = record && mtime > record.lastScannedAt
@@ -1207,7 +1270,9 @@ async function filterChangedFiles(
 
       if (isNew || isModified || isCompacted) {
         if (isCompacted) {
-          log.info(`Compaction detected for ${filePath}: ${record!.lastFileSize} → ${fileStat.size}`)
+          log.info(
+            `Compaction detected for ${filePath}: ${record!.lastFileSize} → ${fileStat.size}`
+          )
         }
         files.push(filePath)
         mtimes.set(filePath, mtime)

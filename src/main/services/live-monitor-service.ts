@@ -38,9 +38,7 @@ function formatDuration(minutes: number): string {
  * Merge overlapping time intervals and return total wall-clock minutes.
  * Same algorithm as computeHumanMinutes in renderer use-sessions.ts.
  */
-function computeHumanMinutes(
-  intervals: { startedAt: string; endedAt: string }[]
-): number {
+function computeHumanMinutes(intervals: { startedAt: string; endedAt: string }[]): number {
   if (intervals.length === 0) return 0
 
   const sorted = intervals
@@ -71,10 +69,18 @@ function computeHumanMinutes(
 export const liveMonitorService = {
   _monitorInterval: null as ReturnType<typeof setInterval> | null,
   _alertedGaps: new Map<number, string>(),
-  _promptTimestampCache: new Map<string, { mtime: number; lastPromptAt: string; awaitingResponse: boolean; state: 'idle' | 'awaiting' | 'tool-pending' | 'processing' }>(),
+  _promptTimestampCache: new Map<
+    string,
+    {
+      mtime: number
+      lastPromptAt: string
+      awaitingResponse: boolean
+      state: 'idle' | 'awaiting' | 'tool-pending' | 'processing'
+    }
+  >(),
   // Track when each file's mtime last changed — to detect active writing vs stale
   _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
-  _lastEvictionDate: '',  // ISO date string for cache eviction on date rollover
+  _lastEvictionDate: '', // ISO date string for cache eviction on date rollover
   // Track when each project stopped processing — idle time starts from here, not from lastPromptAt
   _idleSince: new Map<number, number>(),
   _wasProcessing: new Map<number, boolean>(),
@@ -82,7 +88,11 @@ export const liveMonitorService = {
   _lastActiveAt: new Map<string, number>(),
 
   _escapeXml(str: string): string {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
   },
 
   getTodayStats(): TodayStats {
@@ -90,17 +100,19 @@ export const liveMonitorService = {
     const todayMidnight = getTodayMidnightISO()
 
     const excludedIds = clientProjectService.getExcludedProjectIds()
-    const excludeCondition = excludedIds.length > 0
-      ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
-      : undefined
+    const excludeCondition =
+      excludedIds.length > 0
+        ? or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))
+        : undefined
 
-    const todayFilter = or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight))
+    const todayFilter = or(
+      gte(sessions.startedAt, todayMidnight),
+      gte(sessions.endedAt, todayMidnight)
+    )
     let todaySessions = db
       .select()
       .from(sessions)
-      .where(excludeCondition
-        ? and(todayFilter, excludeCondition)
-        : todayFilter)
+      .where(excludeCondition ? and(todayFilter, excludeCondition) : todayFilter)
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
@@ -277,7 +289,7 @@ export const liveMonitorService = {
         lastPromptAt,
         isProcessing,
         isWatching: p.isWatching === 1,
-        alertSound: (!p.alertSound || p.alertSound === 'default') ? 'system' : p.alertSound,
+        alertSound: !p.alertSound || p.alertSound === 'default' ? 'system' : p.alertSound,
         totalHours: formatDuration(totalMinutes),
         sessionCount: projectSessions.length,
         totalPrompts,
@@ -289,7 +301,9 @@ export const liveMonitorService = {
     return results
   },
 
-  async getLatestPromptTimestamps(): Promise<Map<string, { lastPromptAt: string; isProcessing: boolean }>> {
+  async getLatestPromptTimestamps(): Promise<
+    Map<string, { lastPromptAt: string; isProcessing: boolean }>
+  > {
     const claudeDir = settingsService.getSetting('claude_dir') ?? join(homedir(), '.claude')
     const projectsDir = join(claudeDir, 'projects')
     log.debug(`getLatestPromptTimestamps: scanning ${projectsDir}`)
@@ -331,7 +345,10 @@ export const liveMonitorService = {
           if (!entry.isDirectory()) continue
           try {
             const subagentsDir = join(projectPath, entry.name, 'subagents')
-            const subEntries = await readdir(subagentsDir, { withFileTypes: true, encoding: 'utf8' })
+            const subEntries = await readdir(subagentsDir, {
+              withFileTypes: true,
+              encoding: 'utf8'
+            })
             for (const sub of subEntries) {
               if (sub.isFile() && sub.name.endsWith('.jsonl')) {
                 const composedName = join(entry.name, 'subagents', sub.name)
@@ -349,7 +366,7 @@ export const liveMonitorService = {
         // We need to detect activity across ALL files in the project dir tree.
         let latestFile: string | null = null
         let latestMtime = 0
-        let latestAnyMtime = 0  // Across ALL files including subagents
+        let latestAnyMtime = 0 // Across ALL files including subagents
         let anyRecentlyWritten = false
         let subagentRecentlyWritten = false
 
@@ -367,7 +384,7 @@ export const liveMonitorService = {
               this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
             }
             const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
-            if ((now.getTime() - lastChanged) < 30_000) {
+            if (now.getTime() - lastChanged < 30_000) {
               anyRecentlyWritten = true
               if (isSubagentFile) subagentRecentlyWritten = true
             }
@@ -394,7 +411,7 @@ export const liveMonitorService = {
         // where main JSONL is old but subagent files were written recently.
         // 3min window bridges compaction gaps (sidechain finishes before main JSONL rewrite).
         // Post-compaction false positives handled by consecutive user-prompt detection in tailRead.
-        const recentlyModifiedAny = (now.getTime() - latestAnyMtime) < 3 * 60_000
+        const recentlyModifiedAny = now.getTime() - latestAnyMtime < 3 * 60_000
 
         // Check cache — only reuse if mtime unchanged
         const cacheKey = latestFile
@@ -406,14 +423,18 @@ export const liveMonitorService = {
           //    - tool-pending uses 30s window (permission prompts should go green quickly)
           //    - awaiting/processing uses 3min window (bridges compaction gaps)
           // 3. A subagent file is actively being written (background agents/compaction)
-          const awaitingWindow = cached.state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
-          let fileIsActive = anyRecentlyWritten || (cached.awaitingResponse && awaitingWindow) || subagentRecentlyWritten
+          const awaitingWindow =
+            cached.state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
+          let fileIsActive =
+            anyRecentlyWritten ||
+            (cached.awaitingResponse && awaitingWindow) ||
+            subagentRecentlyWritten
           // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
           if (fileIsActive) {
             this._lastActiveAt.set(dir.name, now.getTime())
           } else {
             const lastActive = this._lastActiveAt.get(dir.name)
-            if (lastActive && (now.getTime() - lastActive) < 15_000) {
+            if (lastActive && now.getTime() - lastActive < 15_000) {
               fileIsActive = true
             }
           }
@@ -436,13 +457,14 @@ export const liveMonitorService = {
           // tool-pending with no recent writes = permission prompt (use 30s window)
           // awaiting/processing = Claude actively working (use 3min window for compaction gaps)
           const awaitingWindow = state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
-          let fileIsActive = anyRecentlyWritten || (awaitingResponse && awaitingWindow) || subagentRecentlyWritten
+          let fileIsActive =
+            anyRecentlyWritten || (awaitingResponse && awaitingWindow) || subagentRecentlyWritten
           // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
           if (fileIsActive) {
             this._lastActiveAt.set(dir.name, now.getTime())
           } else {
             const lastActive = this._lastActiveAt.get(dir.name)
-            if (lastActive && (now.getTime() - lastActive) < 15_000) {
+            if (lastActive && now.getTime() - lastActive < 15_000) {
               fileIsActive = true
             }
           }
@@ -473,7 +495,7 @@ export const liveMonitorService = {
           .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
           .all()
         const activeProjectIds = new Set(
-          todaySessionRows.map(s => s.projectId).filter((id): id is number => id != null)
+          todaySessionRows.map((s) => s.projectId).filter((id): id is number => id != null)
         )
         widgetService.syncWithActiveProjects(activeProjectIds)
 
@@ -481,9 +503,7 @@ export const liveMonitorService = {
 
         const idleTimeoutStr = settingsService.getSetting('idle_timeout_minutes')
         const parsed = idleTimeoutStr ? parseInt(idleTimeoutStr, 10) : NaN
-        const idleTimeoutMinutes = Number.isNaN(parsed)
-          ? DEFAULT_IDLE_TIMEOUT_MINUTES
-          : parsed
+        const idleTimeoutMinutes = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
 
         // Hide widgets that have been idle for 1 hour (matches widget "idle" text threshold)
         if (settingsService.getSetting('hide_inactive_widgets') !== 'false') {
@@ -491,7 +511,11 @@ export const liveMonitorService = {
           const WIDGET_IDLE_MS = 3600_000 // 1 hour — same as FloatingWidget's "idle" cutoff
           const notIdleIds = new Set<number>()
           const db2 = getDb()
-          const allProjects = db2.select({ id: projects.id, directoryPath: projects.directoryPath }).from(projects).where(eq(projects.isActive, true)).all()
+          const allProjects = db2
+            .select({ id: projects.id, directoryPath: projects.directoryPath })
+            .from(projects)
+            .where(eq(projects.isActive, true))
+            .all()
           for (const p of allProjects) {
             const encoded = encodeProjectPath(p.directoryPath)
             const ts = timestamps.get(encoded)
@@ -516,7 +540,8 @@ export const liveMonitorService = {
         const alertMode = settingsService.getSetting('alert_threshold_mode') ?? 'percent'
         let thresholdMs: number
         if (alertMode === 'minutes') {
-          const alertMin = parseInt(settingsService.getSetting('alert_threshold_minutes') ?? '5', 10) || 5
+          const alertMin =
+            parseInt(settingsService.getSetting('alert_threshold_minutes') ?? '5', 10) || 5
           thresholdMs = alertMin * 60_000
         } else {
           thresholdMs = idleTimeoutMinutes * 60_000 * 0.75
@@ -537,7 +562,9 @@ export const liveMonitorService = {
 
         const now = Date.now()
 
-        log.debug(`Alert check: ${watchedConfigs.length} watched, ${timestamps.size} timestamps, threshold ${Math.round(thresholdMs / 1000)}s`)
+        log.debug(
+          `Alert check: ${watchedConfigs.length} watched, ${timestamps.size} timestamps, threshold ${Math.round(thresholdMs / 1000)}s`
+        )
 
         for (const config of watchedConfigs) {
           // Match encoded .claude/projects/ dir name against project's directoryPath
@@ -591,10 +618,10 @@ export const liveMonitorService = {
 
             const projectName = projectRow?.name ?? 'Unknown project'
             const elapsedSec = Math.round(elapsed / 1000)
-            const idleText = elapsedSec < 60
-              ? `${elapsedSec}s`
-              : `${Math.round(elapsedSec / 60)}m`
-            log.info(`Alert: ${projectName} idle ${idleText} (threshold ${Math.round(thresholdMs / 60_000)}m)`)
+            const idleText = elapsedSec < 60 ? `${elapsedSec}s` : `${Math.round(elapsedSec / 60)}m`
+            log.info(
+              `Alert: ${projectName} idle ${idleText} (threshold ${Math.round(thresholdMs / 60_000)}m)`
+            )
 
             if (Notification.isSupported()) {
               const useSystemSound = config.alertSound === 'system'
@@ -604,7 +631,9 @@ export const liveMonitorService = {
                 silent: !useSystemSound
               })
               notification.on('show', () => log.info(`Notification displayed for ${projectName}`))
-              notification.on('failed', (_e, err) => log.warn(`Notification failed for ${projectName}:`, err))
+              notification.on('failed', (_e, err) =>
+                log.warn(`Notification failed for ${projectName}:`, err)
+              )
               notification.show()
             } else {
               log.warn('Notifications not supported on this system')
@@ -614,7 +643,11 @@ export const liveMonitorService = {
               this.playSound(config.alertSound)
             }
             // Notify floating widget
-            try { widgetService.notifyAlert(projectName) } catch { /* widget may not be open */ }
+            try {
+              widgetService.notifyAlert(projectName)
+            } catch {
+              /* widget may not be open */
+            }
             this._alertedGaps.set(config.projectId, lastPromptAt)
           }
         }
@@ -661,7 +694,7 @@ export const liveMonitorService = {
 
     return {
       projectId,
-      alertSound: (!row?.alertSound || row.alertSound === 'default') ? 'system' : row.alertSound,
+      alertSound: !row?.alertSound || row.alertSound === 'default' ? 'system' : row.alertSound,
       isWatching: row?.isWatching === 1
     }
   },
@@ -737,7 +770,13 @@ export const liveMonitorService = {
  * and whether the session is awaiting a response (no final assistant message).
  * Only reads the last ~64KB to minimize I/O.
  */
-async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: string | null; awaitingResponse: boolean; state: 'idle' | 'awaiting' | 'tool-pending' | 'processing' }> {
+async function tailReadLastPrompt(
+  filePath: string
+): Promise<{
+  lastPromptAt: string | null
+  awaitingResponse: boolean
+  state: 'idle' | 'awaiting' | 'tool-pending' | 'processing'
+}> {
   let fh: Awaited<ReturnType<typeof open>> | null = null
   try {
     fh = await open(filePath, 'r')
@@ -765,7 +804,9 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
         try {
           const obj = JSON.parse(l)
           return obj.type === 'user' && !obj.toolUseResult && obj.timestamp
-        } catch { return false }
+        } catch {
+          return false
+        }
       })
       if (hasUserPrompt || readSize >= fileSize) break
     }
@@ -788,8 +829,9 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
           lastMessageState = 'processing'
           recentTransitions.push('tool-result')
         } else if (obj.type === 'assistant') {
-          const hasToolUse = Array.isArray(obj.message?.content)
-            && obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
+          const hasToolUse =
+            Array.isArray(obj.message?.content) &&
+            obj.message.content.some((b: { type?: string }) => b.type === 'tool_use')
           lastMessageState = hasToolUse ? 'tool-pending' : 'idle'
           recentTransitions.push(hasToolUse ? 'assistant-tools' : 'assistant-idle')
         }
@@ -829,4 +871,3 @@ async function tailReadLastPrompt(filePath: string): Promise<{ lastPromptAt: str
     await fh?.close()
   }
 }
-

@@ -1,11 +1,24 @@
 import { useMemo } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend
+} from 'recharts'
 import { useChartColors } from '../chart-theme'
 import type { WidgetProps } from '../widget-registry'
 import { formatDateKey } from '@/lib/format'
 
 function EmptyMessage(): React.JSX.Element {
-  return <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">No data for this period</div>
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+      No data for this period
+    </div>
+  )
 }
 
 export default function DailyHoursChart({ sessionData }: WidgetProps): React.JSX.Element {
@@ -55,8 +68,25 @@ export default function DailyHoursChart({ sessionData }: WidgetProps): React.JSX
       <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="date" tick={{ fontSize: 11, fill: mutedColor }} />
-        <YAxis tick={{ fontSize: 11, fill: mutedColor }} label={{ value: 'Hours', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: mutedColor } }} />
-        <Tooltip contentStyle={{ backgroundColor: 'var(--background-elevated)', border: '1px solid var(--surface-border)', color: textColor, fontSize: 12 }} itemStyle={{ color: textColor }} labelStyle={{ color: textColor }} />
+        <YAxis
+          tick={{ fontSize: 11, fill: mutedColor }}
+          label={{
+            value: 'Hours',
+            angle: -90,
+            position: 'insideLeft',
+            style: { fontSize: 11, fill: mutedColor }
+          }}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: 'var(--background-elevated)',
+            border: '1px solid var(--surface-border)',
+            color: textColor,
+            fontSize: 12
+          }}
+          itemStyle={{ color: textColor }}
+          labelStyle={{ color: textColor }}
+        />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         {projectNames.map((name, i) => (
           <Bar key={name} dataKey={name} stackId="hours" fill={palette[i % palette.length]} />

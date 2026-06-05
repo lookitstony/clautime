@@ -1,10 +1,6 @@
 import { type ReactNode, useCallback, type KeyboardEvent } from 'react'
 import { ChevronRight } from 'lucide-react'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { formatDuration, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 

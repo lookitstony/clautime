@@ -1,10 +1,6 @@
 import { useState, useCallback, type KeyboardEvent } from 'react'
 import { ChevronRight, Pencil, Trash2 } from 'lucide-react'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -89,9 +85,7 @@ export function ClientCard({
             className="h-2 w-2 shrink-0 rounded-full"
             style={{ backgroundColor: client.color }}
           />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-            {client.name}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{client.name}</span>
           {client.billableRate != null && (
             <span
               className="shrink-0 text-[13px] font-bold text-[var(--accent)]"

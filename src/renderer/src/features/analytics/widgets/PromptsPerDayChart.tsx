@@ -1,5 +1,13 @@
 import { useId, useMemo } from 'react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid
+} from 'recharts'
 import { useChartColors } from '../chart-theme'
 import type { WidgetProps } from '../widget-registry'
 import { formatDateKey } from '@/lib/format'
@@ -22,7 +30,12 @@ export default function PromptsPerDayChart({ sessionData }: WidgetProps): React.
       }))
   }, [sessionData])
 
-  if (data.length === 0) return <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">No data for this period</div>
+  if (data.length === 0)
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+        No data for this period
+      </div>
+    )
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -36,7 +49,16 @@ export default function PromptsPerDayChart({ sessionData }: WidgetProps): React.
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="date" tick={{ fontSize: 11, fill: mutedColor }} />
         <YAxis tick={{ fontSize: 11, fill: mutedColor }} />
-        <Tooltip contentStyle={{ backgroundColor: 'var(--background-elevated)', border: '1px solid var(--surface-border)', color: textColor, fontSize: 12 }} itemStyle={{ color: textColor }} labelStyle={{ color: textColor }} />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: 'var(--background-elevated)',
+            border: '1px solid var(--surface-border)',
+            color: textColor,
+            fontSize: 12
+          }}
+          itemStyle={{ color: textColor }}
+          labelStyle={{ color: textColor }}
+        />
         <Area type="monotone" dataKey="prompts" stroke={accent} fill={`url(#${gradientId})`} />
       </AreaChart>
     </ResponsiveContainer>

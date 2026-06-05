@@ -25,6 +25,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 ## Review Checklist
 
 ### Architecture
+
 - [ ] Service logic in services, NOT in IPC handlers
 - [ ] No renderer importing Node.js modules directly
 - [ ] No main process importing from `@/` alias
@@ -33,6 +34,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - [ ] Shared types in `src/shared/`, not duplicated
 
 ### Code Quality
+
 - [ ] Functions under 50 lines (extract if longer)
 - [ ] No `any` types crossing IPC boundary
 - [ ] No magic numbers/strings (use constants in `src/shared/constants.ts`)
@@ -43,6 +45,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - [ ] camelCase functions, PascalCase types, UPPER_SNAKE_CASE constants
 
 ### Frontend (React/Tailwind)
+
 - [ ] TanStack Query for server data, Zustand for UI state only
 - [ ] No `useState` for data that comes from IPC
 - [ ] Query keys consistent with existing patterns (`['sessions']`, `['clients']`, etc.)
@@ -51,6 +54,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - [ ] Proper error/loading states in UI
 
 ### Security
+
 - [ ] No API keys, tokens, or secrets in source
 - [ ] No `eval()`, `new Function()`, or dynamic code execution
 - [ ] Input validation at IPC boundary
@@ -58,6 +62,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - [ ] Credential storage uses credential-service (Electron secure storage)
 
 ### Performance
+
 - [ ] No synchronous file I/O in renderer
 - [ ] JSONL parsing streams (not loading entire file into memory)
 - [ ] Database queries use indexes (check schema for indexed columns)
@@ -65,18 +70,21 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - [ ] No unnecessary re-renders (check useEffect dependencies)
 
 ### Data Integrity
+
 - [ ] Database migrations are backwards-compatible (users auto-update)
 - [ ] FK constraints used where relationships are strict
 - [ ] Null handling at IPC boundary (undefined → null serialization)
 - [ ] Date handling consistent (ISO strings in DB, Date objects in services)
 
 ### Test Coverage
+
 - [ ] New service methods have corresponding tests
 - [ ] Main process tests marked `// @vitest-environment node`
 - [ ] electron-log mocked BEFORE module imports
 - [ ] Tests use in-memory SQLite, not file DB
 
 ### Logging & Observability
+
 - [ ] Errors logged before returning ipcError
 - [ ] Non-critical failures use log.warn, not log.error
 - [ ] No sensitive data in log messages
@@ -85,6 +93,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 ## Common Issues to Flag
 
 ### 🔴 Always BLOCKING
+
 - Raw exceptions thrown across IPC (must use IpcResult)
 - Secrets/credentials in source code
 - Missing migration for schema changes
@@ -92,6 +101,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - Import cycles between services
 
 ### 🟡 Always CONCERN
+
 - Business logic in IPC handlers (should be in service)
 - Missing error handling for async operations
 - Untyped IPC payloads (`any`)
@@ -99,6 +109,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 - Console.log instead of electron-log
 
 ### 🟢 Typical NITs
+
 - Inconsistent naming conventions
 - Missing TypeScript return types on public functions
 - Verbose conditional logic that could be simplified
@@ -109,6 +120,7 @@ You review code changes in **ClauTime**, an Electron desktop app tracking Claude
 Start with a summary line: `## Review: X blocking, Y concerns, Z nits`
 
 Group findings by file. End with:
+
 ```
 ## Verdict: ✅ APPROVE / ⚠️ APPROVE WITH CONCERNS / ❌ REQUEST CHANGES
 ```

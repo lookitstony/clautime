@@ -1,5 +1,14 @@
 import { useState, useCallback, useMemo, useEffect, Fragment } from 'react'
-import { FileBarChart, Download, Loader2, ChevronRight, ChevronDown, Sparkles, GitCommit, Copy } from 'lucide-react'
+import {
+  FileBarChart,
+  Download,
+  Loader2,
+  ChevronRight,
+  ChevronDown,
+  Sparkles,
+  GitCommit,
+  Copy
+} from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -20,11 +29,23 @@ import {
   DialogDescription
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { formatDuration, formatCompactNumber, getDateRangeForPreset, type DatePreset } from '@/lib/format'
+import {
+  formatDuration,
+  formatCompactNumber,
+  getDateRangeForPreset,
+  type DatePreset
+} from '@/lib/format'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { useGenerateReport } from './use-reports'
-import type { ReportFormat, ReportResult, ReportSummary, SessionLineItem, DailySummaryItem, PeriodProjectItem } from '../../../../shared/types/report'
+import type {
+  ReportFormat,
+  ReportResult,
+  ReportSummary,
+  SessionLineItem,
+  DailySummaryItem,
+  PeriodProjectItem
+} from '../../../../shared/types/report'
 
 type ReportDatePreset = DatePreset | 'last-month' | 'custom' | 'all-time'
 
@@ -36,7 +57,11 @@ function getLastMonthRange(): { startDate: string; endDate: string } {
 }
 
 function formatTimeOnly(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  return new Date(isoString).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
 }
 
 interface ProjectGroup {
@@ -73,7 +98,10 @@ function groupByClientAndProject(items: SessionLineItem[]): ClientGroup[] {
           const bDur = b.sessions.reduce((s, i) => s + i.durationMinutes, 0)
           return bDur - aDur
         })
-      const totalDuration = projects.reduce((s, p) => s + p.sessions.reduce((ss, i) => ss + i.durationMinutes, 0), 0)
+      const totalDuration = projects.reduce(
+        (s, p) => s + p.sessions.reduce((ss, i) => ss + i.durationMinutes, 0),
+        0
+      )
       return { clientName, projects, totalDuration }
     })
     .sort((a, b) => b.totalDuration - a.totalDuration)
@@ -125,7 +153,10 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
                     className="border-t-2 border-[var(--surface-border)] cursor-pointer select-none hover:bg-[var(--background-elevated)]"
                     onClick={() => toggleClient(clientGroup.clientName)}
                   >
-                    <td colSpan={6} className="px-3 py-2 text-[13px] font-bold text-[var(--text-primary)]">
+                    <td
+                      colSpan={6}
+                      className="px-3 py-2 text-[13px] font-bold text-[var(--text-primary)]"
+                    >
                       <span className="inline-flex items-center gap-1">
                         {clientCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                         {clientGroup.clientName}
@@ -136,52 +167,88 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
                     </td>
                   </tr>
                 )}
-                {!clientCollapsed && clientGroup.projects.map((project) => {
-                  const projectKey = `${clientGroup.clientName}:${project.projectName}`
-                  const projectCollapsed = collapsedProjects.has(projectKey)
-                  const totalDuration = project.sessions.reduce((s, i) => s + i.durationMinutes, 0)
-                  const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
-                  const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
-                  return (
-                    <Fragment key={project.projectName}>
-                      <tr
-                        className="bg-[var(--background-elevated)] cursor-pointer select-none hover:brightness-[1.05]"
-                        onClick={() => toggleProject(projectKey)}
-                      >
-                        <td colSpan={2} className={cn('px-3 py-1.5 font-semibold', multiClient && 'pl-6')}>
-                          <span className="inline-flex items-center gap-1">
-                            {projectCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                            {project.projectName}
-                          </span>
-                        </td>
-                        <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
-                          {formatDuration(totalDuration)}
-                        </td>
-                        <td className="px-3 py-1.5 text-right font-mono font-semibold">{totalPrompts}</td>
-                        <td className="px-3 py-1.5 text-right font-mono font-semibold">{formatCompactNumber(totalTokens)}</td>
-                        <td className="px-3 py-1.5 text-[var(--text-muted)]">{project.sessions.length} session{project.sessions.length !== 1 ? 's' : ''}</td>
-                      </tr>
-                      {!projectCollapsed && project.sessions.map((item, i) => (
-                        <tr key={i} className="hover:bg-[var(--background-elevated)] border-t border-[var(--surface-border)]/30">
-                          <td className={cn('whitespace-nowrap px-3 py-1.5', multiClient ? 'pl-9' : 'pl-6')}>{item.date}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
-                            {formatTimeOnly(item.startedAt)}{'\u2013'}{formatTimeOnly(item.endedAt)}
+                {!clientCollapsed &&
+                  clientGroup.projects.map((project) => {
+                    const projectKey = `${clientGroup.clientName}:${project.projectName}`
+                    const projectCollapsed = collapsedProjects.has(projectKey)
+                    const totalDuration = project.sessions.reduce(
+                      (s, i) => s + i.durationMinutes,
+                      0
+                    )
+                    const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
+                    const totalTokens = project.sessions.reduce(
+                      (s, i) => s + i.inputTokens + i.outputTokens,
+                      0
+                    )
+                    return (
+                      <Fragment key={project.projectName}>
+                        <tr
+                          className="bg-[var(--background-elevated)] cursor-pointer select-none hover:brightness-[1.05]"
+                          onClick={() => toggleProject(projectKey)}
+                        >
+                          <td
+                            colSpan={2}
+                            className={cn('px-3 py-1.5 font-semibold', multiClient && 'pl-6')}
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              {projectCollapsed ? (
+                                <ChevronRight size={12} />
+                              ) : (
+                                <ChevronDown size={12} />
+                              )}
+                              {project.projectName}
+                            </span>
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono text-[var(--accent)]">
-                            {formatDuration(item.durationMinutes)}
+                          <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
+                            {formatDuration(totalDuration)}
                           </td>
-                          <td className="px-3 py-1.5 text-right font-mono">{item.promptCount}</td>
-                          <td className="px-3 py-1.5 text-right font-mono">
-                            {formatCompactNumber(item.inputTokens + item.outputTokens)}
+                          <td className="px-3 py-1.5 text-right font-mono font-semibold">
+                            {totalPrompts}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono font-semibold">
+                            {formatCompactNumber(totalTokens)}
                           </td>
                           <td className="px-3 py-1.5 text-[var(--text-muted)]">
-                            {item.source === 'auto' ? 'Auto' : 'Manual'}
+                            {project.sessions.length} session
+                            {project.sessions.length !== 1 ? 's' : ''}
                           </td>
                         </tr>
-                      ))}
-                    </Fragment>
-                  )
-                })}
+                        {!projectCollapsed &&
+                          project.sessions.map((item, i) => (
+                            <tr
+                              key={i}
+                              className="hover:bg-[var(--background-elevated)] border-t border-[var(--surface-border)]/30"
+                            >
+                              <td
+                                className={cn(
+                                  'whitespace-nowrap px-3 py-1.5',
+                                  multiClient ? 'pl-9' : 'pl-6'
+                                )}
+                              >
+                                {item.date}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
+                                {formatTimeOnly(item.startedAt)}
+                                {'\u2013'}
+                                {formatTimeOnly(item.endedAt)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-[var(--accent)]">
+                                {formatDuration(item.durationMinutes)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono">
+                                {item.promptCount}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono">
+                                {formatCompactNumber(item.inputTokens + item.outputTokens)}
+                              </td>
+                              <td className="px-3 py-1.5 text-[var(--text-muted)]">
+                                {item.source === 'auto' ? 'Auto' : 'Manual'}
+                              </td>
+                            </tr>
+                          ))}
+                      </Fragment>
+                    )
+                  })}
               </Fragment>
             )
           })}
@@ -194,10 +261,23 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
 function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.Element {
   // Reshape: day→client/project into client→project/day rows
   const clientGroups = useMemo(() => {
-    const map = new Map<string, {
-      totalSessions: number; totalMinutes: number; totalPrompts: number; totalTokens: number
-      rows: { projectName: string; date: string; sessionCount: number; totalDurationMinutes: number; totalPrompts: number; totalTokens: number }[]
-    }>()
+    const map = new Map<
+      string,
+      {
+        totalSessions: number
+        totalMinutes: number
+        totalPrompts: number
+        totalTokens: number
+        rows: {
+          projectName: string
+          date: string
+          sessionCount: number
+          totalDurationMinutes: number
+          totalPrompts: number
+          totalTokens: number
+        }[]
+      }
+    >()
 
     for (const day of items) {
       for (const bp of day.breakdown) {
@@ -225,7 +305,11 @@ function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.
     // Sort rows within each client by project name, then date
     // date is a formatted label like "Mon, Mar 10" — parse to Date for correct chronological order
     for (const group of map.values()) {
-      group.rows.sort((a, b) => a.projectName.localeCompare(b.projectName) || new Date(a.date).getTime() - new Date(b.date).getTime())
+      group.rows.sort(
+        (a, b) =>
+          a.projectName.localeCompare(b.projectName) ||
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+      )
     }
 
     // Sort clients alphabetically, Unassigned last
@@ -236,7 +320,9 @@ function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.
     })
   }, [items])
 
-  const [expandedClients, setExpandedClients] = useState<Set<string>>(() => new Set(clientGroups.map(([name]) => name)))
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(
+    () => new Set(clientGroups.map(([name]) => name))
+  )
   const toggleClient = (name: string): void => {
     setExpandedClients((prev) => {
       const next = new Set(prev)
@@ -275,27 +361,40 @@ function DailySummaryTable({ items }: { items: DailySummaryItem[] }): React.JSX.
                     </span>
                   </td>
                   <td className="px-3 py-1.5" />
-                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{group.totalSessions}</td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">
+                    {group.totalSessions}
+                  </td>
                   <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
                     {formatDuration(group.totalMinutes)}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono font-semibold">{group.totalPrompts}</td>
+                  <td className="px-3 py-1.5 text-right font-mono font-semibold">
+                    {group.totalPrompts}
+                  </td>
                   <td className="px-3 py-1.5 text-right font-mono font-semibold">
                     {formatCompactNumber(group.totalTokens)}
                   </td>
                 </tr>
-                {isExpanded && group.rows.map((row, j) => (
-                  <tr key={`${clientName}-${j}`} className="bg-[var(--background-elevated)]/50">
-                    <td className="px-3 py-1 pl-8 text-[var(--text-secondary)]">{row.projectName}</td>
-                    <td className="px-3 py-1 text-[var(--text-muted)]">{row.date}</td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{row.sessionCount}</td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--accent)]/70">{formatDuration(row.totalDurationMinutes)}</td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">{row.totalPrompts}</td>
-                    <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">
-                      {formatCompactNumber(row.totalTokens)}
-                    </td>
-                  </tr>
-                ))}
+                {isExpanded &&
+                  group.rows.map((row, j) => (
+                    <tr key={`${clientName}-${j}`} className="bg-[var(--background-elevated)]/50">
+                      <td className="px-3 py-1 pl-8 text-[var(--text-secondary)]">
+                        {row.projectName}
+                      </td>
+                      <td className="px-3 py-1 text-[var(--text-muted)]">{row.date}</td>
+                      <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">
+                        {row.sessionCount}
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono text-[var(--accent)]/70">
+                        {formatDuration(row.totalDurationMinutes)}
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">
+                        {row.totalPrompts}
+                      </td>
+                      <td className="px-3 py-1 text-right font-mono text-[var(--text-secondary)]">
+                        {formatCompactNumber(row.totalTokens)}
+                      </td>
+                    </tr>
+                  ))}
               </Fragment>
             )
           })}
@@ -313,7 +412,10 @@ function PeriodSummaryView({ report }: { report: ReportResult }): React.JSX.Elem
         <SummaryCard label="Sessions" value={String(summary.totalSessions)} />
         <SummaryCard label="Duration" value={formatDuration(summary.totalDurationMinutes)} accent />
         <SummaryCard label="Prompts" value={summary.totalPrompts.toLocaleString()} />
-        <SummaryCard label="Tokens" value={formatCompactNumber(summary.totalInputTokens + summary.totalOutputTokens)} />
+        <SummaryCard
+          label="Tokens"
+          value={formatCompactNumber(summary.totalInputTokens + summary.totalOutputTokens)}
+        />
       </div>
       <div className="overflow-auto">
         <table className="w-full text-[12px]">
@@ -331,7 +433,9 @@ function PeriodSummaryView({ report }: { report: ReportResult }): React.JSX.Elem
             {summary.projects.map((item: PeriodProjectItem, i: number) => (
               <tr key={i} className="hover:bg-[var(--background-elevated)]">
                 <td className="px-3 py-1.5 font-medium">{item.projectName}</td>
-                <td className="px-3 py-1.5 text-[var(--text-muted)]">{item.clientName ?? '\u2014'}</td>
+                <td className="px-3 py-1.5 text-[var(--text-muted)]">
+                  {item.clientName ?? '\u2014'}
+                </td>
                 <td className="px-3 py-1.5 text-right font-mono">{item.sessionCount}</td>
                 <td className="px-3 py-1.5 text-right font-mono font-semibold text-[var(--accent)]">
                   {formatDuration(item.totalDurationMinutes)}
@@ -349,10 +453,20 @@ function PeriodSummaryView({ report }: { report: ReportResult }): React.JSX.Elem
   )
 }
 
-function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: boolean }): React.JSX.Element {
+function SummaryCard({
+  label,
+  value,
+  accent
+}: {
+  label: string
+  value: string
+  accent?: boolean
+}): React.JSX.Element {
   return (
     <div className="rounded-md bg-[var(--background-elevated)] border border-[var(--surface-border)] px-3 py-2">
-      <div className={`font-mono text-lg font-bold ${accent ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
+      <div
+        className={`font-mono text-lg font-bold ${accent ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}
+      >
         {value}
       </div>
       <div className="text-[11px] text-[var(--text-muted)]">{label}</div>
@@ -369,7 +483,10 @@ function ReportFooter({
 }: {
   summary: ReportSummary
   workSummary: string | null
-  onGenerateSummary: (useAi: boolean, options: { includeOverall: boolean; includeDailyBreakdown: boolean; brief?: boolean }) => void
+  onGenerateSummary: (
+    useAi: boolean,
+    options: { includeOverall: boolean; includeDailyBreakdown: boolean; brief?: boolean }
+  ) => void
   isGenerating: boolean
   hasApiKey: boolean
 }): React.JSX.Element {
@@ -393,14 +510,25 @@ function ReportFooter({
         >
           <ChevronRight
             size={12}
-            className={cn('shrink-0 text-[var(--text-muted)] transition-transform duration-200', expanded && 'rotate-90')}
+            className={cn(
+              'shrink-0 text-[var(--text-muted)] transition-transform duration-200',
+              expanded && 'rotate-90'
+            )}
           />
-          <span className="font-mono font-semibold text-[var(--accent)]">{formatDuration(summary.totalDurationMinutes)}</span>
+          <span className="font-mono font-semibold text-[var(--accent)]">
+            {formatDuration(summary.totalDurationMinutes)}
+          </span>
           <span className="text-[var(--text-muted)]">{summary.totalSessions} sessions</span>
-          <span className="text-[var(--text-muted)]">{summary.totalPrompts.toLocaleString()} prompts</span>
-          <span className="text-[var(--text-muted)]">{formatCompactNumber(summary.totalInputTokens + summary.totalOutputTokens)} tokens</span>
+          <span className="text-[var(--text-muted)]">
+            {summary.totalPrompts.toLocaleString()} prompts
+          </span>
+          <span className="text-[var(--text-muted)]">
+            {formatCompactNumber(summary.totalInputTokens + summary.totalOutputTokens)} tokens
+          </span>
           {hasBilling && (
-            <span className="ml-auto font-mono font-semibold text-[var(--accent)]">${summary.totalBilledCost.toFixed(2)}</span>
+            <span className="ml-auto font-mono font-semibold text-[var(--accent)]">
+              ${summary.totalBilledCost.toFixed(2)}
+            </span>
           )}
         </button>
       </div>
@@ -416,7 +544,10 @@ function ReportFooter({
                   <div key={b.clientName} className="flex items-center justify-between text-[12px]">
                     <span className="text-[var(--text-secondary)]">{b.clientName}</span>
                     <span className="font-mono text-[var(--text-secondary)]">
-                      {b.hours}h {'\u00d7'} ${b.rate}/hr = <span className="font-semibold text-[var(--accent)]">${b.cost.toFixed(2)}</span>
+                      {b.hours}h {'\u00d7'} ${b.rate}/hr ={' '}
+                      <span className="font-semibold text-[var(--accent)]">
+                        ${b.cost.toFixed(2)}
+                      </span>
                     </span>
                   </div>
                 ))}
@@ -424,16 +555,25 @@ function ReportFooter({
               {summary.billedByClient.length > 1 && (
                 <div className="mt-2 flex items-center justify-between border-t border-[var(--surface-border)] pt-2 text-[13px] font-semibold">
                   <span className="text-[var(--text-primary)]">Total</span>
-                  <span className="font-mono text-[var(--accent)]">${summary.totalBilledCost.toFixed(2)}</span>
+                  <span className="font-mono text-[var(--accent)]">
+                    ${summary.totalBilledCost.toFixed(2)}
+                  </span>
                 </div>
               )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <SummaryCard label="Duration" value={formatDuration(summary.totalDurationMinutes)} accent />
+            <SummaryCard
+              label="Duration"
+              value={formatDuration(summary.totalDurationMinutes)}
+              accent
+            />
             <SummaryCard label="Sessions" value={String(summary.totalSessions)} />
             <SummaryCard label="Prompts" value={summary.totalPrompts.toLocaleString()} />
-            <SummaryCard label="Tokens" value={formatCompactNumber(summary.totalInputTokens + summary.totalOutputTokens)} />
+            <SummaryCard
+              label="Tokens"
+              value={formatCompactNumber(summary.totalInputTokens + summary.totalOutputTokens)}
+            />
           </div>
 
           {/* Work Summary */}
@@ -464,7 +604,10 @@ function ReportFooter({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(false, { includeOverall, includeDailyBreakdown }) }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onGenerateSummary(false, { includeOverall, includeDailyBreakdown })
+                  }}
                   disabled={isGenerating || (!includeOverall && !includeDailyBreakdown)}
                   className="h-6 px-2 text-[11px]"
                 >
@@ -475,8 +618,13 @@ function ReportFooter({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(true, { includeOverall, includeDailyBreakdown }) }}
-                  disabled={isGenerating || !hasApiKey || (!includeOverall && !includeDailyBreakdown)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onGenerateSummary(true, { includeOverall, includeDailyBreakdown })
+                  }}
+                  disabled={
+                    isGenerating || !hasApiKey || (!includeOverall && !includeDailyBreakdown)
+                  }
                   title={hasApiKey ? 'Summarize with AI' : 'Add an API key in Settings to enable'}
                   className="h-6 px-2 text-[11px]"
                 >
@@ -487,9 +635,18 @@ function ReportFooter({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={(e) => { e.stopPropagation(); onGenerateSummary(true, { includeOverall, includeDailyBreakdown, brief: true }) }}
-                  disabled={isGenerating || !hasApiKey || (!includeOverall && !includeDailyBreakdown)}
-                  title={hasApiKey ? 'Generate a single-sentence brief for timesheets' : 'Add an API key in Settings to enable'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onGenerateSummary(true, { includeOverall, includeDailyBreakdown, brief: true })
+                  }}
+                  disabled={
+                    isGenerating || !hasApiKey || (!includeOverall && !includeDailyBreakdown)
+                  }
+                  title={
+                    hasApiKey
+                      ? 'Generate a single-sentence brief for timesheets'
+                      : 'Add an API key in Settings to enable'
+                  }
                   className="h-6 px-2 text-[11px]"
                 >
                   <Sparkles className="mr-1 h-3 w-3" />
@@ -522,9 +679,15 @@ function ReportFooter({
                 {workSummary.split('\n').map((line, i) => {
                   const trimmed = line.trim()
                   if (!trimmed) return null
-                  if (trimmed.startsWith('## ') || (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.includes('- '))) {
+                  if (
+                    trimmed.startsWith('## ') ||
+                    (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.includes('- '))
+                  ) {
                     return (
-                      <p key={i} className="mt-2 text-[11px] font-semibold text-[var(--text-primary)]">
+                      <p
+                        key={i}
+                        className="mt-2 text-[11px] font-semibold text-[var(--text-primary)]"
+                      >
                         {trimmed.replace(/^##\s*/, '').replace(/\*\*/g, '')}
                       </p>
                     )
@@ -552,7 +715,11 @@ function ReportFooter({
   )
 }
 
-function reportToMarkdown(report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
+function reportToMarkdown(
+  report: ReportResult,
+  aiSummary?: string | null,
+  includeBilling = true
+): string {
   const lines: string[] = []
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
@@ -574,7 +741,9 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null, inclu
         const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
         lines.push('')
         lines.push(`${clientGroups.length > 1 ? '####' : '###'} ${project.projectName}`)
-        lines.push(`**${project.sessions.length} sessions \u2014 ${formatDuration(totalDuration)} \u2014 ${totalPrompts} prompts \u2014 ${formatCompactNumber(totalTokens)} tokens**`)
+        lines.push(
+          `**${project.sessions.length} sessions \u2014 ${formatDuration(totalDuration)} \u2014 ${totalPrompts} prompts \u2014 ${formatCompactNumber(totalTokens)} tokens**`
+        )
         lines.push('')
         lines.push('| Date | Time | Duration | Prompts | Tokens | Source |')
         lines.push('|------|------|----------|---------|--------|--------|')
@@ -592,7 +761,9 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null, inclu
     for (const item of report.dailySummary) {
       lines.push('')
       lines.push(`### ${item.date}`)
-      lines.push(`**${item.sessionCount} sessions — ${formatDuration(item.totalDurationMinutes)} — ${item.totalPrompts} prompts — ${formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)} tokens**`)
+      lines.push(
+        `**${item.sessionCount} sessions — ${formatDuration(item.totalDurationMinutes)} — ${item.totalPrompts} prompts — ${formatCompactNumber(item.totalInputTokens + item.totalOutputTokens)} tokens**`
+      )
       if (item.breakdown.length > 0) {
         lines.push('')
         lines.push('| Client | Project | Sessions | Duration | Prompts | Tokens |')
@@ -613,7 +784,9 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null, inclu
     lines.push(`- **Sessions:** ${s.totalSessions}`)
     lines.push(`- **Total Duration:** ${formatDuration(s.totalDurationMinutes)}`)
     lines.push(`- **Total Prompts:** ${s.totalPrompts}`)
-    lines.push(`- **Total Tokens:** ${formatCompactNumber(s.totalInputTokens + s.totalOutputTokens)}`)
+    lines.push(
+      `- **Total Tokens:** ${formatCompactNumber(s.totalInputTokens + s.totalOutputTokens)}`
+    )
     lines.push('')
     lines.push('### By Project')
     lines.push('')
@@ -631,14 +804,18 @@ function reportToMarkdown(report: ReportResult, aiSummary?: string | null, inclu
   lines.push('')
   lines.push('---')
   lines.push('')
-  lines.push(`**Sessions:** ${s.totalSessions} | **Duration:** ${formatDuration(s.totalDurationMinutes)} | **Prompts:** ${s.totalPrompts.toLocaleString()} | **Tokens:** ${formatCompactNumber(s.totalInputTokens + s.totalOutputTokens)}`)
+  lines.push(
+    `**Sessions:** ${s.totalSessions} | **Duration:** ${formatDuration(s.totalDurationMinutes)} | **Prompts:** ${s.totalPrompts.toLocaleString()} | **Tokens:** ${formatCompactNumber(s.totalInputTokens + s.totalOutputTokens)}`
+  )
 
   if (includeBilling && s.billedByClient.length > 0) {
     lines.push('')
     lines.push('### Billing')
     lines.push('')
     for (const b of s.billedByClient) {
-      lines.push(`- **${b.clientName}:** ${b.hours}h \u00d7 $${b.rate}/hr = **$${b.cost.toFixed(2)}**`)
+      lines.push(
+        `- **${b.clientName}:** ${b.hours}h \u00d7 $${b.rate}/hr = **$${b.cost.toFixed(2)}**`
+      )
     }
     lines.push('')
     lines.push(`**Total Billed: $${s.totalBilledCost.toFixed(2)}**`)
@@ -658,35 +835,80 @@ function reportToCsv(report: ReportResult): string {
   const rows: string[][] = []
 
   if (report.sessionBreakdown) {
-    rows.push(['Date', 'Project', 'Client', 'Start', 'End', 'Duration (min)', 'Prompts', 'Input Tokens', 'Output Tokens', 'Source'])
+    rows.push([
+      'Date',
+      'Project',
+      'Client',
+      'Start',
+      'End',
+      'Duration (min)',
+      'Prompts',
+      'Input Tokens',
+      'Output Tokens',
+      'Source'
+    ])
     for (const item of report.sessionBreakdown) {
       rows.push([
-        item.date, item.projectName, item.clientName ?? '', formatTimeOnly(item.startedAt),
-        formatTimeOnly(item.endedAt), String(item.durationMinutes), String(item.promptCount),
-        String(item.inputTokens), String(item.outputTokens), item.source
+        item.date,
+        item.projectName,
+        item.clientName ?? '',
+        formatTimeOnly(item.startedAt),
+        formatTimeOnly(item.endedAt),
+        String(item.durationMinutes),
+        String(item.promptCount),
+        String(item.inputTokens),
+        String(item.outputTokens),
+        item.source
       ])
     }
   }
 
   if (report.dailySummary) {
-    rows.push(['Date', 'Client', 'Project', 'Sessions', 'Duration (min)', 'Prompts', 'Input Tokens', 'Output Tokens'])
+    rows.push([
+      'Date',
+      'Client',
+      'Project',
+      'Sessions',
+      'Duration (min)',
+      'Prompts',
+      'Input Tokens',
+      'Output Tokens'
+    ])
     for (const item of report.dailySummary) {
       for (const bp of item.breakdown) {
         rows.push([
-          item.date, bp.clientName ?? '', bp.projectName, String(bp.sessionCount),
-          String(bp.totalDurationMinutes), String(bp.totalPrompts),
-          String(bp.totalInputTokens), String(bp.totalOutputTokens)
+          item.date,
+          bp.clientName ?? '',
+          bp.projectName,
+          String(bp.sessionCount),
+          String(bp.totalDurationMinutes),
+          String(bp.totalPrompts),
+          String(bp.totalInputTokens),
+          String(bp.totalOutputTokens)
         ])
       }
     }
   }
 
   if (report.periodSummary) {
-    rows.push(['Project', 'Client', 'Sessions', 'Duration (min)', 'Prompts', 'Input Tokens', 'Output Tokens'])
+    rows.push([
+      'Project',
+      'Client',
+      'Sessions',
+      'Duration (min)',
+      'Prompts',
+      'Input Tokens',
+      'Output Tokens'
+    ])
     for (const p of report.periodSummary.projects) {
       rows.push([
-        p.projectName, p.clientName ?? '', String(p.sessionCount), String(p.totalDurationMinutes),
-        String(p.totalPrompts), String(p.totalInputTokens), String(p.totalOutputTokens)
+        p.projectName,
+        p.clientName ?? '',
+        String(p.sessionCount),
+        String(p.totalDurationMinutes),
+        String(p.totalPrompts),
+        String(p.totalInputTokens),
+        String(p.totalOutputTokens)
       ])
     }
   }
@@ -694,7 +916,11 @@ function reportToCsv(report: ReportResult): string {
   return rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
 }
 
-function reportToHtml(report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
+function reportToHtml(
+  report: ReportResult,
+  aiSummary?: string | null,
+  includeBilling = true
+): string {
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
   const s = report.summary
@@ -729,7 +955,8 @@ function reportToHtml(report: ReportResult, aiSummary?: string | null, includeBi
 
   let billingHtml = ''
   if (includeBilling && s.billedByClient.length > 0) {
-    billingHtml = '<h3>Billing</h3><table><thead><tr><th>Client</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead><tbody>'
+    billingHtml =
+      '<h3>Billing</h3><table><thead><tr><th>Client</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead><tbody>'
     for (const b of s.billedByClient) {
       billingHtml += `<tr><td>${b.clientName}</td><td>${b.hours}h</td><td>$${b.rate}/hr</td><td><strong>$${b.cost.toFixed(2)}</strong></td></tr>`
     }
@@ -744,22 +971,40 @@ function reportToHtml(report: ReportResult, aiSummary?: string | null, includeBi
     for (const line of lines) {
       const trimmed = line.trim()
       if (!trimmed) {
-        if (inList) { summaryHtml += '</ul>'; inList = false }
+        if (inList) {
+          summaryHtml += '</ul>'
+          inList = false
+        }
         continue
       }
       // Markdown headers
       if (trimmed.startsWith('## ')) {
-        if (inList) { summaryHtml += '</ul>'; inList = false }
+        if (inList) {
+          summaryHtml += '</ul>'
+          inList = false
+        }
         summaryHtml += `<h4>${trimmed.slice(3).replace(/\*\*/g, '')}</h4>`
       } else if (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.startsWith('**-')) {
         // Bold-only line = subheading
-        if (inList) { summaryHtml += '</ul>'; inList = false }
+        if (inList) {
+          summaryHtml += '</ul>'
+          inList = false
+        }
         summaryHtml += `<h4>${trimmed.replace(/\*\*/g, '')}</h4>`
       } else if (trimmed.startsWith('- ')) {
-        if (!inList) { summaryHtml += '<ul>'; inList = true }
-        summaryHtml += `<li>${trimmed.slice(2).replace(/\*\*/g, '<strong>').replace(/<strong>([^<]*)<strong>/g, '<strong>$1</strong>')}</li>`
+        if (!inList) {
+          summaryHtml += '<ul>'
+          inList = true
+        }
+        summaryHtml += `<li>${trimmed
+          .slice(2)
+          .replace(/\*\*/g, '<strong>')
+          .replace(/<strong>([^<]*)<strong>/g, '<strong>$1</strong>')}</li>`
       } else {
-        if (inList) { summaryHtml += '</ul>'; inList = false }
+        if (inList) {
+          summaryHtml += '</ul>'
+          inList = false
+        }
         summaryHtml += `<p>${trimmed.replace(/\*\*/g, '')}</p>`
       }
     }
@@ -797,7 +1042,12 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
       if (existing) {
         existing.minutes += item.durationMinutes
       } else {
-        agg.set(k, { date: item.date, client: item.clientName ?? '\u2014', project: item.projectName, minutes: item.durationMinutes })
+        agg.set(k, {
+          date: item.date,
+          client: item.clientName ?? '\u2014',
+          project: item.projectName,
+          minutes: item.durationMinutes
+        })
       }
     }
   } else if (report.dailySummary) {
@@ -808,7 +1058,12 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
         if (existing) {
           existing.minutes += bp.totalDurationMinutes
         } else {
-          agg.set(k, { date: item.date, client: bp.clientName ?? '\u2014', project: bp.projectName, minutes: bp.totalDurationMinutes })
+          agg.set(k, {
+            date: item.date,
+            client: bp.clientName ?? '\u2014',
+            project: bp.projectName,
+            minutes: bp.totalDurationMinutes
+          })
         }
       }
     }
@@ -818,7 +1073,10 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
     const dateLabel = `${startDate} \u2013 ${endDate}`
     for (const p of report.periodSummary.projects) {
       agg.set(key(dateLabel, p.clientName ?? '\u2014', p.projectName), {
-        date: dateLabel, client: p.clientName ?? '\u2014', project: p.projectName, minutes: p.totalDurationMinutes
+        date: dateLabel,
+        client: p.clientName ?? '\u2014',
+        project: p.projectName,
+        minutes: p.totalDurationMinutes
       })
     }
   }
@@ -831,7 +1089,12 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
   }))
 }
 
-function timesheetToMarkdown(rows: TimesheetRow[], report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
+function timesheetToMarkdown(
+  rows: TimesheetRow[],
+  report: ReportResult,
+  aiSummary?: string | null,
+  includeBilling = true
+): string {
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
   const s = report.summary
@@ -852,7 +1115,9 @@ function timesheetToMarkdown(rows: TimesheetRow[], report: ReportResult, aiSumma
     lines.push('### Billing')
     lines.push('')
     for (const b of s.billedByClient) {
-      lines.push(`- **${b.clientName}:** ${b.hours}h \u00d7 $${b.rate}/hr = **$${b.cost.toFixed(2)}**`)
+      lines.push(
+        `- **${b.clientName}:** ${b.hours}h \u00d7 $${b.rate}/hr = **$${b.cost.toFixed(2)}**`
+      )
     }
     lines.push('')
     lines.push(`**Total Billed: $${s.totalBilledCost.toFixed(2)}**`)
@@ -874,12 +1139,18 @@ function timesheetToCsv(rows: TimesheetRow[]): string {
   return csvRows.map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
 }
 
-function timesheetToHtml(rows: TimesheetRow[], report: ReportResult, aiSummary?: string | null, includeBilling = true): string {
+function timesheetToHtml(
+  rows: TimesheetRow[],
+  report: ReportResult,
+  aiSummary?: string | null,
+  includeBilling = true
+): string {
   const startDate = new Date(report.filters.startDate).toLocaleDateString()
   const endDate = new Date(report.filters.endDate).toLocaleDateString()
   const s = report.summary
   let totalHours = 0
-  let tableHtml = '<table><thead><tr><th>Date</th><th>Client</th><th>Project</th><th>Hours</th></tr></thead><tbody>'
+  let tableHtml =
+    '<table><thead><tr><th>Date</th><th>Client</th><th>Project</th><th>Hours</th></tr></thead><tbody>'
   for (const r of rows) {
     tableHtml += `<tr><td>${r.date}</td><td>${r.client}</td><td>${r.project}</td><td><strong>${r.hours}</strong></td></tr>`
     totalHours += parseFloat(r.hours)
@@ -888,7 +1159,8 @@ function timesheetToHtml(rows: TimesheetRow[], report: ReportResult, aiSummary?:
 
   let billingHtml = ''
   if (includeBilling && s.billedByClient.length > 0) {
-    billingHtml = '<h3>Billing</h3><table><thead><tr><th>Client</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead><tbody>'
+    billingHtml =
+      '<h3>Billing</h3><table><thead><tr><th>Client</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead><tbody>'
     for (const b of s.billedByClient) {
       billingHtml += `<tr><td>${b.clientName}</td><td>${b.hours}h</td><td>$${b.rate}/hr</td><td><strong>$${b.cost.toFixed(2)}</strong></td></tr>`
     }
@@ -952,10 +1224,12 @@ function RadioOption({
       )}
       onClick={disabled ? undefined : onClick}
     >
-      <div className={cn(
-        'h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center',
-        selected ? 'border-[var(--accent)]' : 'border-[var(--text-muted)]'
-      )}>
+      <div
+        className={cn(
+          'h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center',
+          selected ? 'border-[var(--accent)]' : 'border-[var(--text-muted)]'
+        )}
+      >
         {selected && <div className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />}
       </div>
       <div>
@@ -993,11 +1267,14 @@ function ExportModal({
     }
   })
 
-  const generateSummary = useCallback(async (useAi: boolean, brief?: boolean): Promise<string | null> => {
-    const opts = { includeOverall, includeDailyBreakdown, ...(brief ? { brief: true } : {}) }
-    const result = await window.api.ai.generateReportSummary(report.filters, useAi, opts)
-    return result.success ? result.data : null
-  }, [report.filters, includeOverall, includeDailyBreakdown])
+  const generateSummary = useCallback(
+    async (useAi: boolean, brief?: boolean): Promise<string | null> => {
+      const opts = { includeOverall, includeDailyBreakdown, ...(brief ? { brief: true } : {}) }
+      const result = await window.api.ai.generateReportSummary(report.filters, useAi, opts)
+      return result.success ? result.data : null
+    },
+    [report.filters, includeOverall, includeDailyBreakdown]
+  )
 
   const handleExport = useCallback(async () => {
     setIsExporting(true)
@@ -1020,12 +1297,18 @@ function ExportModal({
           duration: 10000,
           action: {
             label: 'Open Report',
-            onClick: () => { window.api.reports.openFile(filePath) }
+            onClick: () => {
+              window.api.reports.openFile(filePath)
+            }
           }
         })
       }
 
-      const doExport = async (content: string, filterName: string, ext: string): Promise<string | null> => {
+      const doExport = async (
+        content: string,
+        filterName: string,
+        ext: string
+      ): Promise<string | null> => {
         const result = await window.api.reports.exportFile(content, reportFilename, filterName, ext)
         if (!result.success) throw new Error(result.error.message)
         return result.data
@@ -1040,10 +1323,17 @@ function ExportModal({
             savedPath = await doExport(timesheetToCsv(rows), 'CSV', 'csv')
             break
           case 'markdown':
-            savedPath = await doExport(timesheetToMarkdown(rows, report, summary, includeBilling), 'Markdown', 'md')
+            savedPath = await doExport(
+              timesheetToMarkdown(rows, report, summary, includeBilling),
+              'Markdown',
+              'md'
+            )
             break
           case 'pdf': {
-            const result = await window.api.reports.exportPdf(timesheetToHtml(rows, report, summary, includeBilling), reportFilename)
+            const result = await window.api.reports.exportPdf(
+              timesheetToHtml(rows, report, summary, includeBilling),
+              reportFilename
+            )
             if (result.success) savedPath = result.data
             break
           }
@@ -1054,10 +1344,17 @@ function ExportModal({
             savedPath = await doExport(reportToCsv(report), 'CSV', 'csv')
             break
           case 'markdown':
-            savedPath = await doExport(reportToMarkdown(report, summary, includeBilling), 'Markdown', 'md')
+            savedPath = await doExport(
+              reportToMarkdown(report, summary, includeBilling),
+              'Markdown',
+              'md'
+            )
             break
           case 'pdf': {
-            const result = await window.api.reports.exportPdf(reportToHtml(report, summary, includeBilling), reportFilename)
+            const result = await window.api.reports.exportPdf(
+              reportToHtml(report, summary, includeBilling),
+              reportFilename
+            )
             if (result.success) savedPath = result.data
             break
           }
@@ -1071,7 +1368,16 @@ function ExportModal({
     } finally {
       setIsExporting(false)
     }
-  }, [contentType, exportFormat, summaryOption, includeBilling, report, reportFilename, generateSummary, onOpenChange])
+  }, [
+    contentType,
+    exportFormat,
+    summaryOption,
+    includeBilling,
+    report,
+    reportFilename,
+    generateSummary,
+    onOpenChange
+  ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1147,20 +1453,24 @@ function ExportModal({
               />
               <RadioOption
                 selected={summaryOption === 'ai'}
-                onClick={() => !hasApiKey ? undefined : setSummaryOption('ai')}
+                onClick={() => (!hasApiKey ? undefined : setSummaryOption('ai'))}
                 label="AI Summary"
-                description={hasApiKey
-                  ? 'Summarize git commits using Claude AI'
-                  : 'Add an API key in Settings to enable'}
+                description={
+                  hasApiKey
+                    ? 'Summarize git commits using Claude AI'
+                    : 'Add an API key in Settings to enable'
+                }
                 disabled={!hasApiKey}
               />
               <RadioOption
                 selected={summaryOption === 'ai-brief'}
-                onClick={() => !hasApiKey ? undefined : setSummaryOption('ai-brief')}
+                onClick={() => (!hasApiKey ? undefined : setSummaryOption('ai-brief'))}
                 label="AI Brief"
-                description={hasApiKey
-                  ? 'Single sentence summary for timesheets'
-                  : 'Add an API key in Settings to enable'}
+                description={
+                  hasApiKey
+                    ? 'Single sentence summary for timesheets'
+                    : 'Add an API key in Settings to enable'
+                }
                 disabled={!hasApiKey}
               />
             </div>
@@ -1244,7 +1554,11 @@ function ExportModal({
   )
 }
 
-function buildReportFilename(report: ReportResult, clients?: { id: number; name: string }[], projects?: { id: number; name: string }[]): string {
+function buildReportFilename(
+  report: ReportResult,
+  clients?: { id: number; name: string }[],
+  projects?: { id: number; name: string }[]
+): string {
   const fmtDate = (iso: string) => {
     const d = new Date(iso)
     return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
@@ -1373,28 +1687,40 @@ export function ReportsPage(): React.JSX.Element {
     }
   })
 
-  const handleGenerateSummary = useCallback(async (useAi: boolean, summaryOptions?: { includeOverall: boolean; includeDailyBreakdown: boolean; brief?: boolean }): Promise<string | null> => {
-    if (!report) return null
-    setIsGeneratingAi(true)
-    try {
-      const result = await window.api.ai.generateReportSummary(report.filters, useAi, summaryOptions)
-      if (result.success && result.data) {
-        setAiSummary(result.data)
-        toast.success(useAi ? 'AI summary generated' : 'Git summary generated')
-        return result.data
-      } else {
-        toast.error(useAi
-          ? 'Could not generate AI summary. Check your API key in Settings.'
-          : 'No git commits found for this time range.')
+  const handleGenerateSummary = useCallback(
+    async (
+      useAi: boolean,
+      summaryOptions?: { includeOverall: boolean; includeDailyBreakdown: boolean; brief?: boolean }
+    ): Promise<string | null> => {
+      if (!report) return null
+      setIsGeneratingAi(true)
+      try {
+        const result = await window.api.ai.generateReportSummary(
+          report.filters,
+          useAi,
+          summaryOptions
+        )
+        if (result.success && result.data) {
+          setAiSummary(result.data)
+          toast.success(useAi ? 'AI summary generated' : 'Git summary generated')
+          return result.data
+        } else {
+          toast.error(
+            useAi
+              ? 'Could not generate AI summary. Check your API key in Settings.'
+              : 'No git commits found for this time range.'
+          )
+          return null
+        }
+      } catch {
+        toast.error('Failed to generate summary')
         return null
+      } finally {
+        setIsGeneratingAi(false)
       }
-    } catch {
-      toast.error('Failed to generate summary')
-      return null
-    } finally {
-      setIsGeneratingAi(false)
-    }
-  }, [report])
+    },
+    [report]
+  )
 
   const reportFilename = useMemo(() => {
     if (!report) return 'report'
@@ -1408,96 +1734,103 @@ export function ReportsPage(): React.JSX.Element {
       {/* Filter bar */}
       <div className="border-b border-[var(--surface-border)]">
         <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-        <Select value={datePreset} onValueChange={(v) => setDatePreset(v as ReportDatePreset)}>
-          <SelectTrigger size="sm" className="h-8 w-[140px] text-[12px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper">
-            <SelectItem value="today">Today</SelectItem>
-            <SelectItem value="this-week">This Week</SelectItem>
-            <SelectItem value="last-week">Last Week</SelectItem>
-            <SelectItem value="this-month">This Month</SelectItem>
-            <SelectItem value="last-month">Last Month</SelectItem>
-            <SelectItem value="all-time">All Time</SelectItem>
-            <SelectItem value="custom">Custom Range</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={format} onValueChange={(v) => setFormat(v as ReportFormat)}>
-          <SelectTrigger size="sm" className="h-8 w-[170px] text-[12px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper">
-            <SelectItem value="session-breakdown">Session Breakdown</SelectItem>
-            <SelectItem value="daily-summary">Daily Summary</SelectItem>
-            <SelectItem value="period-summary">Period Summary</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {clients && clients.length > 0 && (
-          <Select value={clientId} onValueChange={setClientId}>
+          <Select value={datePreset} onValueChange={(v) => setDatePreset(v as ReportDatePreset)}>
             <SelectTrigger size="sm" className="h-8 w-[140px] text-[12px]">
-              <SelectValue placeholder="All Clients" />
+              <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper">
-              <SelectItem value="__all__">All Clients</SelectItem>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-              ))}
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="this-week">This Week</SelectItem>
+              <SelectItem value="last-week">Last Week</SelectItem>
+              <SelectItem value="this-month">This Month</SelectItem>
+              <SelectItem value="last-month">Last Month</SelectItem>
+              <SelectItem value="all-time">All Time</SelectItem>
+              <SelectItem value="custom">Custom Range</SelectItem>
             </SelectContent>
           </Select>
-        )}
 
-        {allProjects && allProjects.length > 0 && (
-          <Select value={projectId} onValueChange={setProjectId}>
-            <SelectTrigger size="sm" className="h-8 w-[140px] text-[12px]">
-              <SelectValue placeholder="All Projects" />
+          <Select value={format} onValueChange={(v) => setFormat(v as ReportFormat)}>
+            <SelectTrigger size="sm" className="h-8 w-[170px] text-[12px]">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper">
-              <SelectItem value="__all__">All Projects</SelectItem>
-              {allProjects.map((p) => (
-                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-              ))}
+              <SelectItem value="session-breakdown">Session Breakdown</SelectItem>
+              <SelectItem value="daily-summary">Daily Summary</SelectItem>
+              <SelectItem value="period-summary">Period Summary</SelectItem>
             </SelectContent>
           </Select>
-        )}
 
-        <Select value={billableFilter} onValueChange={(v) => setBillableFilter(v as 'all' | 'billable' | 'non-billable')}>
-          <SelectTrigger size="sm" className="h-8 w-[130px] text-[12px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper">
-            <SelectItem value="all">All Sessions</SelectItem>
-            <SelectItem value="billable">Billable</SelectItem>
-            <SelectItem value="non-billable">Non-billable</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button
-          size="sm"
-          className="h-8 bg-[var(--accent)] text-white hover:brightness-[1.15]"
-          onClick={handleGenerate}
-          disabled={generateMutation.isPending || !dateRange}
-        >
-          {generateMutation.isPending ? (
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-          ) : (
-            <FileBarChart className="mr-1 h-3 w-3" />
+          {clients && clients.length > 0 && (
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger size="sm" className="h-8 w-[140px] text-[12px]">
+                <SelectValue placeholder="All Clients" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="__all__">All Clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-          Generate
-        </Button>
 
-        {report && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-8 text-[12px]"
-            onClick={() => setExportModalOpen(true)}
+          {allProjects && allProjects.length > 0 && (
+            <Select value={projectId} onValueChange={setProjectId}>
+              <SelectTrigger size="sm" className="h-8 w-[140px] text-[12px]">
+                <SelectValue placeholder="All Projects" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="__all__">All Projects</SelectItem>
+                {allProjects.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <Select
+            value={billableFilter}
+            onValueChange={(v) => setBillableFilter(v as 'all' | 'billable' | 'non-billable')}
           >
-            <Download className="mr-1 h-3 w-3" />
-            Export
+            <SelectTrigger size="sm" className="h-8 w-[130px] text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value="all">All Sessions</SelectItem>
+              <SelectItem value="billable">Billable</SelectItem>
+              <SelectItem value="non-billable">Non-billable</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button
+            size="sm"
+            className="h-8 bg-[var(--accent)] text-white hover:brightness-[1.15]"
+            onClick={handleGenerate}
+            disabled={generateMutation.isPending || !dateRange}
+          >
+            {generateMutation.isPending ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <FileBarChart className="mr-1 h-3 w-3" />
+            )}
+            Generate
           </Button>
-        )}
+
+          {report && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-8 text-[12px]"
+              onClick={() => setExportModalOpen(true)}
+            >
+              <Download className="mr-1 h-3 w-3" />
+              Export
+            </Button>
+          )}
         </div>
 
         {datePreset === 'custom' && (

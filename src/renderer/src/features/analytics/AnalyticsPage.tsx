@@ -42,7 +42,11 @@ export function AnalyticsPage(): React.JSX.Element {
 
   // Reset project filter when client changes and current project doesn't belong to new client
   useEffect(() => {
-    if (projectId !== '__all__' && filteredProjects && !filteredProjects.some((p) => String(p.id) === projectId)) {
+    if (
+      projectId !== '__all__' &&
+      filteredProjects &&
+      !filteredProjects.some((p) => String(p.id) === projectId)
+    ) {
       setProjectId('__all__')
     }
   }, [clientId, filteredProjects, projectId])
@@ -62,7 +66,10 @@ export function AnalyticsPage(): React.JSX.Element {
     let dateRange: { startDate: string; endDate: string } | null = null
 
     if (datePreset === 'all-time') {
-      dateRange = { startDate: new Date(2020, 0, 1).toISOString(), endDate: new Date().toISOString() }
+      dateRange = {
+        startDate: new Date(2020, 0, 1).toISOString(),
+        endDate: new Date().toISOString()
+      }
     } else if (datePreset === 'last-month') {
       dateRange = getLastMonthRange()
     } else if (datePreset === 'custom') {
@@ -129,7 +136,9 @@ export function AnalyticsPage(): React.JSX.Element {
             <SelectContent position="popper">
               <SelectItem value="__all__">All Clients</SelectItem>
               {clients?.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                <SelectItem key={c.id} value={String(c.id)}>
+                  {c.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -141,7 +150,9 @@ export function AnalyticsPage(): React.JSX.Element {
             <SelectContent position="popper">
               <SelectItem value="__all__">All Projects</SelectItem>
               {filteredProjects?.map((p) => (
-                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                <SelectItem key={p.id} value={String(p.id)}>
+                  {p.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -167,14 +178,20 @@ export function AnalyticsPage(): React.JSX.Element {
             No sessions found for this period
           </div>
         ) : (
-          <Suspense fallback={<div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--text-muted)]" /></div>}>
-          <DashboardGrid
-            sessionData={sessionData}
-            summaryData={summaryData}
-            layout={layout}
-            onReorder={reorderWidgets}
-            onResize={resizeWidget}
-          />
+          <Suspense
+            fallback={
+              <div className="flex h-32 items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-[var(--text-muted)]" />
+              </div>
+            }
+          >
+            <DashboardGrid
+              sessionData={sessionData}
+              summaryData={summaryData}
+              layout={layout}
+              onReorder={reorderWidgets}
+              onResize={resizeWidget}
+            />
           </Suspense>
         )}
       </div>

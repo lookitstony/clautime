@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ReportFilters } from '../../../../shared/types/report'
-import { DEFAULT_LAYOUT, WIDGET_REGISTRY, isValidWidgetSize, type DashboardLayout, type WidgetSize } from './widget-registry'
+import {
+  DEFAULT_LAYOUT,
+  WIDGET_REGISTRY,
+  isValidWidgetSize,
+  type DashboardLayout,
+  type WidgetSize
+} from './widget-registry'
 
 const LAYOUT_KEY = 'analytics_dashboard_layout'
 
@@ -32,7 +38,8 @@ function parseLayout(json: string | undefined | null): DashboardLayout {
     const validIds = new Set(WIDGET_REGISTRY.map((w) => w.id))
     const widgets = parsed.widgets.filter(
       (w: unknown): w is { id: string; size: WidgetSize } =>
-        typeof w === 'object' && w !== null &&
+        typeof w === 'object' &&
+        w !== null &&
         typeof (w as Record<string, unknown>).id === 'string' &&
         validIds.has((w as Record<string, unknown>).id as string) &&
         isValidWidgetSize((w as Record<string, unknown>).size)

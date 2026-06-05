@@ -55,9 +55,7 @@ export const invoiceLineItems = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString())
   },
-  (table) => [
-    index('idx_invoice_line_items_invoice_id').on(table.invoiceId)
-  ]
+  (table) => [index('idx_invoice_line_items_invoice_id').on(table.invoiceId)]
 )
 
 export type InvoiceRow = typeof invoices.$inferSelect

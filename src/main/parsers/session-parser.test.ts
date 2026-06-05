@@ -64,7 +64,11 @@ function makeSnapshotLine() {
   return {
     type: 'file-history-snapshot',
     messageId: 'snap-1',
-    snapshot: { messageId: 'snap-1', trackedFileBackups: {}, timestamp: '2026-03-04T10:00:00.000Z' },
+    snapshot: {
+      messageId: 'snap-1',
+      trackedFileBackups: {},
+      timestamp: '2026-03-04T10:00:00.000Z'
+    },
     isSnapshotUpdate: false
   }
 }
@@ -140,10 +144,7 @@ describe('parseSessionFile', () => {
     await mkdir(projectDir, { recursive: true })
     const filePath = join(projectDir, 'sess-001.jsonl')
 
-    await writeFile(
-      filePath,
-      jsonl(makeSnapshotLine(), makeUserMessage(), makeAssistantMessage())
-    )
+    await writeFile(filePath, jsonl(makeSnapshotLine(), makeUserMessage(), makeAssistantMessage()))
 
     const result = await parseSessionFile(filePath)
     expect(result).not.toBeNull()
@@ -199,10 +200,7 @@ describe('parseSessionFile', () => {
     await mkdir(projectDir, { recursive: true })
     const filePath = join(projectDir, 'sess.jsonl')
 
-    await writeFile(
-      filePath,
-      jsonl(makeSnapshotLine(), makeSnapshotLine(), makeUserMessage())
-    )
+    await writeFile(filePath, jsonl(makeSnapshotLine(), makeSnapshotLine(), makeUserMessage()))
 
     const result = await parseSessionFile(filePath)
     expect(result!.messageCount).toBe(1)

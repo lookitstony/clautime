@@ -46,10 +46,9 @@ describe('discoveryService.discoverDefaultProjects', () => {
     ])
 
     const result = await discoveryService.discoverDefaultProjects()
-    expect(mockReaddir).toHaveBeenCalledWith(
-      expect.stringContaining('.claude'),
-      { withFileTypes: true }
-    )
+    expect(mockReaddir).toHaveBeenCalledWith(expect.stringContaining('.claude'), {
+      withFileTypes: true
+    })
     expect(result).toHaveLength(2)
     expect(result[0].projectName).toBe('ClauTime')
     expect(result[0].projectPath).toBe('C:\\apps\\ClauTime')
@@ -102,18 +101,14 @@ describe('discoveryService.discoverProjectsUnderFolder', () => {
   })
 
   it('returns empty when no projects match the folder', async () => {
-    mockReaddir.mockResolvedValue([
-      dirent('C--apps-ClauTime', true)
-    ])
+    mockReaddir.mockResolvedValue([dirent('C--apps-ClauTime', true)])
 
     const result = await discoveryService.discoverProjectsUnderFolder('D:\\work')
     expect(result).toHaveLength(0)
   })
 
   it('is case-insensitive on Windows paths', async () => {
-    mockReaddir.mockResolvedValue([
-      dirent('C--Apps-ClauTime', true)
-    ])
+    mockReaddir.mockResolvedValue([dirent('C--Apps-ClauTime', true)])
 
     const result = await discoveryService.discoverProjectsUnderFolder('c:\\apps')
     expect(result).toHaveLength(1)

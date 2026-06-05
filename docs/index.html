@@ -1,1630 +1,3020 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClauTime — Automatic Time Tracking for Claude Code</title>
-<meta name="description" content="Track billable hours, monitor live sessions, and protect your secrets — all locally. Open source, zero telemetry.">
-<meta property="og:title" content="ClauTime — Automatic Time Tracking for Claude Code">
-<meta property="og:description" content="Track billable hours, monitor live sessions, and protect your secrets — all locally.">
-<meta property="og:type" content="website">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
-  :root {
-    --bg-deep: #06080c;
-    --bg-primary: #0a0d14;
-    --bg-elevated: #111620;
-    --bg-surface: #161c2a;
-    --border: #1e2738;
-    --border-glow: #2dd4bf20;
-    --text-primary: #e8edf5;
-    --text-secondary: #8b95a8;
-    --text-muted: #4a5568;
-    --accent: #2dd4bf;
-    --accent-dim: #1a9e8f;
-    --accent-glow: #2dd4bf30;
-    --accent-bg: #2dd4bf08;
-    --purple: #a78bfa;
-    --amber: #fbbf24;
-    --rose: #fb7185;
-  }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    font-family: 'Outfit', -apple-system, sans-serif;
-    background: var(--bg-deep);
-    color: var(--text-primary);
-    line-height: 1.6;
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  /* ═══ GLOBAL BACKGROUND ═══ */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 80% 60% at 50% -10%, #2dd4bf08 0%, transparent 60%),
-      radial-gradient(ellipse 60% 40% at 80% 50%, #a78bfa05 0%, transparent 50%),
-      radial-gradient(ellipse 60% 40% at 20% 80%, #2dd4bf04 0%, transparent 50%);
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ═══ DOT GRID ═══ */
-  .dot-grid {
-    position: fixed;
-    inset: 0;
-    background-image: radial-gradient(circle, #1e273830 1px, transparent 1px);
-    background-size: 32px 32px;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ═══ LAYOUT ═══ */
-  .container {
-    max-width: 1120px;
-    margin: 0 auto;
-    padding: 0 24px;
-    position: relative;
-    z-index: 1;
-  }
-
-  section { padding: 100px 0; }
-
-  /* ═══ NAV ═══ */
-  nav {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    padding: 16px 0;
-    background: #06080ccc;
-    backdrop-filter: blur(20px) saturate(1.5);
-    border-bottom: 1px solid var(--border);
-    transition: all 0.3s ease;
-  }
-
-  nav .container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .nav-logo {
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 600;
-    font-size: 18px;
-    color: var(--accent);
-    text-decoration: none;
-    letter-spacing: -0.5px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .nav-logo .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 12px var(--accent), 0 0 4px var(--accent);
-    animation: pulse-dot 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.6; transform: scale(0.85); }
-  }
-
-  .nav-links {
-    display: flex;
-    align-items: center;
-    gap: 32px;
-    list-style: none;
-  }
-
-  .nav-links a {
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 400;
-    transition: color 0.2s;
-    letter-spacing: 0.01em;
-  }
-
-  .nav-links a:hover { color: var(--text-primary); }
-
-  .nav-cta {
-    background: var(--accent) !important;
-    color: var(--bg-deep) !important;
-    padding: 8px 20px;
-    border-radius: 8px;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    transition: all 0.2s !important;
-  }
-
-  .nav-cta:hover {
-    box-shadow: 0 0 24px var(--accent-glow);
-    transform: translateY(-1px);
-  }
-
-  /* ═══ HERO ═══ */
-  .hero {
-    padding: 180px 0 120px;
-    text-align: center;
-    position: relative;
-  }
-
-  .hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 16px 6px 8px;
-    border-radius: 100px;
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-bottom: 32px;
-    animation: fade-up 0.8s ease both;
-  }
-
-  .hero-badge .tag {
-    background: var(--accent-dim);
-    color: var(--bg-deep);
-    padding: 2px 10px;
-    border-radius: 100px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  .hero h1 {
-    font-size: clamp(52px, 8vw, 88px);
-    font-weight: 800;
-    letter-spacing: -3px;
-    line-height: 1;
-    margin-bottom: 24px;
-    animation: fade-up 0.8s ease 0.1s both;
-  }
-
-  .hero h1 .gradient {
-    background: linear-gradient(135deg, var(--accent) 0%, #67e8f9 40%, var(--purple) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .hero-sub {
-    font-size: clamp(17px, 2.2vw, 20px);
-    color: var(--text-secondary);
-    max-width: 600px;
-    margin: 0 auto 48px;
-    line-height: 1.7;
-    font-weight: 300;
-    animation: fade-up 0.8s ease 0.2s both;
-  }
-
-  .hero-actions {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    animation: fade-up 0.8s ease 0.3s both;
-    flex-wrap: wrap;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 14px 28px;
-    border-radius: 12px;
-    font-size: 15px;
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 0.25s ease;
-    border: none;
-    cursor: pointer;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--bg-deep);
-    box-shadow: 0 0 32px var(--accent-glow), inset 0 1px 0 #ffffff20;
-  }
-
-  .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0 48px var(--accent-glow), 0 8px 32px #00000040, inset 0 1px 0 #ffffff20;
-  }
-
-  .btn-secondary {
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-  }
-
-  .btn-secondary:hover {
-    border-color: var(--text-muted);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 32px #00000040;
-  }
-
-  .btn svg { width: 18px; height: 18px; }
-
-  /* ═══ HERO VISUAL ═══ */
-  .hero-visual {
-    margin-top: 80px;
-    position: relative;
-    animation: fade-up 1s ease 0.5s both;
-  }
-
-  .hero-window {
-    max-width: 900px;
-    margin: 0 auto;
-    border-radius: 16px;
-    border: 1px solid var(--border);
-    background: var(--bg-primary);
-    overflow: hidden;
-    box-shadow:
-      0 0 0 1px var(--border),
-      0 24px 80px #00000060,
-      0 0 120px var(--accent-glow);
-  }
-
-  /* ═══ MOCK APP LAYOUT ═══ */
-  .mock-titlebar {
-    display: flex;
-    align-items: center;
-    padding: 0 10px;
-    height: 32px;
-    background: #12121e;
-    border-bottom: 1px solid var(--border);
-    font-size: 11px;
-    color: var(--text-muted);
-    text-align: left;
-  }
-  .mock-titlebar-name { flex: 1; font-size: 10px; text-align: left; }
-  .mock-titlebar-controls { display: flex; gap: 0; align-items: center; }
-  .mock-titlebar-btn {
-    width: 32px; height: 24px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--text-muted);
-  }
-  .mock-titlebar-btn svg { width: 13px; height: 13px; }
-  .mock-titlebar-btn.theme-toggle { margin-right: 4px; }
-  .mock-titlebar-divider {
-    width: 1px; height: 14px;
-    background: var(--border);
-    margin: 0 2px;
-  }
-  .mock-titlebar-btn.close:hover { color: #ef4444; }
-
-  .mock-app-body {
-    display: flex;
-    min-height: 380px;
-    text-align: left;
-  }
-
-  /* Activity bar (left sidebar) */
-  .mock-sidebar {
-    width: 48px;
-    background: #12121e;
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 10px 0;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-  .mock-nav-btn {
-    width: 34px; height: 34px;
-    border-radius: 6px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--text-muted);
-    position: relative;
-  }
-  .mock-nav-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .mock-nav-btn.active {
-    background: #14b8a610;
-    color: var(--accent);
-  }
-  .mock-nav-btn.active::before {
-    content: '';
-    position: absolute;
-    left: -7px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 18px;
-    background: var(--accent);
-    border-radius: 0 3px 3px 0;
-  }
-
-  /* Main content area */
-  .mock-main {
-    flex: 1;
-    padding: 14px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    overflow: hidden;
-    background: #16162a;
-  }
-
-  /* Stats bar */
-  .mock-stats {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 6px;
-  }
-  .mock-stat {
-    background: #1e1e32;
-    border: 1px solid #2a2a3e;
-    border-radius: 8px;
-    padding: 8px 10px;
-  }
-  .mock-stat-label {
-    font-size: 9px;
-    color: #555;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    font-family: 'JetBrains Mono', monospace;
-    margin-bottom: 3px;
-  }
-  .mock-stat-value {
-    font-size: 16px;
-    font-weight: 700;
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: -0.5px;
-    color: #e0e0e0;
-  }
-  .mock-stat-value.teal { color: #14b8a6; }
-
-  /* Section header */
-  .mock-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: 500;
-    color: #888;
-  }
-  .mock-section-btn {
-    font-size: 10px;
-    color: #555;
-    padding: 3px 8px;
-    border: 1px solid #2a2a3e;
-    border-radius: 5px;
-    background: transparent;
-  }
-
-  /* Project cards grid — Layout 6 (Grid Stats) */
-  .mock-projects {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-  .mock-project-card {
-    background: #1e1e32;
-    border: 1px solid #2a2a3e;
-    border-radius: 10px;
-    overflow: hidden;
-    position: relative;
-    transition: border-color 0.3s;
-  }
-  .mock-project-card.glowing {
-    border-color: #14b8a640;
-    box-shadow: 0 0 24px #14b8a60c;
-  }
-  .mock-project-card.glowing::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
-    pointer-events: none;
-  }
-  .mock-card-header {
-    padding: 8px 10px 4px;
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    position: relative;
-  }
-  .mock-color-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
-    margin-top: 5px;
-  }
-  .mock-card-name-group {
-    flex: 1;
-    min-width: 0;
-    text-align: left;
-  }
-  .mock-card-project-name {
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.2;
-    display: block;
-    text-align: left;
-  }
-  .mock-card-client {
-    font-size: 9px;
-    color: #555;
-    line-height: 1.2;
-    margin-top: 1px;
-    text-align: left;
-  }
-  .mock-card-popout {
-    color: #555;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-  .mock-card-popout svg { width: 13px; height: 13px; }
-  .mock-card-hours-row {
-    padding: 2px 10px 8px;
-    position: relative;
-    text-align: center;
-  }
-  .mock-card-hours {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 24px;
-    font-weight: 700;
-    color: #14b8a6;
-    letter-spacing: -1.5px;
-    line-height: 1;
-  }
-  .mock-card-hours span {
-    font-size: 14px;
-    font-weight: 600;
-  }
-  /* Stats grid row */
-  .mock-card-stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    border-top: 1px solid #2a2a3e;
-    position: relative;
-  }
-  .mock-card-stat {
-    padding: 5px 4px;
-    text-align: center;
-    font-family: 'JetBrains Mono', monospace;
-    border-right: 1px solid #2a2a3e;
-  }
-  .mock-card-stat:last-child { border-right: none; }
-  .mock-card-stat b {
-    display: block;
-    font-size: 12px;
-    font-weight: 600;
-    color: #888;
-  }
-  .mock-card-stat-label {
-    font-size: 8px;
-    color: #555;
-  }
-  /* Footer row */
-  .mock-card-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    border-top: 1px solid #2a2a3e;
-    font-size: 10px;
-    color: #555;
-    position: relative;
-  }
-  .mock-footer-left {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .mock-bell svg { width: 14px; height: 14px; }
-  .mock-footer-right {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .mock-start-btn {
-    font-size: 9px;
-    padding: 2px 8px;
-    border-radius: 5px;
-    font-weight: 600;
-    font-family: 'JetBrains Mono', monospace;
-    background: #10b98115;
-    color: #34d399;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-  }
-  .mock-start-btn svg { width: 8px; height: 8px; fill: currentColor; stroke: none; }
-
-  /* Status bar (bottom) */
-  .mock-statusbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 24px;
-    padding: 0 12px;
-    background: #12121e;
-    border-top: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: #555;
-  }
-  .mock-statusbar-hours {
-    color: #14b8a6;
-    font-weight: 600;
-  }
-
-  /* ═══ FEATURES ═══ */
-  .section-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
-    margin-bottom: 16px;
-    font-weight: 500;
-  }
-
-  .section-title {
-    font-size: clamp(32px, 4vw, 44px);
-    font-weight: 700;
-    letter-spacing: -1.5px;
-    line-height: 1.15;
-    margin-bottom: 16px;
-  }
-
-  .section-desc {
-    font-size: 17px;
-    color: var(--text-secondary);
-    max-width: 560px;
-    line-height: 1.7;
-    font-weight: 300;
-  }
-
-  .features-header {
-    text-align: center;
-    margin-bottom: 64px;
-  }
-
-  .features-header .section-desc {
-    margin: 0 auto;
-  }
-
-  .features-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-
-  .feature-card {
-    padding: 32px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .feature-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent-glow), transparent);
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-
-  .feature-card:hover {
-    border-color: #2e3a4e;
-    transform: translateY(-4px);
-    box-shadow: 0 16px 48px #00000030;
-  }
-
-  .feature-card:hover::before { opacity: 1; }
-
-  .feature-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 20px;
-    font-size: 20px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-  }
-
-  .feature-card h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 8px;
-    letter-spacing: -0.3px;
-  }
-
-  .feature-card p {
-    font-size: 14px;
-    color: var(--text-secondary);
-    line-height: 1.6;
-    font-weight: 300;
-  }
-
-  /* ═══ HOW IT WORKS ═══ */
-  .how-it-works { border-top: 1px solid var(--border); }
-
-  .how-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 32px;
-    margin-top: 64px;
-  }
-
-  .how-step {
-    position: relative;
-    padding-top: 32px;
-  }
-
-  .how-step::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 48px;
-    height: 2px;
-    background: linear-gradient(90deg, var(--accent), transparent);
-  }
-
-  .step-number {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 48px;
-    font-weight: 300;
-    color: var(--bg-surface);
-    letter-spacing: -3px;
-    line-height: 1;
-    margin-bottom: 16px;
-  }
-
-  .how-step h3 {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    letter-spacing: -0.3px;
-  }
-
-  .how-step p {
-    font-size: 14px;
-    color: var(--text-secondary);
-    line-height: 1.7;
-  }
-
-  .how-step code {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    background: var(--bg-elevated);
-    padding: 2px 8px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    color: var(--accent);
-  }
-
-  /* ═══ TECH STACK ═══ */
-  .tech-section { border-top: 1px solid var(--border); }
-
-  .tech-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 48px;
-    justify-content: center;
-  }
-
-  .tech-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 100px;
-    font-size: 14px;
-    font-weight: 400;
-    color: var(--text-secondary);
-    transition: all 0.2s;
-  }
-
-  .tech-pill:hover {
-    border-color: var(--text-muted);
-    color: var(--text-primary);
-  }
-
-  .tech-pill span {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-  }
-
-  /* ═══ GETTING STARTED ═══ */
-  .getting-started { border-top: 1px solid var(--border); }
-
-  .code-block {
-    max-width: 640px;
-    margin: 48px auto 0;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    overflow: hidden;
-  }
-
-  .code-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 18px;
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .code-body {
-    padding: 24px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 14px;
-    line-height: 2;
-    color: var(--text-secondary);
-    overflow-x: auto;
-  }
-
-  .code-body .comment { color: var(--text-muted); }
-  .code-body .cmd { color: var(--accent); }
-  .code-body .flag { color: var(--purple); }
-
-  /* ═══ CTA ═══ */
-  .final-cta {
-    border-top: 1px solid var(--border);
-    text-align: center;
-    position: relative;
-  }
-
-  .final-cta::before {
-    content: '';
-    position: absolute;
-    top: -1px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 400px;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  }
-
-  .cta-title {
-    font-size: clamp(28px, 4vw, 40px);
-    font-weight: 700;
-    letter-spacing: -1.5px;
-    margin-bottom: 16px;
-  }
-
-  .cta-desc {
-    font-size: 17px;
-    color: var(--text-secondary);
-    margin-bottom: 40px;
-    font-weight: 300;
-  }
-
-  /* ═══ FOOTER ═══ */
-  footer {
-    padding: 48px 0;
-    border-top: 1px solid var(--border);
-    position: relative;
-    z-index: 1;
-  }
-
-  .footer-inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .footer-left {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-
-  .footer-links {
-    display: flex;
-    gap: 24px;
-    list-style: none;
-  }
-
-  .footer-links a {
-    color: var(--text-muted);
-    text-decoration: none;
-    font-size: 13px;
-    transition: color 0.2s;
-  }
-
-  .footer-links a:hover { color: var(--text-secondary); }
-
-  /* ═══ ANIMATIONS ═══ */
-  @keyframes fade-up {
-    from { opacity: 0; transform: translateY(24px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .reveal {
-    opacity: 0;
-    transform: translateY(24px);
-    transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .reveal.visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-  /* ═══ RESPONSIVE ═══ */
-  @media (max-width: 768px) {
-    .hero { padding: 140px 0 80px; }
-    .mock-stats { grid-template-columns: repeat(3, 1fr); }
-    .mock-projects { grid-template-columns: repeat(2, 1fr); }
-    .mock-sidebar { display: none; }
-    .features-grid { grid-template-columns: 1fr; }
-    .how-grid { grid-template-columns: 1fr; gap: 48px; }
-    .nav-links .hide-mobile { display: none; }
-    .hero-visual { margin-top: 48px; }
-    section { padding: 64px 0; }
-    .footer-inner { flex-direction: column; gap: 24px; text-align: center; }
-  }
-
-  @media (max-width: 480px) {
-    .hero h1 { letter-spacing: -2px; }
-    .hero-actions { flex-direction: column; width: 100%; }
-    .btn { width: 100%; justify-content: center; }
-    .mock-stats { grid-template-columns: repeat(2, 1fr); }
-    .mock-projects { grid-template-columns: 1fr; }
-    .mock-card-stats { display: none; }
-  }
-
-  /* ═══ SCROLLBAR ═══ */
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg-deep); }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-</style>
-</head>
-<body>
-
-<div class="dot-grid"></div>
-
-<!-- NAV -->
-<nav>
-  <div class="container">
-    <a href="#" class="nav-logo">
-      <span class="dot"></span>
-      ClauTime
-    </a>
-    <ul class="nav-links">
-      <li><a href="#features" class="hide-mobile">Features</a></li>
-      <li><a href="#how-it-works" class="hide-mobile">How It Works</a></li>
-      <li><a href="#getting-started" class="hide-mobile">Get Started</a></li>
-      <li><a href="https://github.com/lookitstony/clautime" target="_blank" class="nav-cta">GitHub</a></li>
-    </ul>
-  </div>
-</nav>
-
-<!-- HERO -->
-<section class="hero">
-  <div class="container">
-    <div class="hero-badge">
-      <span class="tag">Open Source</span>
-      Apache 2.0 &middot; 100% Local
-    </div>
-    <h1><span class="gradient">ClauTime</span></h1>
-    <p class="hero-sub">
-      Automatic time tracking for Claude Code.<br>
-      Track billable hours, monitor live sessions, and protect your secrets.
-    </p>
-    <div class="hero-actions">
-      <a href="https://github.com/lookitstony/clautime" target="_blank" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-        View on GitHub
-      </a>
-      <a href="#getting-started" class="btn btn-secondary">
-        Get Started
-      </a>
-    </div>
-
-    <!-- MOCK APP WINDOW -->
-    <div class="hero-visual">
-      <div class="hero-window">
-        <!-- Title Bar -->
-        <div class="mock-titlebar">
-          <span class="mock-titlebar-name">ClauTime</span>
-          <div class="mock-titlebar-controls">
-            <!-- Theme toggle (sun icon) -->
-            <div class="mock-titlebar-btn theme-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></div>
-            <div class="mock-titlebar-divider"></div>
-            <!-- Minimize -->
-            <div class="mock-titlebar-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
-            <!-- Maximize -->
-            <div class="mock-titlebar-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></div>
-            <!-- Tray (down arrow) -->
-            <div class="mock-titlebar-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></div>
-            <!-- Close (X) -->
-            <div class="mock-titlebar-btn close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
-          </div>
-        </div>
-
-        <div class="mock-app-body">
-          <!-- Activity Bar (Lucide-style SVG icons) -->
-          <div class="mock-sidebar">
-            <!-- Sessions: LayoutList -->
-            <div class="mock-nav-btn"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="4" x2="21" y2="4"/><line x1="14" y1="9" x2="21" y2="9"/><line x1="14" y1="15" x2="21" y2="15"/><line x1="14" y1="20" x2="21" y2="20"/></svg></div>
-            <!-- Live: Activity -->
-            <div class="mock-nav-btn active"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
-            <!-- Reports: FileBarChart -->
-            <div class="mock-nav-btn"><svg viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="18" x2="8" y2="13"/><line x1="12" y1="18" x2="12" y2="11"/><line x1="16" y1="18" x2="16" y2="15"/></svg></div>
-            <!-- Analytics: BarChart3 -->
-            <div class="mock-nav-btn"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
-            <!-- Projects: FolderKanban -->
-            <div class="mock-nav-btn"><svg viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 002-2V8a2 2 0 00-2-2h-7.93a2 2 0 01-1.66-.9l-.82-1.2A2 2 0 007.93 3H4a2 2 0 00-2 2v13c0 1.1.9 2 2 2z"/><line x1="8" y1="10" x2="8" y2="16"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="16" y1="10" x2="16" y2="16"/></svg></div>
-            <!-- Settings: Gear -->
-            <div class="mock-nav-btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
-          </div>
-
-          <!-- Main Content: Live Dashboard -->
-          <div class="mock-main">
-            <!-- Stats Bar (6 stats) -->
-            <div class="mock-stats">
-              <div class="mock-stat">
-                <div class="mock-stat-label">Human Hours</div>
-                <div class="mock-stat-value teal">4h</div>
-              </div>
-              <div class="mock-stat">
-                <div class="mock-stat-label">Agent Hours</div>
-                <div class="mock-stat-value">6h 55m</div>
-              </div>
-              <div class="mock-stat">
-                <div class="mock-stat-label">Sessions</div>
-                <div class="mock-stat-value">30</div>
-              </div>
-              <div class="mock-stat">
-                <div class="mock-stat-label">Prompts</div>
-                <div class="mock-stat-value">160</div>
-              </div>
-              <div class="mock-stat">
-                <div class="mock-stat-label">Commits</div>
-                <div class="mock-stat-value">7</div>
-              </div>
-              <div class="mock-stat">
-                <div class="mock-stat-label">Tokens</div>
-                <div class="mock-stat-value">394.1K</div>
-              </div>
-            </div>
-
-            <!-- Section Header -->
-            <div class="mock-section-header">
-              <span>Projects</span>
-              <span class="mock-section-btn">Open all widgets</span>
-            </div>
-
-            <!-- Project Cards Grid (Layout 6 — Grid Stats) -->
-            <div class="mock-projects">
-              <!-- project-alpha — active, glowing -->
-              <div class="mock-project-card glowing">
-                <div class="mock-card-header">
-                  <span class="mock-color-dot" style="background: #14b8a6;"></span>
-                  <div class="mock-card-name-group"><span class="mock-card-project-name">project-alpha</span><div class="mock-card-client">Acme Inc</div></div>
-                  <span class="mock-card-popout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
-                </div>
-                <div class="mock-card-hours-row"><span class="mock-card-hours">2<span>h</span>24<span>m</span></span></div>
-                <div class="mock-card-stats">
-                  <div class="mock-card-stat"><b>8</b><span class="mock-card-stat-label">sessions</span></div>
-                  <div class="mock-card-stat"><b>49</b><span class="mock-card-stat-label">prompts</span></div>
-                  <div class="mock-card-stat"><b>140K</b><span class="mock-card-stat-label">tokens</span></div>
-                  <div class="mock-card-stat"><b>7</b><span class="mock-card-stat-label">commits</span></div>
-                </div>
-                <div class="mock-card-footer">
-                  <div class="mock-footer-left">
-                    <span class="mock-bell"><svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
-                    <span>2m ago</span>
-                  </div>
-                  <div class="mock-footer-right">
-                    <span class="mock-start-btn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- api-service -->
-              <div class="mock-project-card">
-                <div class="mock-card-header">
-                  <span class="mock-color-dot" style="background: #a78bfa;"></span>
-                  <div class="mock-card-name-group"><span class="mock-card-project-name">api-service</span><div class="mock-card-client">Acme Inc</div></div>
-                  <span class="mock-card-popout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
-                </div>
-                <div class="mock-card-hours-row"><span class="mock-card-hours">45<span>m</span></span></div>
-                <div class="mock-card-stats">
-                  <div class="mock-card-stat"><b>4</b><span class="mock-card-stat-label">sessions</span></div>
-                  <div class="mock-card-stat"><b>20</b><span class="mock-card-stat-label">prompts</span></div>
-                  <div class="mock-card-stat"><b>81K</b><span class="mock-card-stat-label">tokens</span></div>
-                  <div class="mock-card-stat"><b>&mdash;</b><span class="mock-card-stat-label">commits</span></div>
-                </div>
-                <div class="mock-card-footer">
-                  <div class="mock-footer-left">
-                    <span class="mock-bell"><svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
-                    <span>4m ago</span>
-                  </div>
-                  <div class="mock-footer-right">
-                    <span class="mock-start-btn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- looki -->
-              <div class="mock-project-card">
-                <div class="mock-card-header">
-                  <span class="mock-color-dot" style="background: #fbbf24;"></span>
-                  <div class="mock-card-name-group"><span class="mock-card-project-name">dashboard</span><div class="mock-card-client">None</div></div>
-                  <span class="mock-card-popout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
-                </div>
-                <div class="mock-card-hours-row"><span class="mock-card-hours">25<span>m</span></span></div>
-                <div class="mock-card-stats">
-                  <div class="mock-card-stat"><b>11</b><span class="mock-card-stat-label">sessions</span></div>
-                  <div class="mock-card-stat"><b>44</b><span class="mock-card-stat-label">prompts</span></div>
-                  <div class="mock-card-stat"><b>19K</b><span class="mock-card-stat-label">tokens</span></div>
-                  <div class="mock-card-stat"><b>&mdash;</b><span class="mock-card-stat-label">commits</span></div>
-                </div>
-                <div class="mock-card-footer">
-                  <div class="mock-footer-left">
-                    <span class="mock-bell"><svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>
-                    <span>7h 2m ago</span>
-                  </div>
-                  <div class="mock-footer-right">
-                    <span class="mock-start-btn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- ai bots -->
-              <div class="mock-project-card">
-                <div class="mock-card-header">
-                  <span class="mock-color-dot" style="background: #fb7185;"></span>
-                  <div class="mock-card-name-group"><span class="mock-card-project-name">ml-pipeline</span><div class="mock-card-client">Internal</div></div>
-                  <span class="mock-card-popout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
-                </div>
-                <div class="mock-card-hours-row"><span class="mock-card-hours">2<span>m</span></span></div>
-                <div class="mock-card-stats">
-                  <div class="mock-card-stat"><b>2</b><span class="mock-card-stat-label">sessions</span></div>
-                  <div class="mock-card-stat"><b>3</b><span class="mock-card-stat-label">prompts</span></div>
-                  <div class="mock-card-stat"><b>10K</b><span class="mock-card-stat-label">tokens</span></div>
-                  <div class="mock-card-stat"><b>&mdash;</b><span class="mock-card-stat-label">commits</span></div>
-                </div>
-                <div class="mock-card-footer">
-                  <div class="mock-footer-left">
-                    <span class="mock-bell"><svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>
-                    <span>5h 5m ago</span>
-                  </div>
-                  <div class="mock-footer-right">
-                    <span class="mock-start-btn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- wmux -->
-              <div class="mock-project-card">
-                <div class="mock-card-header">
-                  <span class="mock-color-dot" style="background: #38bdf8;"></span>
-                  <div class="mock-card-name-group"><span class="mock-card-project-name">infra-tools</span><div class="mock-card-client">Unassigned</div></div>
-                  <span class="mock-card-popout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
-                </div>
-                <div class="mock-card-hours-row"><span class="mock-card-hours">2<span>h</span>7<span>m</span></span></div>
-                <div class="mock-card-stats">
-                  <div class="mock-card-stat"><b>4</b><span class="mock-card-stat-label">sessions</span></div>
-                  <div class="mock-card-stat"><b>31</b><span class="mock-card-stat-label">prompts</span></div>
-                  <div class="mock-card-stat"><b>134K</b><span class="mock-card-stat-label">tokens</span></div>
-                  <div class="mock-card-stat"><b>&mdash;</b><span class="mock-card-stat-label">commits</span></div>
-                </div>
-                <div class="mock-card-footer">
-                  <div class="mock-footer-left">
-                    <span class="mock-bell"><svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
-                    <span>4h 59m ago</span>
-                  </div>
-                  <div class="mock-footer-right">
-                    <span class="mock-start-btn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- code -->
-              <div class="mock-project-card">
-                <div class="mock-card-header">
-                  <span class="mock-color-dot" style="background: #f97316;"></span>
-                  <div class="mock-card-name-group"><span class="mock-card-project-name">web-app</span><div class="mock-card-client">main</div></div>
-                  <span class="mock-card-popout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>
-                </div>
-                <div class="mock-card-hours-row"><span class="mock-card-hours">1<span>h</span>12<span>m</span></span></div>
-                <div class="mock-card-stats">
-                  <div class="mock-card-stat"><b>1</b><span class="mock-card-stat-label">sessions</span></div>
-                  <div class="mock-card-stat"><b>13</b><span class="mock-card-stat-label">prompts</span></div>
-                  <div class="mock-card-stat"><b>9K</b><span class="mock-card-stat-label">tokens</span></div>
-                  <div class="mock-card-stat"><b>&mdash;</b><span class="mock-card-stat-label">commits</span></div>
-                </div>
-                <div class="mock-card-footer">
-                  <div class="mock-footer-left">
-                    <span class="mock-bell"><svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
-                    <span>1m ago</span>
-                  </div>
-                  <div class="mock-footer-right">
-                    <span class="mock-start-btn"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Status Bar -->
-        <div class="mock-statusbar">
-          <span>30 sessions &middot; 160 prompts &middot; 394.1K tokens &middot; 7 commits</span>
-          <span class="mock-statusbar-hours">4h today</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- CARD DESIGN OPTIONS -->
-<section id="card-designs" style="padding: 80px 0;">
-  <div class="container">
-    <div class="features-header reveal">
-      <div class="section-label">Card Designs</div>
-      <h2 class="section-title">Pick a project card layout</h2>
-      <p class="section-desc">Same data, six different layouts. Click your favorite.</p>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 960px; margin: 0 auto;">
-
-      <!-- Shared SVG icons (hidden, referenced inline) -->
-      <!-- Bell: 🔔  MonitorUp: ⬆  Play: ▶  Pause: ⏸  Stop: ⏹ -->
-
-      <!-- LAYOUT 1: Stacked — vertical flow, hours left stats right -->
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); margin-bottom: 4px;">Layout 1 — Stacked</div>
-        <div style="background: #1e1e32; border: 1px solid #14b8a640; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 0 24px #14b8a60c; position: relative; overflow: hidden;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #14b8a608 0%, transparent 60%); pointer-events: none;"></div>
-          <!-- Header: name + widget popout -->
-          <div style="display: flex; align-items: center; gap: 6px; position: relative;">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: #14b8a6; display: inline-block;"></span>
-            <span style="font-size: 13px; font-weight: 600; flex: 1;">project-alpha</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          </div>
-          <div style="font-size: 10px; color: #555; padding-left: 13px; position: relative;">Acme Inc</div>
-          <!-- Hours left, stats right -->
-          <div style="display: flex; align-items: end; justify-content: space-between; margin-top: 4px; position: relative;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 700; color: #14b8a6; letter-spacing: -1.5px; line-height: 1;">2<span style="font-size: 16px; font-weight: 600;">h</span>24<span style="font-size: 16px; font-weight: 600;">m</span></div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-size: 10px; font-family: 'JetBrains Mono', monospace; text-align: center;">
-              <div><span style="color: #888; font-weight: 600; font-size: 13px;">8</span><br/><span style="color: #555;">sessions</span></div>
-              <div><span style="color: #888; font-weight: 600; font-size: 13px;">49</span><br/><span style="color: #555;">prompts</span></div>
-              <div><span style="color: #888; font-weight: 600; font-size: 13px;">140K</span><br/><span style="color: #555;">tokens</span></div>
-              <div><span style="color: #888; font-weight: 600; font-size: 13px;">7</span><br/><span style="color: #555;">commits</span></div>
-            </div>
-          </div>
-          <!-- Footer: bell + sound left, time + timer right -->
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px; position: relative;">
-            <div style="display: flex; align-items: center; gap: 2px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
-              <span style="font-size: 10px; color: #555;">2m ago</span>
-              <span style="padding: 3px 10px; border-radius: 5px; background: #10b98115; color: #34d399; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- LAYOUT 2: Split — hours right, info left -->
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); margin-bottom: 4px;">Layout 2 — Split</div>
-        <div style="background: #1e1e32; border: 1px solid #14b8a640; border-radius: 10px; padding: 12px; display: flex; gap: 12px; box-shadow: 0 0 24px #14b8a60c; position: relative; overflow: hidden;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #14b8a608 0%, transparent 60%); pointer-events: none;"></div>
-          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; position: relative;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="width: 7px; height: 7px; border-radius: 50%; background: #14b8a6; display: inline-block;"></span>
-              <span style="font-size: 13px; font-weight: 600; flex: 1;">project-alpha</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-            </div>
-            <div style="font-size: 10px; color: #555; padding-left: 13px;">Acme Inc</div>
-            <div style="display: flex; gap: 10px; font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #555; margin-top: auto;">
-              <span><span style="color: #888;">8</span> sess</span>
-              <span><span style="color: #888;">49</span> prmpt</span>
-              <span><span style="color: #888;">140K</span> tok</span>
-              <span><span style="color: #888;">7</span> cmts</span>
-            </div>
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-              <div style="display: flex; align-items: center; gap: 2px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-              </div>
-              <span style="font-size: 10px; color: #555;">2m ago</span>
-            </div>
-          </div>
-          <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; position: relative;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 700; color: #14b8a6; letter-spacing: -1.5px; line-height: 1;">2<span style="font-size: 16px;">h</span>24<span style="font-size: 16px;">m</span></div>
-            <span style="padding: 3px 10px; border-radius: 5px; background: #10b98115; color: #34d399; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- LAYOUT 3: Minimal — clean rows -->
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); margin-bottom: 4px;">Layout 3 — Minimal</div>
-        <div style="background: #1e1e32; border: 1px solid #14b8a640; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 0 24px #14b8a60c; position: relative; overflow: hidden;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #14b8a608 0%, transparent 60%); pointer-events: none;"></div>
-          <div style="display: flex; align-items: center; gap: 6px; position: relative;">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: #14b8a6; display: inline-block;"></span>
-            <span style="font-size: 13px; font-weight: 600; flex: 1;">project-alpha</span>
-            <span style="font-size: 10px; color: #555;">Acme Inc</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          </div>
-          <!-- Hours + stats inline -->
-          <div style="display: flex; align-items: end; gap: 16px; position: relative;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; color: #14b8a6; letter-spacing: -2px; line-height: 1;">2<span style="font-size: 18px;">h</span>24<span style="font-size: 18px;">m</span></div>
-            <div style="display: flex; gap: 12px; font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #555; padding-bottom: 2px;">
-              <span><span style="color: #888;">8</span> sess</span>
-              <span><span style="color: #888;">49</span> prmpt</span>
-              <span><span style="color: #888;">140K</span> tok</span>
-              <span><span style="color: #888;">7</span> cmts</span>
-            </div>
-          </div>
-          <!-- Footer -->
-          <div style="display: flex; align-items: center; justify-content: space-between; position: relative;">
-            <div style="display: flex; align-items: center; gap: 2px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 10px; color: #555;">2m ago</span>
-              <span style="padding: 3px 10px; border-radius: 5px; background: #eab30815; color: #eab308; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="6" y1="4" x2="6" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/></svg> 1:23:45</span>
-              <span style="padding: 3px 8px; border-radius: 5px; background: #ef444415; color: #f87171; font-size: 10px; display: flex; align-items: center;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- LAYOUT 4: Centered — big hours, column stats -->
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); margin-bottom: 4px;">Layout 4 — Centered</div>
-        <div style="background: #1e1e32; border: 1px solid #14b8a640; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; box-shadow: 0 0 24px #14b8a60c; position: relative; overflow: hidden;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #14b8a608 0%, transparent 60%); pointer-events: none;"></div>
-          <div style="display: flex; align-items: center; gap: 6px; width: 100%; position: relative;">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: #14b8a6; display: inline-block;"></span>
-            <span style="font-size: 13px; font-weight: 600; flex: 1; text-align: left;">project-alpha</span>
-            <span style="font-size: 10px; color: #555;">Acme Inc</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          </div>
-          <div style="font-family: 'JetBrains Mono', monospace; font-size: 40px; font-weight: 700; color: #14b8a6; letter-spacing: -2px; line-height: 1; padding: 6px 0; position: relative;">2<span style="font-size: 20px;">h</span>24<span style="font-size: 20px;">m</span></div>
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; font-size: 10px; font-family: 'JetBrains Mono', monospace; position: relative;">
-            <div style="color: #555;"><span style="color: #888; font-weight: 600; font-size: 14px;">8</span><br/>sessions</div>
-            <div style="color: #555;"><span style="color: #888; font-weight: 600; font-size: 14px;">49</span><br/>prompts</div>
-            <div style="color: #555;"><span style="color: #888; font-weight: 600; font-size: 14px;">140K</span><br/>tokens</div>
-            <div style="color: #555;"><span style="color: #888; font-weight: 600; font-size: 14px;">7</span><br/>commits</div>
-          </div>
-          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding-top: 6px; border-top: 1px solid #2a2a3e; font-size: 10px; color: #555; position: relative;">
-            <div style="display: flex; align-items: center; gap: 2px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span>2m ago</span>
-              <span style="padding: 3px 10px; border-radius: 5px; background: #10b98115; color: #34d399; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- LAYOUT 5: Wide Bar — horizontal -->
-      <div style="display: flex; flex-direction: column; gap: 8px; grid-column: span 2;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); margin-bottom: 4px;">Layout 5 — Wide Bar</div>
-        <div style="background: #1e1e32; border: 1px solid #14b8a640; border-radius: 10px; padding: 10px 16px; display: flex; align-items: center; gap: 16px; box-shadow: 0 0 24px #14b8a60c; position: relative; overflow: hidden;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #14b8a608 0%, transparent 60%); pointer-events: none;"></div>
-          <div style="display: flex; align-items: center; gap: 6px; position: relative; min-width: 110px;">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: #14b8a6; display: inline-block;"></span>
-            <div>
-              <div style="font-size: 13px; font-weight: 600;">project-alpha</div>
-              <div style="font-size: 10px; color: #555;">Acme Inc</div>
-            </div>
-          </div>
-          <div style="font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700; color: #14b8a6; letter-spacing: -1px; position: relative;">2<span style="font-size: 14px;">h</span>24<span style="font-size: 14px;">m</span></div>
-          <div style="display: flex; gap: 14px; font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #555; flex: 1; position: relative;">
-            <span><span style="color: #888;">8</span> sess</span>
-            <span><span style="color: #888;">49</span> prompts</span>
-            <span><span style="color: #888;">140K</span> tok</span>
-            <span><span style="color: #888;">7</span> commits</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px; position: relative;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-            <span style="font-size: 10px; color: #555;">2m ago</span>
-            <span style="padding: 3px 10px; border-radius: 5px; background: #10b98115; color: #34d399; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- LAYOUT 6: Grid Stats — segmented bottom -->
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); margin-bottom: 4px;">Layout 6 — Grid Stats</div>
-        <div style="background: #1e1e32; border: 1px solid #14b8a640; border-radius: 10px; overflow: hidden; box-shadow: 0 0 24px #14b8a60c; position: relative;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(135deg, #14b8a608 0%, transparent 60%); pointer-events: none;"></div>
-          <!-- Header -->
-          <div style="padding: 10px 12px; display: flex; align-items: center; gap: 6px; position: relative;">
-            <span style="width: 7px; height: 7px; border-radius: 50%; background: #14b8a6; display: inline-block;"></span>
-            <span style="font-size: 13px; font-weight: 600; flex: 1;">project-alpha</span>
-            <span style="font-size: 10px; color: #555;">Acme Inc</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13V7"/><path d="m15 10-3-3-3 3"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-          </div>
-          <!-- Hours -->
-          <div style="padding: 4px 12px 10px; position: relative;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: #14b8a6; letter-spacing: -1.5px; line-height: 1;">2<span style="font-size: 16px;">h</span>24<span style="font-size: 16px;">m</span></div>
-          </div>
-          <!-- Stats grid -->
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #2a2a3e; position: relative;">
-            <div style="padding: 6px; text-align: center; font-family: 'JetBrains Mono', monospace; border-right: 1px solid #2a2a3e;">
-              <div style="font-size: 13px; font-weight: 600; color: #888;">8</div>
-              <div style="font-size: 9px; color: #555;">sessions</div>
-            </div>
-            <div style="padding: 6px; text-align: center; font-family: 'JetBrains Mono', monospace; border-right: 1px solid #2a2a3e;">
-              <div style="font-size: 13px; font-weight: 600; color: #888;">49</div>
-              <div style="font-size: 9px; color: #555;">prompts</div>
-            </div>
-            <div style="padding: 6px; text-align: center; font-family: 'JetBrains Mono', monospace; border-right: 1px solid #2a2a3e;">
-              <div style="font-size: 13px; font-weight: 600; color: #888;">140K</div>
-              <div style="font-size: 9px; color: #555;">tokens</div>
-            </div>
-            <div style="padding: 6px; text-align: center; font-family: 'JetBrains Mono', monospace;">
-              <div style="font-size: 13px; font-weight: 600; color: #888;">7</div>
-              <div style="font-size: 9px; color: #555;">commits</div>
-            </div>
-          </div>
-          <!-- Footer -->
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-top: 1px solid #2a2a3e; font-size: 10px; color: #555; position: relative;">
-            <div style="display: flex; align-items: center; gap: 2px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span>2m ago</span>
-              <span style="padding: 3px 10px; border-radius: 5px; background: #10b98115; color: #34d399; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 4px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- FEATURES -->
-<section id="features">
-  <div class="container">
-    <div class="features-header reveal">
-      <div class="section-label">Features</div>
-      <h2 class="section-title">Everything you need to track<br>your Claude Code work</h2>
-      <p class="section-desc">Built for developers who bill by the hour and want accurate, automatic tracking without lifting a finger.</p>
-    </div>
-    <div class="features-grid">
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#9201;</div>
-        <h3>Automatic Detection</h3>
-        <p>Reads Claude Code's JSONL logs and detects sessions automatically. No manual timers, no browser extensions. Just works.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#9889;</div>
-        <h3>Live Dashboard</h3>
-        <p>See which projects are active right now with real-time processing indicators. Know exactly when Claude is thinking vs idle.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128200;</div>
-        <h3>Analytics</h3>
-        <p>Session trends, token usage, AI vs human time, gap analysis. Customizable dashboard widgets to understand your workflow.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128101;</div>
-        <h3>Client Management</h3>
-        <p>Assign projects to clients, mark work as billable or non-billable, and generate reports ready for invoicing.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128196;</div>
-        <h3>Reports & Export</h3>
-        <p>Session breakdowns, daily summaries, and period reports. Export as Markdown to clipboard or file. AI-powered summaries optional.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128276;</div>
-        <h3>Desktop Alerts</h3>
-        <p>Get notified when Claude finishes processing. Configurable sounds, volume, and alert thresholds per project.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128737;</div>
-        <h3>Secret Scanner</h3>
-        <p>Detects 50+ patterns of API keys, tokens, and credentials in your JSONL files. Auto-redaction available. Protect your secrets.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128421;</div>
-        <h3>Floating Widgets</h3>
-        <p>Always-on-top mini windows showing per-project status. See time and activity at a glance without switching windows.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#128274;</div>
-        <h3>100% Local</h3>
-        <p>No telemetry. No cloud. No accounts. All data stays on your machine in a local SQLite database. Your data is yours.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- HOW IT WORKS -->
-<section id="how-it-works" class="how-it-works">
-  <div class="container">
-    <div class="features-header reveal">
-      <div class="section-label">How It Works</div>
-      <h2 class="section-title">Zero configuration required</h2>
-      <p class="section-desc">ClauTime reads what Claude Code already writes. No setup, no integrations, no overhead.</p>
-    </div>
-    <div class="how-grid">
-      <div class="how-step reveal">
-        <div class="step-number">01</div>
-        <h3>Claude Code writes logs</h3>
-        <p>Every conversation is recorded as JSONL files in <code>~/.claude/projects/</code>. This happens automatically — it's how Claude Code works.</p>
-      </div>
-      <div class="how-step reveal">
-        <div class="step-number">02</div>
-        <h3>ClauTime detects sessions</h3>
-        <p>Smart gap-based detection with tool-aware idle timeouts. Tracks prompts, tokens, models, and timing across all your projects.</p>
-      </div>
-      <div class="how-step reveal">
-        <div class="step-number">03</div>
-        <h3>You get actionable data</h3>
-        <p>Assign sessions to clients, generate billable reports, and understand exactly how your AI-assisted development time is spent.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- TECH STACK -->
-<section class="tech-section">
-  <div class="container">
-    <div class="features-header reveal">
-      <div class="section-label">Built With</div>
-      <h2 class="section-title">Modern, fast, reliable</h2>
-    </div>
-    <div class="tech-grid reveal">
-      <div class="tech-pill"><span>Electron 39</span></div>
-      <div class="tech-pill"><span>React 19</span></div>
-      <div class="tech-pill"><span>TypeScript</span></div>
-      <div class="tech-pill"><span>Tailwind CSS v4</span></div>
-      <div class="tech-pill"><span>shadcn/ui</span></div>
-      <div class="tech-pill"><span>Drizzle ORM</span></div>
-      <div class="tech-pill"><span>SQLite</span></div>
-      <div class="tech-pill"><span>Vite 7</span></div>
-      <div class="tech-pill"><span>TanStack Query</span></div>
-      <div class="tech-pill"><span>Zustand</span></div>
-      <div class="tech-pill"><span>Vitest</span></div>
-    </div>
-  </div>
-</section>
-
-<!-- GETTING STARTED -->
-<section id="getting-started" class="getting-started">
-  <div class="container">
-    <div class="features-header reveal">
-      <div class="section-label">Get Started</div>
-      <h2 class="section-title">Up and running in 60 seconds</h2>
-    </div>
-    <div class="code-block reveal">
-      <div class="code-header">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-        terminal
-      </div>
-      <div class="code-body">
-        <span class="comment"># Clone the repository</span><br>
-        <span class="cmd">git clone</span> https://github.com/lookitstony/clautime.git<br>
-        <span class="cmd">cd</span> clautime<br><br>
-        <span class="comment"># Install and run</span><br>
-        <span class="cmd">npm install</span><br>
-        <span class="cmd">npm run</span> <span class="flag">dev</span>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FINAL CTA -->
-<section class="final-cta">
-  <div class="container">
-    <div class="reveal">
-      <h2 class="cta-title">Ready to track your time?</h2>
-      <p class="cta-desc">Open source. Free forever. Start tracking in under a minute.</p>
-      <div class="hero-actions">
-        <a href="https://github.com/lookitstony/clautime" target="_blank" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          View on GitHub
-        </a>
-        <a href="#features" class="btn btn-secondary">Explore Features</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FOOTER -->
-<footer>
-  <div class="container">
-    <div class="footer-inner">
-      <div class="footer-left">
-        &copy; 2026 ClauTime &middot; Apache 2.0
-      </div>
-      <ul class="footer-links">
-        <li><a href="https://github.com/lookitstony/clautime" target="_blank">GitHub</a></li>
-        <li><a href="https://github.com/lookitstony/clautime/issues" target="_blank">Issues</a></li>
-        <li><a href="https://github.com/lookitstony/clautime/blob/master/CONTRIBUTING.md" target="_blank">Contributing</a></li>
-        <li><a href="https://github.com/lookitstony/clautime/blob/master/LICENSE" target="_blank">License</a></li>
-      </ul>
-    </div>
-  </div>
-</footer>
-
-<script>
-  // Scroll reveal
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClauTime — Automatic Time Tracking for Claude Code</title>
+    <meta
+      name="description"
+      content="Track billable hours, monitor live sessions, and protect your secrets — all locally. Open source, zero telemetry."
+    />
+    <meta property="og:title" content="ClauTime — Automatic Time Tracking for Claude Code" />
+    <meta
+      property="og:description"
+      content="Track billable hours, monitor live sessions, and protect your secrets — all locally."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
       }
-    });
-  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+      :root {
+        --bg-deep: #06080c;
+        --bg-primary: #0a0d14;
+        --bg-elevated: #111620;
+        --bg-surface: #161c2a;
+        --border: #1e2738;
+        --border-glow: #2dd4bf20;
+        --text-primary: #e8edf5;
+        --text-secondary: #8b95a8;
+        --text-muted: #4a5568;
+        --accent: #2dd4bf;
+        --accent-dim: #1a9e8f;
+        --accent-glow: #2dd4bf30;
+        --accent-bg: #2dd4bf08;
+        --purple: #a78bfa;
+        --amber: #fbbf24;
+        --rose: #fb7185;
+      }
 
-  // Stagger feature cards
-  document.querySelectorAll('.features-grid .reveal').forEach((el, i) => {
-    el.style.transitionDelay = `${i * 0.06}s`;
-  });
+      html {
+        scroll-behavior: smooth;
+      }
 
-  document.querySelectorAll('.how-grid .reveal').forEach((el, i) => {
-    el.style.transitionDelay = `${i * 0.1}s`;
-  });
+      body {
+        font-family:
+          'Outfit',
+          -apple-system,
+          sans-serif;
+        background: var(--bg-deep);
+        color: var(--text-primary);
+        line-height: 1.6;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
 
-  // Smooth nav shadow on scroll
-  const nav = document.querySelector('nav');
-  window.addEventListener('scroll', () => {
-    if (window.scrollY > 20) {
-      nav.style.borderBottomColor = '#1e273880';
-      nav.style.boxShadow = '0 4px 24px #00000040';
-    } else {
-      nav.style.borderBottomColor = '#1e2738';
-      nav.style.boxShadow = 'none';
-    }
-  }, { passive: true });
-</script>
+      /* ═══ GLOBAL BACKGROUND ═══ */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(ellipse 80% 60% at 50% -10%, #2dd4bf08 0%, transparent 60%),
+          radial-gradient(ellipse 60% 40% at 80% 50%, #a78bfa05 0%, transparent 50%),
+          radial-gradient(ellipse 60% 40% at 20% 80%, #2dd4bf04 0%, transparent 50%);
+        pointer-events: none;
+        z-index: 0;
+      }
 
-</body>
+      /* ═══ DOT GRID ═══ */
+      .dot-grid {
+        position: fixed;
+        inset: 0;
+        background-image: radial-gradient(circle, #1e273830 1px, transparent 1px);
+        background-size: 32px 32px;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      /* ═══ LAYOUT ═══ */
+      .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 24px;
+        position: relative;
+        z-index: 1;
+      }
+
+      section {
+        padding: 100px 0;
+      }
+
+      /* ═══ NAV ═══ */
+      nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        padding: 16px 0;
+        background: #06080ccc;
+        backdrop-filter: blur(20px) saturate(1.5);
+        border-bottom: 1px solid var(--border);
+        transition: all 0.3s ease;
+      }
+
+      nav .container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .nav-logo {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 600;
+        font-size: 18px;
+        color: var(--accent);
+        text-decoration: none;
+        letter-spacing: -0.5px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .nav-logo .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow:
+          0 0 12px var(--accent),
+          0 0 4px var(--accent);
+        animation: pulse-dot 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse-dot {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.6;
+          transform: scale(0.85);
+        }
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        list-style: none;
+      }
+
+      .nav-links a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 400;
+        transition: color 0.2s;
+        letter-spacing: 0.01em;
+      }
+
+      .nav-links a:hover {
+        color: var(--text-primary);
+      }
+
+      .nav-cta {
+        background: var(--accent) !important;
+        color: var(--bg-deep) !important;
+        padding: 8px 20px;
+        border-radius: 8px;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+      }
+
+      .nav-cta:hover {
+        box-shadow: 0 0 24px var(--accent-glow);
+        transform: translateY(-1px);
+      }
+
+      /* ═══ HERO ═══ */
+      .hero {
+        padding: 180px 0 120px;
+        text-align: center;
+        position: relative;
+      }
+
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 16px 6px 8px;
+        border-radius: 100px;
+        border: 1px solid var(--border);
+        background: var(--bg-elevated);
+        font-size: 13px;
+        color: var(--text-secondary);
+        margin-bottom: 32px;
+        animation: fade-up 0.8s ease both;
+      }
+
+      .hero-badge .tag {
+        background: var(--accent-dim);
+        color: var(--bg-deep);
+        padding: 2px 10px;
+        border-radius: 100px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .hero h1 {
+        font-size: clamp(52px, 8vw, 88px);
+        font-weight: 800;
+        letter-spacing: -3px;
+        line-height: 1;
+        margin-bottom: 24px;
+        animation: fade-up 0.8s ease 0.1s both;
+      }
+
+      .hero h1 .gradient {
+        background: linear-gradient(135deg, var(--accent) 0%, #67e8f9 40%, var(--purple) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .hero-sub {
+        font-size: clamp(17px, 2.2vw, 20px);
+        color: var(--text-secondary);
+        max-width: 600px;
+        margin: 0 auto 48px;
+        line-height: 1.7;
+        font-weight: 300;
+        animation: fade-up 0.8s ease 0.2s both;
+      }
+
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        animation: fade-up 0.8s ease 0.3s both;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 28px;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.25s ease;
+        border: none;
+        cursor: pointer;
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: var(--bg-deep);
+        box-shadow:
+          0 0 32px var(--accent-glow),
+          inset 0 1px 0 #ffffff20;
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow:
+          0 0 48px var(--accent-glow),
+          0 8px 32px #00000040,
+          inset 0 1px 0 #ffffff20;
+      }
+
+      .btn-secondary {
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        border: 1px solid var(--border);
+      }
+
+      .btn-secondary:hover {
+        border-color: var(--text-muted);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px #00000040;
+      }
+
+      .btn svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      /* ═══ HERO VISUAL ═══ */
+      .hero-visual {
+        margin-top: 80px;
+        position: relative;
+        animation: fade-up 1s ease 0.5s both;
+      }
+
+      .hero-window {
+        max-width: 900px;
+        margin: 0 auto;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--bg-primary);
+        overflow: hidden;
+        box-shadow:
+          0 0 0 1px var(--border),
+          0 24px 80px #00000060,
+          0 0 120px var(--accent-glow);
+      }
+
+      /* ═══ MOCK APP LAYOUT ═══ */
+      .mock-titlebar {
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        height: 32px;
+        background: #12121e;
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-muted);
+        text-align: left;
+      }
+      .mock-titlebar-name {
+        flex: 1;
+        font-size: 10px;
+        text-align: left;
+      }
+      .mock-titlebar-controls {
+        display: flex;
+        gap: 0;
+        align-items: center;
+      }
+      .mock-titlebar-btn {
+        width: 32px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+      }
+      .mock-titlebar-btn svg {
+        width: 13px;
+        height: 13px;
+      }
+      .mock-titlebar-btn.theme-toggle {
+        margin-right: 4px;
+      }
+      .mock-titlebar-divider {
+        width: 1px;
+        height: 14px;
+        background: var(--border);
+        margin: 0 2px;
+      }
+      .mock-titlebar-btn.close:hover {
+        color: #ef4444;
+      }
+
+      .mock-app-body {
+        display: flex;
+        min-height: 380px;
+        text-align: left;
+      }
+
+      /* Activity bar (left sidebar) */
+      .mock-sidebar {
+        width: 48px;
+        background: #12121e;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px 0;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .mock-nav-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        position: relative;
+      }
+      .mock-nav-btn svg {
+        width: 18px;
+        height: 18px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .mock-nav-btn.active {
+        background: #14b8a610;
+        color: var(--accent);
+      }
+      .mock-nav-btn.active::before {
+        content: '';
+        position: absolute;
+        left: -7px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 18px;
+        background: var(--accent);
+        border-radius: 0 3px 3px 0;
+      }
+
+      /* Main content area */
+      .mock-main {
+        flex: 1;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        overflow: hidden;
+        background: #16162a;
+      }
+
+      /* Stats bar */
+      .mock-stats {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 6px;
+      }
+      .mock-stat {
+        background: #1e1e32;
+        border: 1px solid #2a2a3e;
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .mock-stat-label {
+        font-size: 9px;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-family: 'JetBrains Mono', monospace;
+        margin-bottom: 3px;
+      }
+      .mock-stat-value {
+        font-size: 16px;
+        font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: -0.5px;
+        color: #e0e0e0;
+      }
+      .mock-stat-value.teal {
+        color: #14b8a6;
+      }
+
+      /* Section header */
+      .mock-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        font-weight: 500;
+        color: #888;
+      }
+      .mock-section-btn {
+        font-size: 10px;
+        color: #555;
+        padding: 3px 8px;
+        border: 1px solid #2a2a3e;
+        border-radius: 5px;
+        background: transparent;
+      }
+
+      /* Project cards grid — Layout 6 (Grid Stats) */
+      .mock-projects {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .mock-project-card {
+        background: #1e1e32;
+        border: 1px solid #2a2a3e;
+        border-radius: 10px;
+        overflow: hidden;
+        position: relative;
+        transition: border-color 0.3s;
+      }
+      .mock-project-card.glowing {
+        border-color: #14b8a640;
+        box-shadow: 0 0 24px #14b8a60c;
+      }
+      .mock-project-card.glowing::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+        pointer-events: none;
+      }
+      .mock-card-header {
+        padding: 8px 10px 4px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        position: relative;
+      }
+      .mock-color-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: inline-block;
+        margin-top: 5px;
+      }
+      .mock-card-name-group {
+        flex: 1;
+        min-width: 0;
+        text-align: left;
+      }
+      .mock-card-project-name {
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.2;
+        display: block;
+        text-align: left;
+      }
+      .mock-card-client {
+        font-size: 9px;
+        color: #555;
+        line-height: 1.2;
+        margin-top: 1px;
+        text-align: left;
+      }
+      .mock-card-popout {
+        color: #555;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .mock-card-popout svg {
+        width: 13px;
+        height: 13px;
+      }
+      .mock-card-hours-row {
+        padding: 2px 10px 8px;
+        position: relative;
+        text-align: center;
+      }
+      .mock-card-hours {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 24px;
+        font-weight: 700;
+        color: #14b8a6;
+        letter-spacing: -1.5px;
+        line-height: 1;
+      }
+      .mock-card-hours span {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      /* Stats grid row */
+      .mock-card-stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-top: 1px solid #2a2a3e;
+        position: relative;
+      }
+      .mock-card-stat {
+        padding: 5px 4px;
+        text-align: center;
+        font-family: 'JetBrains Mono', monospace;
+        border-right: 1px solid #2a2a3e;
+      }
+      .mock-card-stat:last-child {
+        border-right: none;
+      }
+      .mock-card-stat b {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #888;
+      }
+      .mock-card-stat-label {
+        font-size: 8px;
+        color: #555;
+      }
+      /* Footer row */
+      .mock-card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px;
+        border-top: 1px solid #2a2a3e;
+        font-size: 10px;
+        color: #555;
+        position: relative;
+      }
+      .mock-footer-left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .mock-bell svg {
+        width: 14px;
+        height: 14px;
+      }
+      .mock-footer-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .mock-start-btn {
+        font-size: 9px;
+        padding: 2px 8px;
+        border-radius: 5px;
+        font-weight: 600;
+        font-family: 'JetBrains Mono', monospace;
+        background: #10b98115;
+        color: #34d399;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .mock-start-btn svg {
+        width: 8px;
+        height: 8px;
+        fill: currentColor;
+        stroke: none;
+      }
+
+      /* Status bar (bottom) */
+      .mock-statusbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 24px;
+        padding: 0 12px;
+        background: #12121e;
+        border-top: 1px solid var(--border);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #555;
+      }
+      .mock-statusbar-hours {
+        color: #14b8a6;
+        font-weight: 600;
+      }
+
+      /* ═══ FEATURES ═══ */
+      .section-label {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        margin-bottom: 16px;
+        font-weight: 500;
+      }
+
+      .section-title {
+        font-size: clamp(32px, 4vw, 44px);
+        font-weight: 700;
+        letter-spacing: -1.5px;
+        line-height: 1.15;
+        margin-bottom: 16px;
+      }
+
+      .section-desc {
+        font-size: 17px;
+        color: var(--text-secondary);
+        max-width: 560px;
+        line-height: 1.7;
+        font-weight: 300;
+      }
+
+      .features-header {
+        text-align: center;
+        margin-bottom: 64px;
+      }
+
+      .features-header .section-desc {
+        margin: 0 auto;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+
+      .feature-card {
+        padding: 32px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .feature-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--accent-glow), transparent);
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      .feature-card:hover {
+        border-color: #2e3a4e;
+        transform: translateY(-4px);
+        box-shadow: 0 16px 48px #00000030;
+      }
+
+      .feature-card:hover::before {
+        opacity: 1;
+      }
+
+      .feature-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+        font-size: 20px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+      }
+
+      .feature-card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        letter-spacing: -0.3px;
+      }
+
+      .feature-card p {
+        font-size: 14px;
+        color: var(--text-secondary);
+        line-height: 1.6;
+        font-weight: 300;
+      }
+
+      /* ═══ HOW IT WORKS ═══ */
+      .how-it-works {
+        border-top: 1px solid var(--border);
+      }
+
+      .how-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+        margin-top: 64px;
+      }
+
+      .how-step {
+        position: relative;
+        padding-top: 32px;
+      }
+
+      .how-step::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 48px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--accent), transparent);
+      }
+
+      .step-number {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 48px;
+        font-weight: 300;
+        color: var(--bg-surface);
+        letter-spacing: -3px;
+        line-height: 1;
+        margin-bottom: 16px;
+      }
+
+      .how-step h3 {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        letter-spacing: -0.3px;
+      }
+
+      .how-step p {
+        font-size: 14px;
+        color: var(--text-secondary);
+        line-height: 1.7;
+      }
+
+      .how-step code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        background: var(--bg-elevated);
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        color: var(--accent);
+      }
+
+      /* ═══ TECH STACK ═══ */
+      .tech-section {
+        border-top: 1px solid var(--border);
+      }
+
+      .tech-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 48px;
+        justify-content: center;
+      }
+
+      .tech-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: 100px;
+        font-size: 14px;
+        font-weight: 400;
+        color: var(--text-secondary);
+        transition: all 0.2s;
+      }
+
+      .tech-pill:hover {
+        border-color: var(--text-muted);
+        color: var(--text-primary);
+      }
+
+      .tech-pill span {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+      }
+
+      /* ═══ GETTING STARTED ═══ */
+      .getting-started {
+        border-top: 1px solid var(--border);
+      }
+
+      .code-block {
+        max-width: 640px;
+        margin: 48px auto 0;
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+
+      .code-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 18px;
+        background: var(--bg-elevated);
+        border-bottom: 1px solid var(--border);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .code-body {
+        padding: 24px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        line-height: 2;
+        color: var(--text-secondary);
+        overflow-x: auto;
+      }
+
+      .code-body .comment {
+        color: var(--text-muted);
+      }
+      .code-body .cmd {
+        color: var(--accent);
+      }
+      .code-body .flag {
+        color: var(--purple);
+      }
+
+      /* ═══ CTA ═══ */
+      .final-cta {
+        border-top: 1px solid var(--border);
+        text-align: center;
+        position: relative;
+      }
+
+      .final-cta::before {
+        content: '';
+        position: absolute;
+        top: -1px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 400px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      }
+
+      .cta-title {
+        font-size: clamp(28px, 4vw, 40px);
+        font-weight: 700;
+        letter-spacing: -1.5px;
+        margin-bottom: 16px;
+      }
+
+      .cta-desc {
+        font-size: 17px;
+        color: var(--text-secondary);
+        margin-bottom: 40px;
+        font-weight: 300;
+      }
+
+      /* ═══ FOOTER ═══ */
+      footer {
+        padding: 48px 0;
+        border-top: 1px solid var(--border);
+        position: relative;
+        z-index: 1;
+      }
+
+      .footer-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .footer-left {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 24px;
+        list-style: none;
+      }
+
+      .footer-links a {
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 13px;
+        transition: color 0.2s;
+      }
+
+      .footer-links a:hover {
+        color: var(--text-secondary);
+      }
+
+      /* ═══ ANIMATIONS ═══ */
+      @keyframes fade-up {
+        from {
+          opacity: 0;
+          transform: translateY(24px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(24px);
+        transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .reveal.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* ═══ RESPONSIVE ═══ */
+      @media (max-width: 768px) {
+        .hero {
+          padding: 140px 0 80px;
+        }
+        .mock-stats {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .mock-projects {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .mock-sidebar {
+          display: none;
+        }
+        .features-grid {
+          grid-template-columns: 1fr;
+        }
+        .how-grid {
+          grid-template-columns: 1fr;
+          gap: 48px;
+        }
+        .nav-links .hide-mobile {
+          display: none;
+        }
+        .hero-visual {
+          margin-top: 48px;
+        }
+        section {
+          padding: 64px 0;
+        }
+        .footer-inner {
+          flex-direction: column;
+          gap: 24px;
+          text-align: center;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .hero h1 {
+          letter-spacing: -2px;
+        }
+        .hero-actions {
+          flex-direction: column;
+          width: 100%;
+        }
+        .btn {
+          width: 100%;
+          justify-content: center;
+        }
+        .mock-stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .mock-projects {
+          grid-template-columns: 1fr;
+        }
+        .mock-card-stats {
+          display: none;
+        }
+      }
+
+      /* ═══ SCROLLBAR ═══ */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--bg-deep);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dot-grid"></div>
+
+    <!-- NAV -->
+    <nav>
+      <div class="container">
+        <a href="#" class="nav-logo">
+          <span class="dot"></span>
+          ClauTime
+        </a>
+        <ul class="nav-links">
+          <li><a href="#features" class="hide-mobile">Features</a></li>
+          <li><a href="#how-it-works" class="hide-mobile">How It Works</a></li>
+          <li><a href="#getting-started" class="hide-mobile">Get Started</a></li>
+          <li>
+            <a href="https://github.com/lookitstony/clautime" target="_blank" class="nav-cta"
+              >GitHub</a
+            >
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-badge">
+          <span class="tag">Open Source</span>
+          Apache 2.0 &middot; 100% Local
+        </div>
+        <h1><span class="gradient">ClauTime</span></h1>
+        <p class="hero-sub">
+          Automatic time tracking for Claude Code.<br />
+          Track billable hours, monitor live sessions, and protect your secrets.
+        </p>
+        <div class="hero-actions">
+          <a href="https://github.com/lookitstony/clautime" target="_blank" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+              />
+            </svg>
+            View on GitHub
+          </a>
+          <a href="#getting-started" class="btn btn-secondary"> Get Started </a>
+        </div>
+
+        <!-- MOCK APP WINDOW -->
+        <div class="hero-visual">
+          <div class="hero-window">
+            <!-- Title Bar -->
+            <div class="mock-titlebar">
+              <span class="mock-titlebar-name">ClauTime</span>
+              <div class="mock-titlebar-controls">
+                <!-- Theme toggle (sun icon) -->
+                <div class="mock-titlebar-btn theme-toggle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="5" />
+                    <line x1="12" y1="1" x2="12" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="23" />
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                    <line x1="1" y1="12" x2="3" y2="12" />
+                    <line x1="21" y1="12" x2="23" y2="12" />
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                  </svg>
+                </div>
+                <div class="mock-titlebar-divider"></div>
+                <!-- Minimize -->
+                <div class="mock-titlebar-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </div>
+                <!-- Maximize -->
+                <div class="mock-titlebar-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="5" y="5" width="14" height="14" rx="1" />
+                  </svg>
+                </div>
+                <!-- Tray (down arrow) -->
+                <div class="mock-titlebar-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <polyline points="19 12 12 19 5 12" />
+                  </svg>
+                </div>
+                <!-- Close (X) -->
+                <div class="mock-titlebar-btn close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="mock-app-body">
+              <!-- Activity Bar (Lucide-style SVG icons) -->
+              <div class="mock-sidebar">
+                <!-- Sessions: LayoutList -->
+                <div class="mock-nav-btn">
+                  <svg viewBox="0 0 24 24">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <line x1="14" y1="4" x2="21" y2="4" />
+                    <line x1="14" y1="9" x2="21" y2="9" />
+                    <line x1="14" y1="15" x2="21" y2="15" />
+                    <line x1="14" y1="20" x2="21" y2="20" />
+                  </svg>
+                </div>
+                <!-- Live: Activity -->
+                <div class="mock-nav-btn active">
+                  <svg viewBox="0 0 24 24">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                  </svg>
+                </div>
+                <!-- Reports: FileBarChart -->
+                <div class="mock-nav-btn">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="8" y1="18" x2="8" y2="13" />
+                    <line x1="12" y1="18" x2="12" y2="11" />
+                    <line x1="16" y1="18" x2="16" y2="15" />
+                  </svg>
+                </div>
+                <!-- Analytics: BarChart3 -->
+                <div class="mock-nav-btn">
+                  <svg viewBox="0 0 24 24">
+                    <line x1="18" y1="20" x2="18" y2="10" />
+                    <line x1="12" y1="20" x2="12" y2="4" />
+                    <line x1="6" y1="20" x2="6" y2="14" />
+                  </svg>
+                </div>
+                <!-- Projects: FolderKanban -->
+                <div class="mock-nav-btn">
+                  <svg viewBox="0 0 24 24">
+                    <path
+                      d="M4 20h16a2 2 0 002-2V8a2 2 0 00-2-2h-7.93a2 2 0 01-1.66-.9l-.82-1.2A2 2 0 007.93 3H4a2 2 0 00-2 2v13c0 1.1.9 2 2 2z"
+                    />
+                    <line x1="8" y1="10" x2="8" y2="16" />
+                    <line x1="12" y1="10" x2="12" y2="14" />
+                    <line x1="16" y1="10" x2="16" y2="16" />
+                  </svg>
+                </div>
+                <!-- Settings: Gear -->
+                <div class="mock-nav-btn">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                    <path
+                      d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Main Content: Live Dashboard -->
+              <div class="mock-main">
+                <!-- Stats Bar (6 stats) -->
+                <div class="mock-stats">
+                  <div class="mock-stat">
+                    <div class="mock-stat-label">Human Hours</div>
+                    <div class="mock-stat-value teal">4h</div>
+                  </div>
+                  <div class="mock-stat">
+                    <div class="mock-stat-label">Agent Hours</div>
+                    <div class="mock-stat-value">6h 55m</div>
+                  </div>
+                  <div class="mock-stat">
+                    <div class="mock-stat-label">Sessions</div>
+                    <div class="mock-stat-value">30</div>
+                  </div>
+                  <div class="mock-stat">
+                    <div class="mock-stat-label">Prompts</div>
+                    <div class="mock-stat-value">160</div>
+                  </div>
+                  <div class="mock-stat">
+                    <div class="mock-stat-label">Commits</div>
+                    <div class="mock-stat-value">7</div>
+                  </div>
+                  <div class="mock-stat">
+                    <div class="mock-stat-label">Tokens</div>
+                    <div class="mock-stat-value">394.1K</div>
+                  </div>
+                </div>
+
+                <!-- Section Header -->
+                <div class="mock-section-header">
+                  <span>Projects</span>
+                  <span class="mock-section-btn">Open all widgets</span>
+                </div>
+
+                <!-- Project Cards Grid (Layout 6 — Grid Stats) -->
+                <div class="mock-projects">
+                  <!-- project-alpha — active, glowing -->
+                  <div class="mock-project-card glowing">
+                    <div class="mock-card-header">
+                      <span class="mock-color-dot" style="background: #14b8a6"></span>
+                      <div class="mock-card-name-group">
+                        <span class="mock-card-project-name">project-alpha</span>
+                        <div class="mock-card-client">Acme Inc</div>
+                      </div>
+                      <span class="mock-card-popout"
+                        ><svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 13V7" />
+                          <path d="m15 10-3-3-3 3" />
+                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
+                      ></span>
+                    </div>
+                    <div class="mock-card-hours-row">
+                      <span class="mock-card-hours">2<span>h</span>24<span>m</span></span>
+                    </div>
+                    <div class="mock-card-stats">
+                      <div class="mock-card-stat">
+                        <b>8</b><span class="mock-card-stat-label">sessions</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>49</b><span class="mock-card-stat-label">prompts</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>140K</b><span class="mock-card-stat-label">tokens</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>7</b><span class="mock-card-stat-label">commits</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-footer">
+                      <div class="mock-footer-left">
+                        <span class="mock-bell"
+                          ><svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#eab308"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
+                        ></span>
+                        <span>2m ago</span>
+                      </div>
+                      <div class="mock-footer-right">
+                        <span class="mock-start-btn"
+                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          Start</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- api-service -->
+                  <div class="mock-project-card">
+                    <div class="mock-card-header">
+                      <span class="mock-color-dot" style="background: #a78bfa"></span>
+                      <div class="mock-card-name-group">
+                        <span class="mock-card-project-name">api-service</span>
+                        <div class="mock-card-client">Acme Inc</div>
+                      </div>
+                      <span class="mock-card-popout"
+                        ><svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 13V7" />
+                          <path d="m15 10-3-3-3 3" />
+                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
+                      ></span>
+                    </div>
+                    <div class="mock-card-hours-row">
+                      <span class="mock-card-hours">45<span>m</span></span>
+                    </div>
+                    <div class="mock-card-stats">
+                      <div class="mock-card-stat">
+                        <b>4</b><span class="mock-card-stat-label">sessions</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>20</b><span class="mock-card-stat-label">prompts</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>81K</b><span class="mock-card-stat-label">tokens</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-footer">
+                      <div class="mock-footer-left">
+                        <span class="mock-bell"
+                          ><svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#eab308"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
+                        ></span>
+                        <span>4m ago</span>
+                      </div>
+                      <div class="mock-footer-right">
+                        <span class="mock-start-btn"
+                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          Start</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- looki -->
+                  <div class="mock-project-card">
+                    <div class="mock-card-header">
+                      <span class="mock-color-dot" style="background: #fbbf24"></span>
+                      <div class="mock-card-name-group">
+                        <span class="mock-card-project-name">dashboard</span>
+                        <div class="mock-card-client">None</div>
+                      </div>
+                      <span class="mock-card-popout"
+                        ><svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 13V7" />
+                          <path d="m15 10-3-3-3 3" />
+                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
+                      ></span>
+                    </div>
+                    <div class="mock-card-hours-row">
+                      <span class="mock-card-hours">25<span>m</span></span>
+                    </div>
+                    <div class="mock-card-stats">
+                      <div class="mock-card-stat">
+                        <b>11</b><span class="mock-card-stat-label">sessions</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>44</b><span class="mock-card-stat-label">prompts</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>19K</b><span class="mock-card-stat-label">tokens</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-footer">
+                      <div class="mock-footer-left">
+                        <span class="mock-bell"
+                          ><svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#555"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                            <line x1="1" y1="1" x2="23" y2="23" /></svg
+                        ></span>
+                        <span>7h 2m ago</span>
+                      </div>
+                      <div class="mock-footer-right">
+                        <span class="mock-start-btn"
+                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          Start</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- ai bots -->
+                  <div class="mock-project-card">
+                    <div class="mock-card-header">
+                      <span class="mock-color-dot" style="background: #fb7185"></span>
+                      <div class="mock-card-name-group">
+                        <span class="mock-card-project-name">ml-pipeline</span>
+                        <div class="mock-card-client">Internal</div>
+                      </div>
+                      <span class="mock-card-popout"
+                        ><svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 13V7" />
+                          <path d="m15 10-3-3-3 3" />
+                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
+                      ></span>
+                    </div>
+                    <div class="mock-card-hours-row">
+                      <span class="mock-card-hours">2<span>m</span></span>
+                    </div>
+                    <div class="mock-card-stats">
+                      <div class="mock-card-stat">
+                        <b>2</b><span class="mock-card-stat-label">sessions</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>3</b><span class="mock-card-stat-label">prompts</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>10K</b><span class="mock-card-stat-label">tokens</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-footer">
+                      <div class="mock-footer-left">
+                        <span class="mock-bell"
+                          ><svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#555"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                            <line x1="1" y1="1" x2="23" y2="23" /></svg
+                        ></span>
+                        <span>5h 5m ago</span>
+                      </div>
+                      <div class="mock-footer-right">
+                        <span class="mock-start-btn"
+                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          Start</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- wmux -->
+                  <div class="mock-project-card">
+                    <div class="mock-card-header">
+                      <span class="mock-color-dot" style="background: #38bdf8"></span>
+                      <div class="mock-card-name-group">
+                        <span class="mock-card-project-name">infra-tools</span>
+                        <div class="mock-card-client">Unassigned</div>
+                      </div>
+                      <span class="mock-card-popout"
+                        ><svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 13V7" />
+                          <path d="m15 10-3-3-3 3" />
+                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
+                      ></span>
+                    </div>
+                    <div class="mock-card-hours-row">
+                      <span class="mock-card-hours">2<span>h</span>7<span>m</span></span>
+                    </div>
+                    <div class="mock-card-stats">
+                      <div class="mock-card-stat">
+                        <b>4</b><span class="mock-card-stat-label">sessions</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>31</b><span class="mock-card-stat-label">prompts</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>134K</b><span class="mock-card-stat-label">tokens</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-footer">
+                      <div class="mock-footer-left">
+                        <span class="mock-bell"
+                          ><svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#eab308"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
+                        ></span>
+                        <span>4h 59m ago</span>
+                      </div>
+                      <div class="mock-footer-right">
+                        <span class="mock-start-btn"
+                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          Start</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- code -->
+                  <div class="mock-project-card">
+                    <div class="mock-card-header">
+                      <span class="mock-color-dot" style="background: #f97316"></span>
+                      <div class="mock-card-name-group">
+                        <span class="mock-card-project-name">web-app</span>
+                        <div class="mock-card-client">main</div>
+                      </div>
+                      <span class="mock-card-popout"
+                        ><svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="M12 13V7" />
+                          <path d="m15 10-3-3-3 3" />
+                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
+                      ></span>
+                    </div>
+                    <div class="mock-card-hours-row">
+                      <span class="mock-card-hours">1<span>h</span>12<span>m</span></span>
+                    </div>
+                    <div class="mock-card-stats">
+                      <div class="mock-card-stat">
+                        <b>1</b><span class="mock-card-stat-label">sessions</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>13</b><span class="mock-card-stat-label">prompts</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>9K</b><span class="mock-card-stat-label">tokens</span>
+                      </div>
+                      <div class="mock-card-stat">
+                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-footer">
+                      <div class="mock-footer-left">
+                        <span class="mock-bell"
+                          ><svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#eab308"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
+                        ></span>
+                        <span>1m ago</span>
+                      </div>
+                      <div class="mock-footer-right">
+                        <span class="mock-start-btn"
+                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                          Start</span
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="mock-statusbar">
+              <span
+                >30 sessions &middot; 160 prompts &middot; 394.1K tokens &middot; 7 commits</span
+              >
+              <span class="mock-statusbar-hours">4h today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CARD DESIGN OPTIONS -->
+    <section id="card-designs" style="padding: 80px 0">
+      <div class="container">
+        <div class="features-header reveal">
+          <div class="section-label">Card Designs</div>
+          <h2 class="section-title">Pick a project card layout</h2>
+          <p class="section-desc">Same data, six different layouts. Click your favorite.</p>
+        </div>
+
+        <div
+          style="
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            max-width: 960px;
+            margin: 0 auto;
+          "
+        >
+          <!-- Shared SVG icons (hidden, referenced inline) -->
+          <!-- Bell: 🔔  MonitorUp: ⬆  Play: ▶  Pause: ⏸  Stop: ⏹ -->
+
+          <!-- LAYOUT 1: Stacked — vertical flow, hours left stats right -->
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div
+              style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                color: var(--accent);
+                margin-bottom: 4px;
+              "
+            >
+              Layout 1 — Stacked
+            </div>
+            <div
+              style="
+                background: #1e1e32;
+                border: 1px solid #14b8a640;
+                border-radius: 10px;
+                padding: 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                box-shadow: 0 0 24px #14b8a60c;
+                position: relative;
+                overflow: hidden;
+              "
+            >
+              <div
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+                  pointer-events: none;
+                "
+              ></div>
+              <!-- Header: name + widget popout -->
+              <div style="display: flex; align-items: center; gap: 6px; position: relative">
+                <span
+                  style="
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    background: #14b8a6;
+                    display: inline-block;
+                  "
+                ></span>
+                <span style="font-size: 13px; font-weight: 600; flex: 1">project-alpha</span>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#555"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 13V7" />
+                  <path d="m15 10-3-3-3 3" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+              </div>
+              <div style="font-size: 10px; color: #555; padding-left: 13px; position: relative">
+                Acme Inc
+              </div>
+              <!-- Hours left, stats right -->
+              <div
+                style="
+                  display: flex;
+                  align-items: end;
+                  justify-content: space-between;
+                  margin-top: 4px;
+                  position: relative;
+                "
+              >
+                <div
+                  style="
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 30px;
+                    font-weight: 700;
+                    color: #14b8a6;
+                    letter-spacing: -1.5px;
+                    line-height: 1;
+                  "
+                >
+                  2<span style="font-size: 16px; font-weight: 600">h</span>24<span
+                    style="font-size: 16px; font-weight: 600"
+                    >m</span
+                  >
+                </div>
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 2px 12px;
+                    font-size: 10px;
+                    font-family: 'JetBrains Mono', monospace;
+                    text-align: center;
+                  "
+                >
+                  <div>
+                    <span style="color: #888; font-weight: 600; font-size: 13px">8</span><br /><span
+                      style="color: #555"
+                      >sessions</span
+                    >
+                  </div>
+                  <div>
+                    <span style="color: #888; font-weight: 600; font-size: 13px">49</span
+                    ><br /><span style="color: #555">prompts</span>
+                  </div>
+                  <div>
+                    <span style="color: #888; font-weight: 600; font-size: 13px">140K</span
+                    ><br /><span style="color: #555">tokens</span>
+                  </div>
+                  <div>
+                    <span style="color: #888; font-weight: 600; font-size: 13px">7</span><br /><span
+                      style="color: #555"
+                      >commits</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <!-- Footer: bell + sound left, time + timer right -->
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  margin-top: 4px;
+                  position: relative;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 2px">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#eab308"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                  </svg>
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#555"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+                  <span style="font-size: 10px; color: #555">2m ago</span>
+                  <span
+                    style="
+                      padding: 3px 10px;
+                      border-radius: 5px;
+                      background: #10b98115;
+                      color: #34d399;
+                      font-size: 10px;
+                      font-weight: 600;
+                      font-family: 'JetBrains Mono', monospace;
+                      display: flex;
+                      align-items: center;
+                      gap: 4px;
+                    "
+                    ><svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="none"
+                    >
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Start</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYOUT 2: Split — hours right, info left -->
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div
+              style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                color: var(--accent);
+                margin-bottom: 4px;
+              "
+            >
+              Layout 2 — Split
+            </div>
+            <div
+              style="
+                background: #1e1e32;
+                border: 1px solid #14b8a640;
+                border-radius: 10px;
+                padding: 12px;
+                display: flex;
+                gap: 12px;
+                box-shadow: 0 0 24px #14b8a60c;
+                position: relative;
+                overflow: hidden;
+              "
+            >
+              <div
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+                  pointer-events: none;
+                "
+              ></div>
+              <div
+                style="flex: 1; display: flex; flex-direction: column; gap: 4px; position: relative"
+              >
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <span
+                    style="
+                      width: 7px;
+                      height: 7px;
+                      border-radius: 50%;
+                      background: #14b8a6;
+                      display: inline-block;
+                    "
+                  ></span>
+                  <span style="font-size: 13px; font-weight: 600; flex: 1">project-alpha</span>
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#555"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 13V7" />
+                    <path d="m15 10-3-3-3 3" />
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                  </svg>
+                </div>
+                <div style="font-size: 10px; color: #555; padding-left: 13px">Acme Inc</div>
+                <div
+                  style="
+                    display: flex;
+                    gap: 10px;
+                    font-size: 10px;
+                    font-family: 'JetBrains Mono', monospace;
+                    color: #555;
+                    margin-top: auto;
+                  "
+                >
+                  <span><span style="color: #888">8</span> sess</span>
+                  <span><span style="color: #888">49</span> prmpt</span>
+                  <span><span style="color: #888">140K</span> tok</span>
+                  <span><span style="color: #888">7</span> cmts</span>
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-top: 4px;
+                  "
+                >
+                  <div style="display: flex; align-items: center; gap: 2px">
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#eab308"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                    </svg>
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#555"
+                      stroke-width="2"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </div>
+                  <span style="font-size: 10px; color: #555">2m ago</span>
+                </div>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  flex-direction: column;
+                  align-items: flex-end;
+                  justify-content: space-between;
+                  position: relative;
+                "
+              >
+                <div
+                  style="
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 30px;
+                    font-weight: 700;
+                    color: #14b8a6;
+                    letter-spacing: -1.5px;
+                    line-height: 1;
+                  "
+                >
+                  2<span style="font-size: 16px">h</span>24<span style="font-size: 16px">m</span>
+                </div>
+                <span
+                  style="
+                    padding: 3px 10px;
+                    border-radius: 5px;
+                    background: #10b98115;
+                    color: #34d399;
+                    font-size: 10px;
+                    font-weight: 600;
+                    font-family: 'JetBrains Mono', monospace;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                  "
+                  ><svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    stroke="none"
+                  >
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  Start</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYOUT 3: Minimal — clean rows -->
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div
+              style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                color: var(--accent);
+                margin-bottom: 4px;
+              "
+            >
+              Layout 3 — Minimal
+            </div>
+            <div
+              style="
+                background: #1e1e32;
+                border: 1px solid #14b8a640;
+                border-radius: 10px;
+                padding: 12px 14px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                box-shadow: 0 0 24px #14b8a60c;
+                position: relative;
+                overflow: hidden;
+              "
+            >
+              <div
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+                  pointer-events: none;
+                "
+              ></div>
+              <div style="display: flex; align-items: center; gap: 6px; position: relative">
+                <span
+                  style="
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    background: #14b8a6;
+                    display: inline-block;
+                  "
+                ></span>
+                <span style="font-size: 13px; font-weight: 600; flex: 1">project-alpha</span>
+                <span style="font-size: 10px; color: #555">Acme Inc</span>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#555"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 13V7" />
+                  <path d="m15 10-3-3-3 3" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+              </div>
+              <!-- Hours + stats inline -->
+              <div style="display: flex; align-items: end; gap: 16px; position: relative">
+                <div
+                  style="
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 36px;
+                    font-weight: 700;
+                    color: #14b8a6;
+                    letter-spacing: -2px;
+                    line-height: 1;
+                  "
+                >
+                  2<span style="font-size: 18px">h</span>24<span style="font-size: 18px">m</span>
+                </div>
+                <div
+                  style="
+                    display: flex;
+                    gap: 12px;
+                    font-size: 10px;
+                    font-family: 'JetBrains Mono', monospace;
+                    color: #555;
+                    padding-bottom: 2px;
+                  "
+                >
+                  <span><span style="color: #888">8</span> sess</span>
+                  <span><span style="color: #888">49</span> prmpt</span>
+                  <span><span style="color: #888">140K</span> tok</span>
+                  <span><span style="color: #888">7</span> cmts</span>
+                </div>
+              </div>
+              <!-- Footer -->
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  position: relative;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 2px">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#eab308"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                  </svg>
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#555"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <span style="font-size: 10px; color: #555">2m ago</span>
+                  <span
+                    style="
+                      padding: 3px 10px;
+                      border-radius: 5px;
+                      background: #eab30815;
+                      color: #eab308;
+                      font-size: 10px;
+                      font-weight: 600;
+                      font-family: 'JetBrains Mono', monospace;
+                      display: flex;
+                      align-items: center;
+                      gap: 4px;
+                    "
+                    ><svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                    >
+                      <line x1="6" y1="4" x2="6" y2="20" />
+                      <line x1="18" y1="4" x2="18" y2="20" />
+                    </svg>
+                    1:23:45</span
+                  >
+                  <span
+                    style="
+                      padding: 3px 8px;
+                      border-radius: 5px;
+                      background: #ef444415;
+                      color: #f87171;
+                      font-size: 10px;
+                      display: flex;
+                      align-items: center;
+                    "
+                    ><svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="none"
+                    >
+                      <rect x="4" y="4" width="16" height="16" rx="2" /></svg
+                  ></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYOUT 4: Centered — big hours, column stats -->
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div
+              style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                color: var(--accent);
+                margin-bottom: 4px;
+              "
+            >
+              Layout 4 — Centered
+            </div>
+            <div
+              style="
+                background: #1e1e32;
+                border: 1px solid #14b8a640;
+                border-radius: 10px;
+                padding: 14px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+                text-align: center;
+                box-shadow: 0 0 24px #14b8a60c;
+                position: relative;
+                overflow: hidden;
+              "
+            >
+              <div
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+                  pointer-events: none;
+                "
+              ></div>
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 6px;
+                  width: 100%;
+                  position: relative;
+                "
+              >
+                <span
+                  style="
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    background: #14b8a6;
+                    display: inline-block;
+                  "
+                ></span>
+                <span style="font-size: 13px; font-weight: 600; flex: 1; text-align: left"
+                  >project-alpha</span
+                >
+                <span style="font-size: 10px; color: #555">Acme Inc</span>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#555"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 13V7" />
+                  <path d="m15 10-3-3-3 3" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+              </div>
+              <div
+                style="
+                  font-family: 'JetBrains Mono', monospace;
+                  font-size: 40px;
+                  font-weight: 700;
+                  color: #14b8a6;
+                  letter-spacing: -2px;
+                  line-height: 1;
+                  padding: 6px 0;
+                  position: relative;
+                "
+              >
+                2<span style="font-size: 20px">h</span>24<span style="font-size: 20px">m</span>
+              </div>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(4, 1fr);
+                  gap: 6px;
+                  width: 100%;
+                  font-size: 10px;
+                  font-family: 'JetBrains Mono', monospace;
+                  position: relative;
+                "
+              >
+                <div style="color: #555">
+                  <span style="color: #888; font-weight: 600; font-size: 14px">8</span
+                  ><br />sessions
+                </div>
+                <div style="color: #555">
+                  <span style="color: #888; font-weight: 600; font-size: 14px">49</span
+                  ><br />prompts
+                </div>
+                <div style="color: #555">
+                  <span style="color: #888; font-weight: 600; font-size: 14px">140K</span
+                  ><br />tokens
+                </div>
+                <div style="color: #555">
+                  <span style="color: #888; font-weight: 600; font-size: 14px">7</span><br />commits
+                </div>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  width: 100%;
+                  padding-top: 6px;
+                  border-top: 1px solid #2a2a3e;
+                  font-size: 10px;
+                  color: #555;
+                  position: relative;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 2px">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#eab308"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                  </svg>
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#555"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <span>2m ago</span>
+                  <span
+                    style="
+                      padding: 3px 10px;
+                      border-radius: 5px;
+                      background: #10b98115;
+                      color: #34d399;
+                      font-size: 10px;
+                      font-weight: 600;
+                      font-family: 'JetBrains Mono', monospace;
+                      display: flex;
+                      align-items: center;
+                      gap: 4px;
+                    "
+                    ><svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="none"
+                    >
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Start</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYOUT 5: Wide Bar — horizontal -->
+          <div style="display: flex; flex-direction: column; gap: 8px; grid-column: span 2">
+            <div
+              style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                color: var(--accent);
+                margin-bottom: 4px;
+              "
+            >
+              Layout 5 — Wide Bar
+            </div>
+            <div
+              style="
+                background: #1e1e32;
+                border: 1px solid #14b8a640;
+                border-radius: 10px;
+                padding: 10px 16px;
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                box-shadow: 0 0 24px #14b8a60c;
+                position: relative;
+                overflow: hidden;
+              "
+            >
+              <div
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+                  pointer-events: none;
+                "
+              ></div>
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 6px;
+                  position: relative;
+                  min-width: 110px;
+                "
+              >
+                <span
+                  style="
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    background: #14b8a6;
+                    display: inline-block;
+                  "
+                ></span>
+                <div>
+                  <div style="font-size: 13px; font-weight: 600">project-alpha</div>
+                  <div style="font-size: 10px; color: #555">Acme Inc</div>
+                </div>
+              </div>
+              <div
+                style="
+                  font-family: 'JetBrains Mono', monospace;
+                  font-size: 24px;
+                  font-weight: 700;
+                  color: #14b8a6;
+                  letter-spacing: -1px;
+                  position: relative;
+                "
+              >
+                2<span style="font-size: 14px">h</span>24<span style="font-size: 14px">m</span>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  gap: 14px;
+                  font-size: 10px;
+                  font-family: 'JetBrains Mono', monospace;
+                  color: #555;
+                  flex: 1;
+                  position: relative;
+                "
+              >
+                <span><span style="color: #888">8</span> sess</span>
+                <span><span style="color: #888">49</span> prompts</span>
+                <span><span style="color: #888">140K</span> tok</span>
+                <span><span style="color: #888">7</span> commits</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; position: relative">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#eab308"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                </svg>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#555"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 13V7" />
+                  <path d="m15 10-3-3-3 3" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+                <span style="font-size: 10px; color: #555">2m ago</span>
+                <span
+                  style="
+                    padding: 3px 10px;
+                    border-radius: 5px;
+                    background: #10b98115;
+                    color: #34d399;
+                    font-size: 10px;
+                    font-weight: 600;
+                    font-family: 'JetBrains Mono', monospace;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                  "
+                  ><svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    stroke="none"
+                  >
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  Start</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYOUT 6: Grid Stats — segmented bottom -->
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div
+              style="
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+                color: var(--accent);
+                margin-bottom: 4px;
+              "
+            >
+              Layout 6 — Grid Stats
+            </div>
+            <div
+              style="
+                background: #1e1e32;
+                border: 1px solid #14b8a640;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 0 24px #14b8a60c;
+                position: relative;
+              "
+            >
+              <div
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
+                  pointer-events: none;
+                "
+              ></div>
+              <!-- Header -->
+              <div
+                style="
+                  padding: 10px 12px;
+                  display: flex;
+                  align-items: center;
+                  gap: 6px;
+                  position: relative;
+                "
+              >
+                <span
+                  style="
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    background: #14b8a6;
+                    display: inline-block;
+                  "
+                ></span>
+                <span style="font-size: 13px; font-weight: 600; flex: 1">project-alpha</span>
+                <span style="font-size: 10px; color: #555">Acme Inc</span>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#555"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 13V7" />
+                  <path d="m15 10-3-3-3 3" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                </svg>
+              </div>
+              <!-- Hours -->
+              <div style="padding: 4px 12px 10px; position: relative">
+                <div
+                  style="
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 28px;
+                    font-weight: 700;
+                    color: #14b8a6;
+                    letter-spacing: -1.5px;
+                    line-height: 1;
+                  "
+                >
+                  2<span style="font-size: 16px">h</span>24<span style="font-size: 16px">m</span>
+                </div>
+              </div>
+              <!-- Stats grid -->
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(4, 1fr);
+                  border-top: 1px solid #2a2a3e;
+                  position: relative;
+                "
+              >
+                <div
+                  style="
+                    padding: 6px;
+                    text-align: center;
+                    font-family: 'JetBrains Mono', monospace;
+                    border-right: 1px solid #2a2a3e;
+                  "
+                >
+                  <div style="font-size: 13px; font-weight: 600; color: #888">8</div>
+                  <div style="font-size: 9px; color: #555">sessions</div>
+                </div>
+                <div
+                  style="
+                    padding: 6px;
+                    text-align: center;
+                    font-family: 'JetBrains Mono', monospace;
+                    border-right: 1px solid #2a2a3e;
+                  "
+                >
+                  <div style="font-size: 13px; font-weight: 600; color: #888">49</div>
+                  <div style="font-size: 9px; color: #555">prompts</div>
+                </div>
+                <div
+                  style="
+                    padding: 6px;
+                    text-align: center;
+                    font-family: 'JetBrains Mono', monospace;
+                    border-right: 1px solid #2a2a3e;
+                  "
+                >
+                  <div style="font-size: 13px; font-weight: 600; color: #888">140K</div>
+                  <div style="font-size: 9px; color: #555">tokens</div>
+                </div>
+                <div
+                  style="padding: 6px; text-align: center; font-family: 'JetBrains Mono', monospace"
+                >
+                  <div style="font-size: 13px; font-weight: 600; color: #888">7</div>
+                  <div style="font-size: 9px; color: #555">commits</div>
+                </div>
+              </div>
+              <!-- Footer -->
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  padding: 8px 12px;
+                  border-top: 1px solid #2a2a3e;
+                  font-size: 10px;
+                  color: #555;
+                  position: relative;
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 2px">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#eab308"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                  </svg>
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#555"
+                    stroke-width="2"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <span>2m ago</span>
+                  <span
+                    style="
+                      padding: 3px 10px;
+                      border-radius: 5px;
+                      background: #10b98115;
+                      color: #34d399;
+                      font-size: 10px;
+                      font-weight: 600;
+                      font-family: 'JetBrains Mono', monospace;
+                      display: flex;
+                      align-items: center;
+                      gap: 4px;
+                    "
+                    ><svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      stroke="none"
+                    >
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Start</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features">
+      <div class="container">
+        <div class="features-header reveal">
+          <div class="section-label">Features</div>
+          <h2 class="section-title">Everything you need to track<br />your Claude Code work</h2>
+          <p class="section-desc">
+            Built for developers who bill by the hour and want accurate, automatic tracking without
+            lifting a finger.
+          </p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#9201;</div>
+            <h3>Automatic Detection</h3>
+            <p>
+              Reads Claude Code's JSONL logs and detects sessions automatically. No manual timers,
+              no browser extensions. Just works.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#9889;</div>
+            <h3>Live Dashboard</h3>
+            <p>
+              See which projects are active right now with real-time processing indicators. Know
+              exactly when Claude is thinking vs idle.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128200;</div>
+            <h3>Analytics</h3>
+            <p>
+              Session trends, token usage, AI vs human time, gap analysis. Customizable dashboard
+              widgets to understand your workflow.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128101;</div>
+            <h3>Client Management</h3>
+            <p>
+              Assign projects to clients, mark work as billable or non-billable, and generate
+              reports ready for invoicing.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128196;</div>
+            <h3>Reports & Export</h3>
+            <p>
+              Session breakdowns, daily summaries, and period reports. Export as Markdown to
+              clipboard or file. AI-powered summaries optional.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128276;</div>
+            <h3>Desktop Alerts</h3>
+            <p>
+              Get notified when Claude finishes processing. Configurable sounds, volume, and alert
+              thresholds per project.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128737;</div>
+            <h3>Secret Scanner</h3>
+            <p>
+              Detects 50+ patterns of API keys, tokens, and credentials in your JSONL files.
+              Auto-redaction available. Protect your secrets.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128421;</div>
+            <h3>Floating Widgets</h3>
+            <p>
+              Always-on-top mini windows showing per-project status. See time and activity at a
+              glance without switching windows.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128274;</div>
+            <h3>100% Local</h3>
+            <p>
+              No telemetry. No cloud. No accounts. All data stays on your machine in a local SQLite
+              database. Your data is yours.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section id="how-it-works" class="how-it-works">
+      <div class="container">
+        <div class="features-header reveal">
+          <div class="section-label">How It Works</div>
+          <h2 class="section-title">Zero configuration required</h2>
+          <p class="section-desc">
+            ClauTime reads what Claude Code already writes. No setup, no integrations, no overhead.
+          </p>
+        </div>
+        <div class="how-grid">
+          <div class="how-step reveal">
+            <div class="step-number">01</div>
+            <h3>Claude Code writes logs</h3>
+            <p>
+              Every conversation is recorded as JSONL files in <code>~/.claude/projects/</code>.
+              This happens automatically — it's how Claude Code works.
+            </p>
+          </div>
+          <div class="how-step reveal">
+            <div class="step-number">02</div>
+            <h3>ClauTime detects sessions</h3>
+            <p>
+              Smart gap-based detection with tool-aware idle timeouts. Tracks prompts, tokens,
+              models, and timing across all your projects.
+            </p>
+          </div>
+          <div class="how-step reveal">
+            <div class="step-number">03</div>
+            <h3>You get actionable data</h3>
+            <p>
+              Assign sessions to clients, generate billable reports, and understand exactly how your
+              AI-assisted development time is spent.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TECH STACK -->
+    <section class="tech-section">
+      <div class="container">
+        <div class="features-header reveal">
+          <div class="section-label">Built With</div>
+          <h2 class="section-title">Modern, fast, reliable</h2>
+        </div>
+        <div class="tech-grid reveal">
+          <div class="tech-pill"><span>Electron 39</span></div>
+          <div class="tech-pill"><span>React 19</span></div>
+          <div class="tech-pill"><span>TypeScript</span></div>
+          <div class="tech-pill"><span>Tailwind CSS v4</span></div>
+          <div class="tech-pill"><span>shadcn/ui</span></div>
+          <div class="tech-pill"><span>Drizzle ORM</span></div>
+          <div class="tech-pill"><span>SQLite</span></div>
+          <div class="tech-pill"><span>Vite 7</span></div>
+          <div class="tech-pill"><span>TanStack Query</span></div>
+          <div class="tech-pill"><span>Zustand</span></div>
+          <div class="tech-pill"><span>Vitest</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GETTING STARTED -->
+    <section id="getting-started" class="getting-started">
+      <div class="container">
+        <div class="features-header reveal">
+          <div class="section-label">Get Started</div>
+          <h2 class="section-title">Up and running in 60 seconds</h2>
+        </div>
+        <div class="code-block reveal">
+          <div class="code-header">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            terminal
+          </div>
+          <div class="code-body">
+            <span class="comment"># Clone the repository</span><br />
+            <span class="cmd">git clone</span> https://github.com/lookitstony/clautime.git<br />
+            <span class="cmd">cd</span> clautime<br /><br />
+            <span class="comment"># Install and run</span><br />
+            <span class="cmd">npm install</span><br />
+            <span class="cmd">npm run</span> <span class="flag">dev</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="final-cta">
+      <div class="container">
+        <div class="reveal">
+          <h2 class="cta-title">Ready to track your time?</h2>
+          <p class="cta-desc">Open source. Free forever. Start tracking in under a minute.</p>
+          <div class="hero-actions">
+            <a
+              href="https://github.com/lookitstony/clautime"
+              target="_blank"
+              class="btn btn-primary"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <path
+                  d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+                />
+              </svg>
+              View on GitHub
+            </a>
+            <a href="#features" class="btn btn-secondary">Explore Features</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="container">
+        <div class="footer-inner">
+          <div class="footer-left">&copy; 2026 ClauTime &middot; Apache 2.0</div>
+          <ul class="footer-links">
+            <li><a href="https://github.com/lookitstony/clautime" target="_blank">GitHub</a></li>
+            <li>
+              <a href="https://github.com/lookitstony/clautime/issues" target="_blank">Issues</a>
+            </li>
+            <li>
+              <a
+                href="https://github.com/lookitstony/clautime/blob/master/CONTRIBUTING.md"
+                target="_blank"
+                >Contributing</a
+              >
+            </li>
+            <li>
+              <a href="https://github.com/lookitstony/clautime/blob/master/LICENSE" target="_blank"
+                >License</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // Scroll reveal
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible')
+            }
+          })
+        },
+        { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+      )
+
+      document.querySelectorAll('.reveal').forEach((el) => observer.observe(el))
+
+      // Stagger feature cards
+      document.querySelectorAll('.features-grid .reveal').forEach((el, i) => {
+        el.style.transitionDelay = `${i * 0.06}s`
+      })
+
+      document.querySelectorAll('.how-grid .reveal').forEach((el, i) => {
+        el.style.transitionDelay = `${i * 0.1}s`
+      })
+
+      // Smooth nav shadow on scroll
+      const nav = document.querySelector('nav')
+      window.addEventListener(
+        'scroll',
+        () => {
+          if (window.scrollY > 20) {
+            nav.style.borderBottomColor = '#1e273880'
+            nav.style.boxShadow = '0 4px 24px #00000040'
+          } else {
+            nav.style.borderBottomColor = '#1e2738'
+            nav.style.boxShadow = 'none'
+          }
+        },
+        { passive: true }
+      )
+    </script>
+  </body>
 </html>

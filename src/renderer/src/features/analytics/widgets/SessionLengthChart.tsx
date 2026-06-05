@@ -24,15 +24,37 @@ export default function SessionLengthChart({ sessionData }: WidgetProps): React.
     return counts
   }, [sessionData])
 
-  if (sessionData.length === 0) return <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">No data for this period</div>
+  if (sessionData.length === 0)
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+        No data for this period
+      </div>
+    )
 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="label" tick={{ fontSize: 11, fill: mutedColor }} />
-        <YAxis tick={{ fontSize: 11, fill: mutedColor }} label={{ value: 'Sessions', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: mutedColor } }} />
-        <Tooltip contentStyle={{ backgroundColor: 'var(--background-elevated)', border: '1px solid var(--surface-border)', color: textColor, fontSize: 12 }} itemStyle={{ color: textColor }} labelStyle={{ color: textColor }} />
+        <YAxis
+          tick={{ fontSize: 11, fill: mutedColor }}
+          label={{
+            value: 'Sessions',
+            angle: -90,
+            position: 'insideLeft',
+            style: { fontSize: 11, fill: mutedColor }
+          }}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: 'var(--background-elevated)',
+            border: '1px solid var(--surface-border)',
+            color: textColor,
+            fontSize: 12
+          }}
+          itemStyle={{ color: textColor }}
+          labelStyle={{ color: textColor }}
+        />
         <Bar dataKey="count" fill={accent} radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>

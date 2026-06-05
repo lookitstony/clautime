@@ -44,9 +44,8 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
   const [customOpen, setCustomOpen] = useState(false)
   const isCustomRange = datePreset == null && (startDate != null || endDate != null)
 
-  const filteredProjects = clientId != null
-    ? projects.filter((p) => p.clientId === clientId)
-    : projects
+  const filteredProjects =
+    clientId != null ? projects.filter((p) => p.clientId === clientId) : projects
 
   const handlePresetClick = (preset: DatePreset): void => {
     if (datePreset === preset) {
@@ -59,7 +58,15 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
   const handleCustomSelect = (range: { from?: Date; to?: Date } | undefined): void => {
     if (range?.from && range?.to) {
       const start = new Date(range.from.getFullYear(), range.from.getMonth(), range.from.getDate())
-      const end = new Date(range.to.getFullYear(), range.to.getMonth(), range.to.getDate(), 23, 59, 59, 999)
+      const end = new Date(
+        range.to.getFullYear(),
+        range.to.getMonth(),
+        range.to.getDate(),
+        23,
+        59,
+        59,
+        999
+      )
       setCustomRange(start.toISOString(), end.toISOString())
       setCustomOpen(false)
     } else if (range?.from) {
@@ -67,13 +74,15 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
     }
   }
 
-  const customRangeLabel = isCustomRange && startDate && endDate
-    ? `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`
-    : 'Custom'
+  const customRangeLabel =
+    isCustomRange && startDate && endDate
+      ? `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`
+      : 'Custom'
 
-  const selectedRange = isCustomRange && startDate && endDate
-    ? { from: new Date(startDate), to: new Date(endDate) }
-    : undefined
+  const selectedRange =
+    isCustomRange && startDate && endDate
+      ? { from: new Date(startDate), to: new Date(endDate) }
+      : undefined
 
   return (
     <div
@@ -89,9 +98,7 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
           size="sm"
           onClick={() => handlePresetClick(preset.value)}
           className={
-            datePreset === preset.value
-              ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
-              : ''
+            datePreset === preset.value ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : ''
           }
           aria-pressed={datePreset === preset.value}
         >

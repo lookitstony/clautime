@@ -20,8 +20,14 @@ const idleHiddenIds = new Set<number>()
 // Widgets explicitly opened by the user — don't auto-hide these.
 const userPinnedIds = new Set<number>()
 
-interface WidgetPosition { x: number; y: number }
-interface WidgetState { positions: Record<string, WidgetPosition>; openIds: number[] }
+interface WidgetPosition {
+  x: number
+  y: number
+}
+interface WidgetState {
+  positions: Record<string, WidgetPosition>
+  openIds: number[]
+}
 let savedState: WidgetState = { positions: {}, openIds: [] }
 const stateFile = join(app.getPath('userData'), 'widget-positions.json')
 
@@ -44,7 +50,9 @@ function saveState(): void {
   try {
     mkdirSync(join(stateFile, '..'), { recursive: true })
     // Save both open and auto-hidden widget IDs so they survive restarts
-    savedState.openIds = [...new Set([...widgets.keys(), ...autoHiddenIds, ...idleHiddenIds, ...userPinnedIds])]
+    savedState.openIds = [
+      ...new Set([...widgets.keys(), ...autoHiddenIds, ...idleHiddenIds, ...userPinnedIds])
+    ]
     writeFileSync(stateFile, JSON.stringify(savedState, null, 2))
   } catch {
     // Best effort
@@ -275,7 +283,9 @@ export const widgetService = {
     if (registeredAccelerator) {
       try {
         globalShortcut.unregister(registeredAccelerator)
-      } catch { /* already unregistered */ }
+      } catch {
+        /* already unregistered */
+      }
       registeredAccelerator = null
     }
   },

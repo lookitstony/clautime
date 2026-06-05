@@ -21,29 +21,23 @@ import type {
 export function registerInvoiceHandlers(): void {
   // ── Stripe Key Management ──
 
-  ipcMain.handle(
-    'invoice:hasStripeKey',
-    async (): Promise<IpcResult<boolean>> => {
-      try {
-        return ipcSuccess(credentialService.hasStripeKey())
-      } catch (error) {
-        log.error('IPC invoice:hasStripeKey failed:', error)
-        return ipcError('STRIPE_HAS_KEY_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:hasStripeKey', async (): Promise<IpcResult<boolean>> => {
+    try {
+      return ipcSuccess(credentialService.hasStripeKey())
+    } catch (error) {
+      log.error('IPC invoice:hasStripeKey failed:', error)
+      return ipcError('STRIPE_HAS_KEY_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'invoice:isTestMode',
-    async (): Promise<IpcResult<boolean>> => {
-      try {
-        return ipcSuccess(credentialService.isStripeTestMode())
-      } catch (error) {
-        log.error('IPC invoice:isTestMode failed:', error)
-        return ipcError('STRIPE_TEST_MODE_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:isTestMode', async (): Promise<IpcResult<boolean>> => {
+    try {
+      return ipcSuccess(credentialService.isStripeTestMode())
+    } catch (error) {
+      log.error('IPC invoice:isTestMode failed:', error)
+      return ipcError('STRIPE_TEST_MODE_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'invoice:storeStripeKey',
@@ -59,44 +53,35 @@ export function registerInvoiceHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'invoice:removeStripeKey',
-    async (): Promise<IpcResult<void>> => {
-      try {
-        credentialService.removeStripeKey()
-        clearStripeCache()
-        return ipcSuccess(undefined)
-      } catch (error) {
-        log.error('IPC invoice:removeStripeKey failed:', error)
-        return ipcError('STRIPE_REMOVE_KEY_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:removeStripeKey', async (): Promise<IpcResult<void>> => {
+    try {
+      credentialService.removeStripeKey()
+      clearStripeCache()
+      return ipcSuccess(undefined)
+    } catch (error) {
+      log.error('IPC invoice:removeStripeKey failed:', error)
+      return ipcError('STRIPE_REMOVE_KEY_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'invoice:testConnection',
-    async (): Promise<IpcResult<boolean>> => {
-      try {
-        const result = await stripeService.testConnection()
-        return ipcSuccess(result)
-      } catch (error) {
-        log.error('IPC invoice:testConnection failed:', error)
-        return ipcError('STRIPE_CONNECTION_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:testConnection', async (): Promise<IpcResult<boolean>> => {
+    try {
+      const result = await stripeService.testConnection()
+      return ipcSuccess(result)
+    } catch (error) {
+      log.error('IPC invoice:testConnection failed:', error)
+      return ipcError('STRIPE_CONNECTION_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'invoice:getStripeMode',
-    async (): Promise<IpcResult<'live' | 'test'>> => {
-      try {
-        return ipcSuccess(credentialService.getStripeMode())
-      } catch (error) {
-        log.error('IPC invoice:getStripeMode failed:', error)
-        return ipcError('STRIPE_MODE_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:getStripeMode', async (): Promise<IpcResult<'live' | 'test'>> => {
+    try {
+      return ipcSuccess(credentialService.getStripeMode())
+    } catch (error) {
+      log.error('IPC invoice:getStripeMode failed:', error)
+      return ipcError('STRIPE_MODE_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'invoice:setStripeMode',
@@ -147,17 +132,14 @@ export function registerInvoiceHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'invoice:getStripeTestEmail',
-    async (): Promise<IpcResult<string | null>> => {
-      try {
-        return ipcSuccess(credentialService.getStripeTestEmail())
-      } catch (error) {
-        log.error('IPC invoice:getStripeTestEmail failed:', error)
-        return ipcError('STRIPE_TEST_EMAIL_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:getStripeTestEmail', async (): Promise<IpcResult<string | null>> => {
+    try {
+      return ipcSuccess(credentialService.getStripeTestEmail())
+    } catch (error) {
+      log.error('IPC invoice:getStripeTestEmail failed:', error)
+      return ipcError('STRIPE_TEST_EMAIL_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'invoice:setStripeTestEmail',
@@ -210,9 +192,10 @@ export function registerInvoiceHandlers(): void {
           lineItems: request.lineItems.map((item, i) => ({
             lineDate: request.lineMeta?.[i]?.lineDate,
             description: item.description,
-            amountCents: item.hours && item.rateCents
-              ? Math.round(item.hours * item.rateCents)
-              : item.amountCents,
+            amountCents:
+              item.hours && item.rateCents
+                ? Math.round(item.hours * item.rateCents)
+                : item.amountCents,
             durationMinutes: request.lineMeta?.[i]?.durationMinutes,
             sessionIds: request.lineMeta?.[i]?.sessionIds,
             sortOrder: i
@@ -234,7 +217,8 @@ export function registerInvoiceHandlers(): void {
         const result = await stripeService.sendInvoice(invoiceId)
 
         // Update local status
-        getDb().update(invoices)
+        getDb()
+          .update(invoices)
           .set({
             status: result.status,
             hostedUrl: result.hostedUrl,
@@ -273,7 +257,8 @@ export function registerInvoiceHandlers(): void {
         const result = await stripeService.voidInvoice(invoiceId)
 
         // Update local status
-        getDb().update(invoices)
+        getDb()
+          .update(invoices)
           .set({ status: result.status, updatedAt: new Date().toISOString() })
           .where(eq(invoices.stripeInvoiceId, invoiceId))
           .run()
@@ -354,47 +339,38 @@ export function registerInvoiceHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'invoice:syncAllStatuses',
-    async (): Promise<IpcResult<number>> => {
-      try {
-        const count = await invoiceService.syncAllStatuses()
-        return ipcSuccess(count)
-      } catch (error) {
-        log.error('IPC invoice:syncAllStatuses failed:', error)
-        return ipcError('INVOICE_SYNC_ALL_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:syncAllStatuses', async (): Promise<IpcResult<number>> => {
+    try {
+      const count = await invoiceService.syncAllStatuses()
+      return ipcSuccess(count)
+    } catch (error) {
+      log.error('IPC invoice:syncAllStatuses failed:', error)
+      return ipcError('INVOICE_SYNC_ALL_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'invoice:delete',
-    async (_event, localId: number): Promise<IpcResult<void>> => {
-      try {
-        if (typeof localId !== 'number' || localId <= 0) {
-          return ipcError('INVALID_ID', 'Invalid invoice ID')
-        }
-        invoiceService.deleteInvoice(localId)
-        return ipcSuccess(undefined)
-      } catch (error) {
-        log.error('IPC invoice:delete failed:', error)
-        return ipcError('INVOICE_DELETE_ERROR', String(error))
+  ipcMain.handle('invoice:delete', async (_event, localId: number): Promise<IpcResult<void>> => {
+    try {
+      if (typeof localId !== 'number' || localId <= 0) {
+        return ipcError('INVALID_ID', 'Invalid invoice ID')
       }
+      invoiceService.deleteInvoice(localId)
+      return ipcSuccess(undefined)
+    } catch (error) {
+      log.error('IPC invoice:delete failed:', error)
+      return ipcError('INVOICE_DELETE_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'invoice:importFromStripe',
-    async (): Promise<IpcResult<number>> => {
-      try {
-        const count = await invoiceService.importFromStripe()
-        return ipcSuccess(count)
-      } catch (error) {
-        log.error('IPC invoice:importFromStripe failed:', error)
-        return ipcError('INVOICE_IMPORT_ERROR', String(error))
-      }
+  ipcMain.handle('invoice:importFromStripe', async (): Promise<IpcResult<number>> => {
+    try {
+      const count = await invoiceService.importFromStripe()
+      return ipcSuccess(count)
+    } catch (error) {
+      log.error('IPC invoice:importFromStripe failed:', error)
+      return ipcError('INVOICE_IMPORT_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'invoice:checkOverlap',

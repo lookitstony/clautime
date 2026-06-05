@@ -10,11 +10,7 @@ import {
   Settings,
   type LucideIcon
 } from 'lucide-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useUIStore } from '@/stores/use-ui-store'
 import { cn } from '@/lib/utils'
 
@@ -56,24 +52,21 @@ export function ActivityBar(): React.JSX.Element {
     [navigate, setActiveView]
   )
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLElement>, index: number) => {
-      let nextIndex: number | null = null
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLElement>, index: number) => {
+    let nextIndex: number | null = null
 
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        nextIndex = (index + 1) % navItems.length
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        nextIndex = (index - 1 + navItems.length) % navItems.length
-      }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      nextIndex = (index + 1) % navItems.length
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      nextIndex = (index - 1 + navItems.length) % navItems.length
+    }
 
-      if (nextIndex !== null) {
-        buttonsRef.current[nextIndex]?.focus()
-      }
-    },
-    []
-  )
+    if (nextIndex !== null) {
+      buttonsRef.current[nextIndex]?.focus()
+    }
+  }, [])
 
   return (
     <nav

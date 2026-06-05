@@ -28,7 +28,10 @@ interface InvoiceDetailViewProps {
   onBack: () => void
 }
 
-export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps): React.JSX.Element {
+export function InvoiceDetailView({
+  invoiceId,
+  onBack
+}: InvoiceDetailViewProps): React.JSX.Element {
   const queryClient = useQueryClient()
   const [confirmVoid, setConfirmVoid] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
@@ -101,7 +104,8 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
   }
 
   const displayStatus = getDisplayStatus(invoice)
-  const totalHours = invoice.lineItems.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0) / 60
+  const totalHours =
+    invoice.lineItems.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0) / 60
 
   return (
     <div className="space-y-4">
@@ -122,14 +126,21 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
           <div>
             <span className="text-[var(--text-muted)]">Status</span>
             <p>
-              <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', STATUS_STYLES[displayStatus] ?? STATUS_STYLES.draft)}>
+              <span
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-[11px] font-medium',
+                  STATUS_STYLES[displayStatus] ?? STATUS_STYLES.draft
+                )}
+              >
                 {displayStatus}
               </span>
             </p>
           </div>
           <div>
             <span className="text-[var(--text-muted)]">Amount</span>
-            <p className="text-[var(--text-primary)] font-semibold">${(invoice.amountDueCents / 100).toFixed(2)}</p>
+            <p className="text-[var(--text-primary)] font-semibold">
+              ${(invoice.amountDueCents / 100).toFixed(2)}
+            </p>
           </div>
           {totalHours > 0 && (
             <div>
@@ -147,14 +158,17 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
             <div>
               <span className="text-[var(--text-muted)]">Period</span>
               <p className="text-[var(--text-primary)]">
-                {new Date(invoice.periodStart).toLocaleDateString()} – {new Date(invoice.periodEnd).toLocaleDateString()}
+                {new Date(invoice.periodStart).toLocaleDateString()} –{' '}
+                {new Date(invoice.periodEnd).toLocaleDateString()}
               </p>
             </div>
           )}
           {invoice.dueDate && (
             <div>
               <span className="text-[var(--text-muted)]">Due</span>
-              <p className="text-[var(--text-primary)]">{new Date(invoice.dueDate).toLocaleDateString()}</p>
+              <p className="text-[var(--text-primary)]">
+                {new Date(invoice.dueDate).toLocaleDateString()}
+              </p>
             </div>
           )}
           {invoice.paidAt && (
@@ -165,7 +179,9 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
           )}
           <div>
             <span className="text-[var(--text-muted)]">Stripe ID</span>
-            <p className="font-mono text-[12px] text-[var(--text-secondary)]">{invoice.stripeInvoiceId}</p>
+            <p className="font-mono text-[12px] text-[var(--text-secondary)]">
+              {invoice.stripeInvoiceId}
+            </p>
           </div>
         </div>
 
@@ -179,18 +195,35 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
         {/* Actions */}
         <div className="mt-4 flex gap-2 border-t border-[var(--surface-border)] pt-3">
           {invoice.status === 'draft' && (
-            <Button size="sm" onClick={() => setConfirmSend(true)} disabled={sendInvoice.isPending} className="bg-[var(--accent)] text-white hover:brightness-[1.15]">
+            <Button
+              size="sm"
+              onClick={() => setConfirmSend(true)}
+              disabled={sendInvoice.isPending}
+              className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+            >
               <Send className="mr-1 h-3 w-3" /> Send
             </Button>
           )}
           {(invoice.status === 'draft' || invoice.status === 'open') && (
-            <Button size="sm" variant="ghost" onClick={() => setConfirmVoid(true)} disabled={voidInvoice.isPending} className="text-[var(--destructive)]">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmVoid(true)}
+              disabled={voidInvoice.isPending}
+              className="text-[var(--destructive)]"
+            >
               <XCircle className="mr-1 h-3 w-3" /> Void
             </Button>
           )}
           {invoice.status !== 'void' && invoice.status !== 'paid' && (
-            <Button size="sm" variant="ghost" onClick={() => syncStatus.mutate()} disabled={syncStatus.isPending}>
-              <RefreshCw className={cn('mr-1 h-3 w-3', syncStatus.isPending && 'animate-spin')} /> Refresh
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => syncStatus.mutate()}
+              disabled={syncStatus.isPending}
+            >
+              <RefreshCw className={cn('mr-1 h-3 w-3', syncStatus.isPending && 'animate-spin')} />{' '}
+              Refresh
             </Button>
           )}
           {invoice.hostedUrl ? (
@@ -199,7 +232,10 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
               variant="ghost"
               onClick={() => {
                 const url = invoice.hostedUrl!
-                if (url.startsWith('https://invoice.stripe.com/') || url.startsWith('https://pay.stripe.com/')) {
+                if (
+                  url.startsWith('https://invoice.stripe.com/') ||
+                  url.startsWith('https://pay.stripe.com/')
+                ) {
                   window.open(url, '_blank')
                 }
               }}
@@ -211,7 +247,9 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
               size="sm"
               variant="ghost"
               onClick={() => {
-                const prefix = invoice.testMode ? 'https://dashboard.stripe.com/test' : 'https://dashboard.stripe.com'
+                const prefix = invoice.testMode
+                  ? 'https://dashboard.stripe.com/test'
+                  : 'https://dashboard.stripe.com'
                 window.open(`${prefix}/invoices/${invoice.stripeInvoiceId}`, '_blank')
               }}
             >
@@ -224,7 +262,11 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
               variant="ghost"
               onClick={() => {
                 const url = invoice.invoicePdf!
-                if (url.startsWith('https://pay.stripe.com/') || url.startsWith('https://files.stripe.com/') || url.startsWith('https://invoice.stripe.com/')) {
+                if (
+                  url.startsWith('https://pay.stripe.com/') ||
+                  url.startsWith('https://files.stripe.com/') ||
+                  url.startsWith('https://invoice.stripe.com/')
+                ) {
                   window.open(url, '_blank')
                 }
               }}
@@ -233,7 +275,13 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
             </Button>
           )}
           <div className="flex-1" />
-          <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(true)} disabled={deleteInvoice.isPending} className="text-[var(--destructive)]">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setConfirmDelete(true)}
+            disabled={deleteInvoice.isPending}
+            className="text-[var(--destructive)]"
+          >
             <Trash2 className="mr-1 h-3 w-3" /> Delete
           </Button>
         </div>
@@ -247,12 +295,17 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
           </label>
           <div className="space-y-2">
             {invoice.lineItems.map((item) => (
-              <div key={item.id} className="flex items-start justify-between rounded border border-[var(--surface-border)] bg-[var(--background-primary)] p-3">
+              <div
+                key={item.id}
+                className="flex items-start justify-between rounded border border-[var(--surface-border)] bg-[var(--background-primary)] p-3"
+              >
                 <div className="flex-1">
                   <p className="text-[13px] text-[var(--text-primary)]">{item.description}</p>
                   {(item.lineDate || item.durationMinutes) && (
                     <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                      {item.lineDate ? new Date(item.lineDate + 'T00:00:00').toLocaleDateString() : ''}
+                      {item.lineDate
+                        ? new Date(item.lineDate + 'T00:00:00').toLocaleDateString()
+                        : ''}
                       {item.lineDate && item.durationMinutes ? ' · ' : ''}
                       {item.durationMinutes ? `${(item.durationMinutes / 60).toFixed(1)}h` : ''}
                     </p>
@@ -274,7 +327,10 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
         confirmLabel="Void"
         cancelLabel="Cancel"
         variant="destructive"
-        onConfirm={() => { setConfirmVoid(false); voidInvoice.mutate() }}
+        onConfirm={() => {
+          setConfirmVoid(false)
+          voidInvoice.mutate()
+        }}
         onCancel={() => setConfirmVoid(false)}
       />
 
@@ -284,7 +340,10 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
         description={`Send this invoice for ${totalHours > 0 ? `${totalHours.toFixed(2)}h · ` : ''}$${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName}?`}
         confirmLabel="Send"
         cancelLabel="Cancel"
-        onConfirm={() => { setConfirmSend(false); sendInvoice.mutate() }}
+        onConfirm={() => {
+          setConfirmSend(false)
+          sendInvoice.mutate()
+        }}
         onCancel={() => setConfirmSend(false)}
       />
 
@@ -295,7 +354,10 @@ export function InvoiceDetailView({ invoiceId, onBack }: InvoiceDetailViewProps)
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="destructive"
-        onConfirm={() => { setConfirmDelete(false); deleteInvoice.mutate() }}
+        onConfirm={() => {
+          setConfirmDelete(false)
+          deleteInvoice.mutate()
+        }}
         onCancel={() => setConfirmDelete(false)}
       />
     </div>

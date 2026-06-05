@@ -52,12 +52,7 @@ beforeEach(() => {
 describe('ClientCard', () => {
   it('renders client name and color dot', () => {
     render(
-      <ClientCard
-        client={mockClient}
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onEdit={vi.fn()}
-      />,
+      <ClientCard client={mockClient} isExpanded={false} onToggle={vi.fn()} onEdit={vi.fn()} />,
       { wrapper: createWrapper() }
     )
     expect(screen.getByText('Acme Corp')).toBeInTheDocument()
@@ -68,12 +63,7 @@ describe('ClientCard', () => {
 
   it('shows project count badge', async () => {
     render(
-      <ClientCard
-        client={mockClient}
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onEdit={vi.fn()}
-      />,
+      <ClientCard client={mockClient} isExpanded={false} onToggle={vi.fn()} onEdit={vi.fn()} />,
       { wrapper: createWrapper() }
     )
     await waitFor(() => {
@@ -84,12 +74,7 @@ describe('ClientCard', () => {
   it('calls onToggle when clicked', () => {
     const onToggle = vi.fn()
     render(
-      <ClientCard
-        client={mockClient}
-        isExpanded={false}
-        onToggle={onToggle}
-        onEdit={vi.fn()}
-      />,
+      <ClientCard client={mockClient} isExpanded={false} onToggle={onToggle} onEdit={vi.fn()} />,
       { wrapper: createWrapper() }
     )
     fireEvent.click(screen.getByText('Acme Corp'))
@@ -99,12 +84,7 @@ describe('ClientCard', () => {
   it('calls onEdit when edit button clicked', () => {
     const onEdit = vi.fn()
     render(
-      <ClientCard
-        client={mockClient}
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onEdit={onEdit}
-      />,
+      <ClientCard client={mockClient} isExpanded={false} onToggle={vi.fn()} onEdit={onEdit} />,
       { wrapper: createWrapper() }
     )
     fireEvent.click(screen.getByLabelText('Edit Acme Corp'))
@@ -113,12 +93,7 @@ describe('ClientCard', () => {
 
   it('shows delete confirmation dialog when delete button clicked', async () => {
     render(
-      <ClientCard
-        client={mockClient}
-        isExpanded={false}
-        onToggle={vi.fn()}
-        onEdit={vi.fn()}
-      />,
+      <ClientCard client={mockClient} isExpanded={false} onToggle={vi.fn()} onEdit={vi.fn()} />,
       { wrapper: createWrapper() }
     )
     fireEvent.click(screen.getByLabelText('Delete Acme Corp'))
@@ -130,12 +105,7 @@ describe('ClientCard', () => {
 
   it('shows ProjectList when expanded', async () => {
     render(
-      <ClientCard
-        client={mockClient}
-        isExpanded={true}
-        onToggle={vi.fn()}
-        onEdit={vi.fn()}
-      />,
+      <ClientCard client={mockClient} isExpanded={true} onToggle={vi.fn()} onEdit={vi.fn()} />,
       { wrapper: createWrapper() }
     )
     await waitFor(() => {

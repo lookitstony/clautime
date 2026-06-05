@@ -49,31 +49,25 @@ export function registerGitHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'git:detectIdentity',
-    async (): Promise<IpcResult<GitIdentity | null>> => {
-      try {
-        const identity = await gitService.detectGitIdentity()
-        return ipcSuccess(identity)
-      } catch (error) {
-        log.error('IPC git:detectIdentity failed:', error)
-        return ipcError('GIT_IDENTITY_ERROR', String(error))
-      }
+  ipcMain.handle('git:detectIdentity', async (): Promise<IpcResult<GitIdentity | null>> => {
+    try {
+      const identity = await gitService.detectGitIdentity()
+      return ipcSuccess(identity)
+    } catch (error) {
+      log.error('IPC git:detectIdentity failed:', error)
+      return ipcError('GIT_IDENTITY_ERROR', String(error))
     }
-  )
+  })
 
-  ipcMain.handle(
-    'git:getIdentity',
-    async (): Promise<IpcResult<GitIdentity | null>> => {
-      try {
-        const identity = await gitService.getGitIdentity()
-        return ipcSuccess(identity)
-      } catch (error) {
-        log.error('IPC git:getIdentity failed:', error)
-        return ipcError('GIT_GET_IDENTITY_ERROR', String(error))
-      }
+  ipcMain.handle('git:getIdentity', async (): Promise<IpcResult<GitIdentity | null>> => {
+    try {
+      const identity = await gitService.getGitIdentity()
+      return ipcSuccess(identity)
+    } catch (error) {
+      log.error('IPC git:getIdentity failed:', error)
+      return ipcError('GIT_GET_IDENTITY_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'git:setIdentity',
@@ -90,18 +84,15 @@ export function registerGitHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'git:correlate',
-    async (): Promise<IpcResult<number>> => {
-      try {
-        const count = gitService.correlateCommitsWithSessions()
-        return ipcSuccess(count)
-      } catch (error) {
-        log.error('IPC git:correlate failed:', error)
-        return ipcError('GIT_CORRELATE_ERROR', String(error))
-      }
+  ipcMain.handle('git:correlate', async (): Promise<IpcResult<number>> => {
+    try {
+      const count = gitService.correlateCommitsWithSessions()
+      return ipcSuccess(count)
+    } catch (error) {
+      log.error('IPC git:correlate failed:', error)
+      return ipcError('GIT_CORRELATE_ERROR', String(error))
     }
-  )
+  })
 
   ipcMain.handle(
     'git:getRemoteUrl',
@@ -116,16 +107,13 @@ export function registerGitHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    'git:getSessionIdsWithCommits',
-    async (): Promise<IpcResult<number[]>> => {
-      try {
-        const ids = gitService.getSessionIdsWithCommits()
-        return ipcSuccess(ids)
-      } catch (error) {
-        log.error('IPC git:getSessionIdsWithCommits failed:', error)
-        return ipcError('GIT_SESSION_IDS_ERROR', String(error))
-      }
+  ipcMain.handle('git:getSessionIdsWithCommits', async (): Promise<IpcResult<number[]>> => {
+    try {
+      const ids = gitService.getSessionIdsWithCommits()
+      return ipcSuccess(ids)
+    } catch (error) {
+      log.error('IPC git:getSessionIdsWithCommits failed:', error)
+      return ipcError('GIT_SESSION_IDS_ERROR', String(error))
     }
-  )
+  })
 }

@@ -19,7 +19,9 @@ You advise on database design, migrations, queries, and data integrity for **Cla
 - **Next migration**: 0011
 
 ### Schema Files
+
 All in `src/main/db/schema/`:
+
 - `sessions.ts` — Core work sessions (projectPath, timestamps, tokens, promptCount)
 - `clients.ts` — Billable clients (name, color, billableRate)
 - `projects.ts` — Projects under clients (directoryPath, FK to clients)
@@ -32,6 +34,7 @@ All in `src/main/db/schema/`:
 - `secret-findings.ts` — Detected secrets/credentials
 
 ### Conventions
+
 - SQL columns: `snake_case` (`project_path`, `started_at`)
 - TypeScript fields: `camelCase` (`projectPath`, `startedAt`)
 - Timestamps: ISO 8601 strings in `text` columns
@@ -41,6 +44,7 @@ All in `src/main/db/schema/`:
 ## Best Practices for ClauTime
 
 ### Schema Design
+
 - Use `sqliteTable()` from Drizzle — never raw `CREATE TABLE`
 - Always add `createdAt` with `$defaultFn(() => new Date().toISOString())`
 - Use real FK constraints (`references(() => table.id)`) for strict relationships
@@ -48,6 +52,7 @@ All in `src/main/db/schema/`:
 - Add indexes on frequently filtered columns (timestamps, FKs, unique constraints)
 
 ### Migration Strategy
+
 - Run `npx drizzle-kit generate` to create migrations
 - Migrations must be **backwards-compatible** — users auto-update, can't force a clean install
 - Never DROP columns — SQLite doesn't support it natively anyway
@@ -55,36 +60,47 @@ All in `src/main/db/schema/`:
 - Rename via new column + data copy + old column ignored (SQLite ALTER limitations)
 
 ### Query Optimization
+
 - better-sqlite3 is synchronous — queries block the main process thread
 - Keep queries fast: use indexes, limit result sets, avoid N+1
 - For bulk operations: use transactions (`db.transaction()`)
 - JSONL parsing is the bottleneck, not SQL — optimize file I/O first
 
 ### Data Integrity
+
 - Validate at service layer before insert/update
 - Use unique constraints for natural keys (`clients.name`, `projects.directoryPath`)
 - Cascade deletes where appropriate (Drizzle `onDelete: 'cascade'`)
 - `raw_messages` table has composite indexes for efficient session reconstruction
 
 ### Common Drizzle Patterns
+
 ```typescript
 // Schema definition
-export const myTable = sqliteTable('my_table', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  isActive: integer('is_active').notNull().default(1),
-  createdAt: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
-}, (table) => [
-  index('idx_my_table_name').on(table.name),
-])
+export const myTable = sqliteTable(
+  'my_table',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    isActive: integer('is_active').notNull().default(1),
+    createdAt: text('created_at')
+      .notNull()
+      .$defaultFn(() => new Date().toISOString())
+  },
+  (table) => [index('idx_my_table_name').on(table.name)]
+)
 
 // Query with filters
-const results = db.select().from(sessions)
-  .where(and(
-    gte(sessions.startedAt, startDate),
-    lte(sessions.startedAt, endDate),
-    projectId ? eq(sessions.projectId, projectId) : undefined,
-  ))
+const results = db
+  .select()
+  .from(sessions)
+  .where(
+    and(
+      gte(sessions.startedAt, startDate),
+      lte(sessions.startedAt, endDate),
+      projectId ? eq(sessions.projectId, projectId) : undefined
+    )
+  )
   .orderBy(desc(sessions.startedAt))
 
 // Insert

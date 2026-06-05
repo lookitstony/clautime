@@ -10,12 +10,14 @@ model: inherit
 You implement features, fix bugs, and write code for **ClauTime**, an Electron desktop app tracking Claude Code session time. Follow the patterns and conventions below exactly.
 
 ## Shell Rules
+
 - **Do NOT use `&&`** to chain commands — use `;` or run separately
 - Use `python` not `python3` on Windows
 
 ## Implementation Checklist
 
 ### New IPC Endpoint
+
 1. Define types in `src/shared/types/*.ts`
 2. Add service method in `src/main/services/*-service.ts`
 3. Register handler in `src/main/ipc/*-handlers.ts` using `ipcMain.handle`
@@ -24,6 +26,7 @@ You implement features, fix bugs, and write code for **ClauTime**, an Electron d
 6. Create hook or TanStack Query in renderer
 
 ### New Database Table
+
 1. Create schema file in `src/main/db/schema/` (snake_case columns, camelCase TypeScript)
 2. Export from schema index if one exists
 3. Run `npx drizzle-kit generate` — migration gets next sequential number (currently 0011)
@@ -31,12 +34,14 @@ You implement features, fix bugs, and write code for **ClauTime**, an Electron d
 5. Add IPC handlers + preload bridge
 
 ### New React Page
+
 1. Create page component in `src/renderer/src/features/{name}/{Name}Page.tsx`
 2. Add route in `src/renderer/src/App.tsx` (createMemoryRouter)
 3. Add nav item in `src/renderer/src/components/shared/ActivityBar.tsx`
 4. Use TanStack Query for data fetching, Zustand only for UI state
 
 ### New UI Component
+
 1. shadcn/ui primitives in `src/renderer/src/components/ui/`
 2. Feature components in `src/renderer/src/components/{feature}/`
 3. Shared components in `src/renderer/src/components/shared/`
@@ -45,6 +50,7 @@ You implement features, fix bugs, and write code for **ClauTime**, an Electron d
 ## Coding Standards
 
 ### ✅ DO
+
 ```typescript
 // Use IpcResult wrapper for all IPC
 return ipcSuccess(result)
@@ -70,6 +76,7 @@ const { data, isLoading } = useQuery({ queryKey: ['sessions'], queryFn: () => wi
 ```
 
 ### ❌ DON'T
+
 ```typescript
 // Don't throw raw errors across IPC
 throw new Error('something broke')  // ← WRONG, use ipcError()
@@ -122,6 +129,7 @@ log.error('IPC session:scan failed:', error)
 ## Common Patterns
 
 ### Preload Bridge
+
 ```typescript
 // src/preload/index.ts
 myNamespace: {
@@ -133,20 +141,28 @@ myNamespace: {
 ```
 
 ### Zustand Store (persisted)
+
 ```typescript
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-interface MyStore { value: string; setValue: (v: string) => void }
+interface MyStore {
+  value: string
+  setValue: (v: string) => void
+}
 export const useMyStore = create<MyStore>()(
-  persist((set) => ({
-    value: '',
-    setValue: (value) => set({ value }),
-  }), { name: 'my-store' })
+  persist(
+    (set) => ({
+      value: '',
+      setValue: (value) => set({ value })
+    }),
+    { name: 'my-store' }
+  )
 )
 ```
 
 ### Query Invalidation
+
 ```typescript
 const queryClient = useQueryClient()
 queryClient.invalidateQueries({ queryKey: ['sessions'] })

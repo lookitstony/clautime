@@ -93,19 +93,49 @@ const mockAttributedSessions: Session[] = [
 ]
 
 const mockClients = [
-  { id: 1, name: 'Acme Corp', color: 'var(--project-1)', billableRate: null, email: null, stripeCustomerId: null, isActive: true, createdAt: '', updatedAt: '' }
+  {
+    id: 1,
+    name: 'Acme Corp',
+    color: 'var(--project-1)',
+    billableRate: null,
+    email: null,
+    stripeCustomerId: null,
+    isActive: true,
+    createdAt: '',
+    updatedAt: ''
+  }
 ]
 const mockProjects = [
-  { id: 1, clientId: 1, name: 'ClauTime', invoiceName: null, directoryPath: 'C:\\apps\\ClauTime', isBillable: true, isActive: true, createdAt: '', updatedAt: '' }
+  {
+    id: 1,
+    clientId: 1,
+    name: 'ClauTime',
+    invoiceName: null,
+    directoryPath: 'C:\\apps\\ClauTime',
+    isBillable: true,
+    isActive: true,
+    createdAt: '',
+    updatedAt: ''
+  }
 ]
 
-function stubApi(sessionsData: Session[] = [], clientsData = [] as typeof mockClients, projectsData = [] as typeof mockProjects) {
+function stubApi(
+  sessionsData: Session[] = [],
+  clientsData = [] as typeof mockClients,
+  projectsData = [] as typeof mockProjects
+) {
   vi.stubGlobal('api', {
     sessions: {
       getAll: vi.fn().mockResolvedValue({ success: true, data: sessionsData }),
       scan: vi.fn().mockResolvedValue({
         success: true,
-        data: { newSessions: 0, updatedFiles: 0, totalFiles: 0, durationMs: 100, attributedCount: 0 }
+        data: {
+          newSessions: 0,
+          updatedFiles: 0,
+          totalFiles: 0,
+          durationMs: 100,
+          attributedCount: 0
+        }
       }),
       getById: vi.fn()
     },
@@ -306,5 +336,4 @@ describe('SessionsPage', () => {
     })
     expect(screen.queryByRole('toolbar', { name: 'Session filters' })).not.toBeInTheDocument()
   })
-
 })

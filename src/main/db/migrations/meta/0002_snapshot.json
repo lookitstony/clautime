@@ -85,16 +85,12 @@
       "indexes": {
         "clients_name_unique": {
           "name": "clients_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         },
         "idx_clients_name": {
           "name": "idx_clients_name",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": false
         }
       },
@@ -168,23 +164,17 @@
       "indexes": {
         "projects_directory_path_unique": {
           "name": "projects_directory_path_unique",
-          "columns": [
-            "directory_path"
-          ],
+          "columns": ["directory_path"],
           "isUnique": true
         },
         "idx_projects_client_id": {
           "name": "idx_projects_client_id",
-          "columns": [
-            "client_id"
-          ],
+          "columns": ["client_id"],
           "isUnique": false
         },
         "idx_projects_directory_path": {
           "name": "idx_projects_directory_path",
-          "columns": [
-            "directory_path"
-          ],
+          "columns": ["directory_path"],
           "isUnique": false
         }
       },
@@ -193,12 +183,8 @@
           "name": "projects_client_id_clients_id_fk",
           "tableFrom": "projects",
           "tableTo": "clients",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["client_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -250,16 +236,12 @@
       "indexes": {
         "scan_state_file_path_unique": {
           "name": "scan_state_file_path_unique",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": true
         },
         "idx_scan_state_file_path": {
           "name": "idx_scan_state_file_path",
-          "columns": [
-            "file_path"
-          ],
+          "columns": ["file_path"],
           "isUnique": false
         }
       },
@@ -375,37 +357,27 @@
       "indexes": {
         "idx_sessions_project_path": {
           "name": "idx_sessions_project_path",
-          "columns": [
-            "project_path"
-          ],
+          "columns": ["project_path"],
           "isUnique": false
         },
         "idx_sessions_started_at": {
           "name": "idx_sessions_started_at",
-          "columns": [
-            "started_at"
-          ],
+          "columns": ["started_at"],
           "isUnique": false
         },
         "idx_sessions_claude_session_id": {
           "name": "idx_sessions_claude_session_id",
-          "columns": [
-            "claude_session_id"
-          ],
+          "columns": ["claude_session_id"],
           "isUnique": false
         },
         "idx_sessions_project_id": {
           "name": "idx_sessions_project_id",
-          "columns": [
-            "project_id"
-          ],
+          "columns": ["project_id"],
           "isUnique": false
         },
         "idx_sessions_client_id": {
           "name": "idx_sessions_client_id",
-          "columns": [
-            "client_id"
-          ],
+          "columns": ["client_id"],
           "isUnique": false
         }
       },
@@ -414,12 +386,8 @@
           "name": "sessions_project_id_projects_id_fk",
           "tableFrom": "sessions",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -427,12 +395,8 @@
           "name": "sessions_client_id_clients_id_fk",
           "tableFrom": "sessions",
           "tableTo": "clients",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["client_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }

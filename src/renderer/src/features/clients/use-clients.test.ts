@@ -44,7 +44,9 @@ beforeEach(() => {
     clients: {
       getAll: vi.fn().mockResolvedValue({ success: true, data: mockClients }),
       create: vi.fn().mockResolvedValue({ success: true, data: mockClients[0] }),
-      update: vi.fn().mockResolvedValue({ success: true, data: { ...mockClients[0], name: 'Updated' } }),
+      update: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: { ...mockClients[0], name: 'Updated' } }),
       delete: vi.fn().mockResolvedValue({ success: true, data: undefined })
     },
     projects: {

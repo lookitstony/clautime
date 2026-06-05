@@ -49,7 +49,10 @@ function RootLayout(): React.JSX.Element {
   useLiveBroadcastSync()
   const { isFirstLaunch, isLoading } = useIsFirstLaunch()
   const navigate = useNavigate()
-  const [stopDialog, setStopDialog] = useState<{ open: boolean; project: ProjectLiveStatus | null }>({ open: false, project: null })
+  const [stopDialog, setStopDialog] = useState<{
+    open: boolean
+    project: ProjectLiveStatus | null
+  }>({ open: false, project: null })
 
   // Listen for stop dialog requests from widgets
   useEffect(() => {

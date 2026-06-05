@@ -32,6 +32,7 @@ Renderer (React)  →  Preload (IPC bridge)  →  Main (Node.js)
 ```
 
 ### Layer Rules
+
 1. **Renderer** never accesses Node.js APIs directly — all through `window.api.*`
 2. **Preload** is a thin bridge — no business logic, only `ipcRenderer.invoke` proxies
 3. **Main services** are singleton objects (not classes), pure functions preferred
@@ -39,10 +40,15 @@ Renderer (React)  →  Preload (IPC bridge)  →  Main (Node.js)
 5. **Path alias** `@/` only works in renderer — main uses relative imports
 
 ### IPC Contract
+
 All IPC returns `IpcResult<T>` — never raw exceptions across the boundary:
+
 ```typescript
-type IpcResult<T> = { success: true; data: T } | { success: false; error: { code: string; message: string } }
+type IpcResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: { code: string; message: string } }
 ```
+
 Services throw `AppError(code, message)`. IPC handlers catch and wrap with `ipcError()`.
 
 ## Design Patterns in Use

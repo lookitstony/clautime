@@ -59,8 +59,5 @@ export interface SessionParserOptions {
 export interface SessionParser {
   discoverSessionFiles(claudeDir: string): Promise<string[]>
   parseSessionFile(filePath: string): Promise<ParsedSessionData | null>
-  parseAllSessions(
-    claudeDir: string,
-    options?: SessionParserOptions
-  ): Promise<ParsedSessionData[]>
+  parseAllSessions(claudeDir: string, options?: SessionParserOptions): Promise<ParsedSessionData[]>
 }
