@@ -37,8 +37,11 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+// Windows-path decoding relies on path.win32 semantics — skip on non-Windows CI.
+const itWin = process.platform === 'win32' ? it : it.skip
+
 describe('discoveryService.discoverDefaultProjects', () => {
-  it('discovers projects from ~/.claude/projects directory', async () => {
+  itWin('discovers projects from ~/.claude/projects directory', async () => {
     mockReaddir.mockResolvedValue([
       dirent('C--apps-ClauTime', true),
       dirent('C--apps-OtherProject', true),
@@ -73,7 +76,7 @@ describe('discoveryService.discoverDefaultProjects', () => {
     expect(result[0].projectName).toBe('myproject')
   })
 
-  it('skips non-directory entries', async () => {
+  itWin('skips non-directory entries', async () => {
     mockReaddir.mockResolvedValue([
       dirent('C--apps-MyApp', true),
       dirent('settings.json', false),
@@ -87,7 +90,7 @@ describe('discoveryService.discoverDefaultProjects', () => {
 })
 
 describe('discoveryService.discoverProjectsUnderFolder', () => {
-  it('filters projects to those under the given folder', async () => {
+  itWin('filters projects to those under the given folder', async () => {
     mockReaddir.mockResolvedValue([
       dirent('C--apps-ClauTime', true),
       dirent('C--apps-ButtonMaker', true),
@@ -100,14 +103,14 @@ describe('discoveryService.discoverProjectsUnderFolder', () => {
     expect(result[1].projectName).toBe('ButtonMaker')
   })
 
-  it('returns empty when no projects match the folder', async () => {
+  itWin('returns empty when no projects match the folder', async () => {
     mockReaddir.mockResolvedValue([dirent('C--apps-ClauTime', true)])
 
     const result = await discoveryService.discoverProjectsUnderFolder('D:\\work')
     expect(result).toHaveLength(0)
   })
 
-  it('is case-insensitive on Windows paths', async () => {
+  itWin('is case-insensitive on Windows paths', async () => {
     mockReaddir.mockResolvedValue([dirent('C--Apps-ClauTime', true)])
 
     const result = await discoveryService.discoverProjectsUnderFolder('c:\\apps')
