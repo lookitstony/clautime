@@ -33,7 +33,6 @@ export const reportService = {
     const db = getDb()
     const rangeStartMs = new Date(filters.startDate).getTime()
     const rangeEndMs = new Date(filters.endDate).getTime()
-    log.info(`[DIAG] Report filter: startDate=${filters.startDate} endDate=${filters.endDate}`)
 
     // Include any session that overlaps the date range
     // (started before range end AND ended after range start)

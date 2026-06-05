@@ -6,8 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-05
+
 ### Added
+- **Session billable flag** — toggle individual sessions billable/non-billable from the detail panel
+- **Stripe test/sandbox mode** — separate keys per mode, dedicated test email override, mode-aware overlap checks
+- **Invoice PDF support** — store and link to Stripe's hosted invoice PDF URL
+- **Stripe import** — pull existing invoices from Stripe into the local list
+- **Invoice list sort + filter** — sort by date/client/period/amount/status; status filter pills
 - Project selector for invoice line item generation — filter by specific project or all
+- Configurable start-of-week setting (Mon/Sun/Sat) across sessions, reports, analytics, and invoice flow
+- Editable due date field on invoice creation (default 30 days)
+- Auto-generated invoice memos with period summary, tickets, and AI overview
 - Ticket attribution on invoice line items using git commit spanning logic
 - AI-generated business-friendly descriptions for invoice line items
 - Multi-ticket support with indented line formatting per ticket
@@ -18,14 +28,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Donate button on invoicing page
 
 ### Fixed
+- Stripe 500-char line description cap — dynamic per-line budgets, combined summary mode for high-ticket days, deterministic fallback
+- Ticket extraction filters out non-ticket prefixes (UTF-8, ISO-8859, etc.)
+- AI hallucinating work based on project names instead of actual commits
 - Invoice date display off-by-one from UTC parsing of date-only strings
 - Session date filtering now uses local time instead of UTC string comparison
 - Invoice line items no longer pull unrelated project data into AI summaries
+- Sandbox email save not providing feedback (useEffect sync pattern)
+- Overlap check comparing across sandbox/live modes
+- AI refusal detection falls back to commit-based descriptions
+- Skip negligible sessions (under 3 min) from invoice line items
+- Cap Stripe memo at 500 chars to avoid API rejection
 
 ### Changed
 - Invoice amount column is now read-only (driven by hours x rate)
 - Removed manual sync button from invoice list (auto-syncs now)
 - Hours display uses 2 decimal precision
+- Enforce no "we/our" and no markdown in all AI invoice prompts
 
 ## [1.0.0] - 2026-03-24
 

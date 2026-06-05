@@ -821,8 +821,6 @@ export const aiService = {
       ? (opts.includeDailyBreakdown ? 800 : 100)
       : (opts.includeDailyBreakdown ? 1500 : 500)
 
-    log.info(`[DIAG] Brief: ${opts.brief}, hasCustomBrief: ${!!settingsService.getSetting('ai_brief_instructions')}, daily: ${opts.includeDailyBreakdown}, overall: ${opts.includeOverall}, maxTokens: ${maxTokens}`)
-
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
