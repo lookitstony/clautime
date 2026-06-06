@@ -23,7 +23,7 @@ Claude Code writes to JSONL log files as you work. ClauTime reads those files an
 
 - **Client & project management**: assign projects to clients with hourly billable rates, auto-attribute sessions to projects from their working directory
 - **Git commit correlation**: automatically links commits to the session they were authored in, with day-spanning attribution logic
-- **Ticket attribution**: detects ticket IDs in commits (e.g. `TRI-1234`, `JIRA-42`) and rolls them up per day/project for invoicing
+- **Ticket attribution**: detects ticket IDs in commits (e.g. `PROJ-1234`, `JIRA-42`) and rolls them up per day/project for invoicing
 - **Welcome wizard**: first-run onboarding that auto-discovers your existing Claude Code projects
 
 ### Invoicing (Stripe)
