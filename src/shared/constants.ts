@@ -12,4 +12,4 @@ export const DEFAULT_AI_BRIEF_INSTRUCTIONS = `The reader is a non-technical busi
 Use plain, non-technical language. Describe work in terms of business outcomes and features — NOT implementation details, code changes, or technical jargon.
 Frame accomplishments so the reader feels confident their investment is delivering tangible value.
 For example: "Fixed bug preventing users from logging in" NOT "Resolved null pointer exception in auth middleware".
-Preserve ticket IDs when present (e.g. TRI-1685) but describe the work in plain language.`
+Preserve ticket IDs when present (e.g. PROJ-1685) but describe the work in plain language.`

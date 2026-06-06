@@ -359,7 +359,7 @@ export const invoiceService = {
     const periodLabel = `${formatDateShort(startDate)} – ${formatDateShort(endDate)}`
 
     // Collect all tickets mentioned in descriptions
-    // Match ticket-like tokens (e.g. TRI-2643, WI-7), then drop common
+    // Match ticket-like tokens (e.g. PROJ-2643, WI-7), then drop common
     // non-ticket prefixes that share the same shape (UTF-8, ISO-8859, etc.).
     const ticketPattern = /\b[A-Z]{2,10}-\d{1,6}\b/g
     const NON_TICKET_PREFIXES = new Set([
