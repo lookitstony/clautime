@@ -66,14 +66,27 @@ Claude Code writes to JSONL log files as you work. ClauTime reads those files an
 
 _Coming soon_
 
-## Getting Started
+## Install
 
-### Prerequisites
+Grab the latest installer from the [releases page](https://github.com/lookitstony/clautime/releases/latest):
 
-- [Node.js](https://nodejs.org/) 20+
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and used at least once
+- **Windows**: `clautime-X.Y.Z-setup.exe`
+- **macOS (Apple Silicon)**: `clautime-X.Y.Z.dmg`
+- **Linux**: `clautime-X.Y.Z.AppImage`
 
-### Install & Run
+Prerequisite: you'll want [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and used at least once so there's something to track.
+
+## First Run
+
+1. **Launch the app.** On first start, ClauTime scans `~/.claude/projects/` and pulls in everything Claude Code has logged. A welcome dialog confirms detection; click _Get Started_.
+2. **Browse your sessions.** Open the _Sessions_ page to see what got detected. Each session shows time, prompts, tokens, and (if available) Claude's summary of the work.
+3. **Set up clients and projects.** On the _Clients_ page, add a client, set their hourly rate, and assign one or more detected projects to them. Unassigned projects still get tracked, they just don't roll up into client totals or invoices.
+4. **(Optional) Turn on AI summaries.** _Settings_ → _AI Configuration_ → paste an Anthropic API key. ClauTime will use Claude Haiku to generate plain-language summaries for sessions and reports. Without a key it falls back to git commit messages.
+5. **(Optional) Connect Stripe for invoicing.** _Settings_ → _Invoicing_ → paste a Stripe secret key. You can flip between live and test modes from the same screen. Once connected, the _Invoicing_ page can auto-generate invoices from billable session data.
+
+After that, just use Claude Code normally. Sessions appear in the app as they happen. Use the tray icon to pop floating widgets out per project, or close the main window to keep tracking quietly in the background.
+
+## Build from Source
 
 ```bash
 git clone https://github.com/lookitstony/clautime.git
@@ -82,18 +95,15 @@ npm install
 npm run dev
 ```
 
-### Build
+Build installers:
 
 ```bash
-# Windows
-npm run build:win
-
-# macOS
-npm run build:mac
-
-# Linux
-npm run build:linux
+npm run build:win    # Windows
+npm run build:mac    # macOS
+npm run build:linux  # Linux
 ```
+
+Requires [Node.js](https://nodejs.org/) 20+.
 
 ## Tech Stack
 
