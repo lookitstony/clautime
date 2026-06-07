@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-06-07
+
+### Fixed
+
+- System tray showed the default Electron icon in packaged builds. The tray icon now ships as an extraResource (outside asar) and loads via `process.resourcesPath` so it resolves reliably. A warning is logged when the image fails to load instead of silently defaulting.
+
 ## [1.1.1] - 2026-06-07
 
 ### Fixed
