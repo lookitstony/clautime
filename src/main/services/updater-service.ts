@@ -1,6 +1,6 @@
 import pkg from 'electron-updater'
 const { autoUpdater } = pkg
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main.js'
 
 autoUpdater.logger = log
@@ -9,18 +9,35 @@ autoUpdater.autoInstallOnAppQuit = true
 
 let updateAvailable = false
 
+function sendToRenderer(channel: string, payload?: unknown): void {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+}
+
 export const updaterService = {
   /**
    * Check for updates. Non-blocking — sends IPC messages to renderer on events.
    * Safe to call when offline — catches network errors silently.
    */
   checkForUpdates(): void {
+    // electron-updater refuses to run in unpacked dev builds. Surface that to
+    // the renderer so the Settings button gives feedback instead of hanging.
+    if (!app.isPackaged) {
+      sendToRenderer('updater:error', {
+        message: 'Auto-updates are disabled in development. Install the packaged build to check for updates.'
+      })
+      return
+    }
     try {
       autoUpdater.checkForUpdates().catch((err) => {
         log.warn('Update check failed (likely offline):', err?.message)
+        sendToRenderer('updater:error', { message: err?.message ?? 'Update check failed' })
       })
     } catch (err) {
       log.warn('Update check error:', err)
+      sendToRenderer('updater:error', {
+        message: err instanceof Error ? err.message : 'Update check failed'
+      })
     }
   },
 
@@ -64,9 +81,13 @@ export const updaterService = {
       }
     })
 
-    autoUpdater.on('update-not-available', () => {
+    autoUpdater.on('update-not-available', (info) => {
       log.info('App is up to date')
       updateAvailable = false
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) {
+        win.webContents.send('updater:update-not-available', { version: info?.version })
+      }
     })
 
     autoUpdater.on('download-progress', (progress) => {
@@ -89,6 +110,10 @@ export const updaterService = {
 
     autoUpdater.on('error', (err) => {
       log.warn('Auto-updater error:', err?.message)
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) {
+        win.webContents.send('updater:error', { message: err?.message ?? 'Update check failed' })
+      }
     })
   }
 }

@@ -144,8 +144,14 @@ const api = {
     onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {
       ipcRenderer.on('updater:update-available', (_event, info) => callback(info))
     },
+    onUpdateNotAvailable: (callback: (info: { version?: string }) => void) => {
+      ipcRenderer.on('updater:update-not-available', (_event, info) => callback(info))
+    },
     onUpdateDownloaded: (callback: () => void) => {
       ipcRenderer.on('updater:update-downloaded', () => callback())
+    },
+    onUpdateError: (callback: (info: { message: string }) => void) => {
+      ipcRenderer.on('updater:error', (_event, info) => callback(info))
     }
   },
   reports: {

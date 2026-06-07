@@ -124,7 +124,9 @@ interface UpdaterApi {
   downloadAndInstall(): Promise<IpcResult<void>>
   getVersion(): Promise<IpcResult<string>>
   onUpdateAvailable(callback: (info: { version: string; releaseDate: string }) => void): void
+  onUpdateNotAvailable(callback: (info: { version?: string }) => void): void
   onUpdateDownloaded(callback: () => void): void
+  onUpdateError(callback: (info: { message: string }) => void): void
 }
 
 interface ReportsApi {
