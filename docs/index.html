@@ -758,6 +758,160 @@
         font-weight: 300;
       }
 
+      /* ═══ INVOICING SAVINGS ═══ */
+      .invoicing-savings {
+        border-top: 1px solid var(--border);
+        background:
+          radial-gradient(circle at 20% 20%, var(--accent-bg) 0%, transparent 50%),
+          radial-gradient(circle at 80% 80%, #a78bfa10 0%, transparent 50%);
+      }
+
+      .savings-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 48px;
+        margin-top: 64px;
+        align-items: center;
+      }
+
+      .savings-copy h3 {
+        font-size: 22px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        letter-spacing: -0.4px;
+      }
+
+      .savings-copy p {
+        color: var(--text-secondary);
+        line-height: 1.7;
+        font-weight: 300;
+        margin-bottom: 16px;
+      }
+
+      .savings-bullets {
+        list-style: none;
+        margin-top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .savings-bullets li {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .savings-bullets li::before {
+        content: '✓';
+        color: var(--accent);
+        font-weight: 700;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      .savings-compare {
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 32px;
+        position: relative;
+      }
+
+      .savings-compare-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--text-muted);
+        margin-bottom: 24px;
+      }
+
+      .savings-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .savings-row:last-of-type {
+        border-bottom: none;
+      }
+
+      .savings-method {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .savings-method-name {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .savings-method-rate {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      .savings-amount {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .savings-amount.bad {
+        color: var(--rose);
+      }
+
+      .savings-amount.good {
+        color: var(--accent);
+      }
+
+      .savings-delta {
+        margin-top: 20px;
+        padding: 16px;
+        background: var(--accent-bg);
+        border: 1px solid var(--accent-glow);
+        border-radius: 12px;
+        text-align: center;
+      }
+
+      .savings-delta-label {
+        font-size: 12px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+      }
+
+      .savings-delta-amount {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--accent);
+      }
+
+      .savings-disclaimer {
+        margin-top: 20px;
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.5;
+        text-align: center;
+      }
+
+      @media (max-width: 800px) {
+        .savings-grid {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+      }
+
       /* ═══ HOW IT WORKS ═══ */
       .how-it-works {
         border-top: 1px solid var(--border);
@@ -1080,6 +1234,7 @@
         </a>
         <ul class="nav-links">
           <li><a href="#features" class="hide-mobile">Features</a></li>
+          <li><a href="#invoicing-savings" class="hide-mobile">Invoicing</a></li>
           <li><a href="#how-it-works" class="hide-mobile">How It Works</a></li>
           <li><a href="#getting-started" class="hide-mobile">Get Started</a></li>
           <li>
@@ -1101,7 +1256,7 @@
         <h1><span class="gradient">ClauTime</span></h1>
         <p class="hero-sub">
           Automatic time tracking for Claude Code.<br />
-          Track billable hours, monitor live sessions, and protect your secrets.
+          Bill your clients, send invoices through Stripe, and keep more of every dollar.
         </p>
         <div class="hero-actions">
           <a href="https://github.com/lookitstony/clautime" target="_blank" class="btn btn-primary">
@@ -1670,10 +1825,10 @@
       <div class="container">
         <div class="features-header reveal">
           <div class="section-label">Features</div>
-          <h2 class="section-title">Everything you need to track<br />your Claude Code work</h2>
+          <h2 class="section-title">Everything you need to track,<br />bill, and get paid</h2>
           <p class="section-desc">
-            Built for developers who bill by the hour and want accurate, automatic tracking without
-            lifting a finger.
+            Built for contractors and consultants who bill by the hour and want accurate, automatic
+            tracking without lifting a finger.
           </p>
         </div>
         <div class="features-grid">
@@ -1694,59 +1849,148 @@
             </p>
           </div>
           <div class="feature-card reveal">
-            <div class="feature-icon">&#128200;</div>
-            <h3>Analytics</h3>
+            <div class="feature-icon">&#128421;</div>
+            <h3>Floating Widgets</h3>
             <p>
-              Session trends, token usage, AI vs human time, gap analysis. Customizable dashboard
-              widgets to understand your workflow.
+              Always-on-top mini windows showing per-project status. Stay visible across desktops
+              and full-screen apps so you never lose track.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128178;</div>
+            <h3>Stripe Invoicing</h3>
+            <p>
+              Auto-generate invoices from billable sessions and send them through Stripe.
+              ACH-only mode keeps processing fees under $5 per invoice.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#129504;</div>
+            <h3>AI Summaries</h3>
+            <p>
+              Claude Haiku turns commit messages and session data into plain-language descriptions
+              for invoice lines and reports. Falls back to git commits if no API key.
             </p>
           </div>
           <div class="feature-card reveal">
             <div class="feature-icon">&#128101;</div>
-            <h3>Client Management</h3>
+            <h3>Clients &amp; Projects</h3>
             <p>
-              Assign projects to clients, mark work as billable or non-billable, and generate
-              reports ready for invoicing.
+              Organize work by client with hourly rates. Toggle billable/non-billable per session.
+              Auto-detect ticket IDs from your commits and roll them up by day.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="feature-icon">&#128200;</div>
+            <h3>Analytics Dashboard</h3>
+            <p>
+              Nine drag-and-drop widgets: daily hours, billable earnings, hours by client and
+              project, peak hours, token usage, work vs idle, and more.
             </p>
           </div>
           <div class="feature-card reveal">
             <div class="feature-icon">&#128196;</div>
-            <h3>Reports & Export</h3>
+            <h3>Reports &amp; Export</h3>
             <p>
-              Session breakdowns, daily summaries, and period reports. Export as Markdown to
-              clipboard or file. AI-powered summaries optional.
+              Session breakdowns, daily summaries, and period rollups with AI-written overviews.
+              Export as Markdown, CSV, or PDF, or copy to clipboard.
             </p>
           </div>
           <div class="feature-card reveal">
             <div class="feature-icon">&#128276;</div>
             <h3>Desktop Alerts</h3>
             <p>
-              Get notified when Claude finishes processing. Configurable sounds, volume, and alert
-              thresholds per project.
+              Native toast notifications when Claude finishes processing. Configurable sounds and
+              idle thresholds. Visible over full-screen apps, including Citrix VDI sessions.
             </p>
           </div>
           <div class="feature-card reveal">
             <div class="feature-icon">&#128737;</div>
             <h3>Secret Scanner</h3>
             <p>
-              Detects 50+ patterns of API keys, tokens, and credentials in your JSONL files.
-              Auto-redaction available. Protect your secrets.
+              Detects 40+ patterns of API keys, tokens, passwords, and private keys in your JSONL
+              files. Optional auto-redaction and custom patterns.
             </p>
           </div>
           <div class="feature-card reveal">
-            <div class="feature-icon">&#128421;</div>
-            <h3>Floating Widgets</h3>
+            <div class="feature-icon">&#128260;</div>
+            <h3>Auto-Updates</h3>
             <p>
-              Always-on-top mini windows showing per-project status. See time and activity at a
-              glance without switching windows.
+              Built-in updater pulls new versions from GitHub releases and prompts to install.
+              Background checks keep you on the latest with zero effort.
             </p>
           </div>
           <div class="feature-card reveal">
             <div class="feature-icon">&#128274;</div>
             <h3>100% Local</h3>
             <p>
-              No telemetry. No cloud. No accounts. All data stays on your machine in a local SQLite
-              database. Your data is yours.
+              No telemetry. No cloud. No accounts. SQLite stays on your machine. The only outbound
+              calls are the Anthropic and Stripe APIs you opt into.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INVOICING SAVINGS -->
+    <section id="invoicing-savings" class="invoicing-savings">
+      <div class="container">
+        <div class="features-header reveal">
+          <div class="section-label">For Contractors</div>
+          <h2 class="section-title">Get paid faster.<br />Keep more of every dollar.</h2>
+          <p class="section-desc">
+            Stop losing 3% of every invoice to credit card processing fees. ClauTime auto-generates
+            invoices from your tracked hours and sends them through Stripe with ACH bank transfer,
+            so you keep nearly all of what you earned.
+          </p>
+        </div>
+
+        <div class="savings-grid reveal">
+          <div class="savings-copy">
+            <h3>The card-fee tax on contractors</h3>
+            <p>
+              Most invoicing tools push your client to pay with a credit card. That's convenient
+              for them and expensive for you. On a typical $5,000 monthly invoice, credit card fees
+              eat $145 before you see a dollar.
+            </p>
+            <p>
+              Stripe's ACH bank-transfer rate is capped at <strong>0.8% / $5 max</strong> per
+              charge. ClauTime's invoice flow has a one-click <em>ACH-only</em> toggle that
+              removes the credit card option entirely, so clients pay via bank transfer by default
+              and you keep the difference.
+            </p>
+            <ul class="savings-bullets">
+              <li>Auto-generated line items from your billable Claude Code sessions</li>
+              <li>AI-written descriptions for each day so clients see what they're paying for</li>
+              <li>Test/sandbox mode to dry-run invoices before sending</li>
+              <li>Auto-sync of paid/open status — no manual reconciliation</li>
+              <li>Hosted invoice URL and downloadable PDF, branded with your Stripe account</li>
+            </ul>
+          </div>
+
+          <div class="savings-compare">
+            <div class="savings-compare-title">On a $5,000 invoice</div>
+            <div class="savings-row">
+              <div class="savings-method">
+                <span class="savings-method-name">Credit card</span>
+                <span class="savings-method-rate">2.9% + $0.30</span>
+              </div>
+              <div class="savings-amount bad">−$145.30</div>
+            </div>
+            <div class="savings-row">
+              <div class="savings-method">
+                <span class="savings-method-name">ACH bank transfer</span>
+                <span class="savings-method-rate">0.8% / $5 max</span>
+              </div>
+              <div class="savings-amount good">−$5.00</div>
+            </div>
+            <div class="savings-delta">
+              <div class="savings-delta-label">You keep an extra</div>
+              <div class="savings-delta-amount">$140.30</div>
+            </div>
+            <p class="savings-disclaimer">
+              US Stripe pricing as of 2026. International and Connect rates differ. Verify current
+              rates at stripe.com/pricing.
             </p>
           </div>
         </div>
@@ -1782,10 +2026,10 @@
           </div>
           <div class="how-step reveal">
             <div class="step-number">03</div>
-            <h3>You get actionable data</h3>
+            <h3>You bill and get paid</h3>
             <p>
-              Assign sessions to clients, generate billable reports, and understand exactly how your
-              AI-assisted development time is spent.
+              Assign sessions to clients, generate timesheets, and send Stripe invoices with one
+              click — ACH-only if you want to skip the credit card fees.
             </p>
           </div>
         </div>
@@ -1821,8 +2065,28 @@
         <div class="features-header reveal">
           <div class="section-label">Get Started</div>
           <h2 class="section-title">Up and running in 60 seconds</h2>
+          <p class="section-desc">
+            Download the installer for your OS, launch the app, and your existing Claude Code
+            projects get pulled in automatically.
+          </p>
         </div>
-        <div class="code-block reveal">
+        <div class="hero-actions reveal" style="justify-content: center; margin-top: 32px">
+          <a
+            href="https://github.com/lookitstony/clautime/releases/latest"
+            target="_blank"
+            class="btn btn-primary"
+          >
+            Download Latest Release
+          </a>
+          <a
+            href="https://github.com/lookitstony/clautime#first-run"
+            target="_blank"
+            class="btn btn-secondary"
+          >
+            First Run Guide
+          </a>
+        </div>
+        <div class="code-block reveal" style="margin-top: 48px">
           <div class="code-header">
             <svg
               width="14"
@@ -1835,13 +2099,12 @@
               <polyline points="4 17 10 11 4 5"></polyline>
               <line x1="12" y1="19" x2="20" y2="19"></line>
             </svg>
-            terminal
+            terminal &nbsp;·&nbsp; or build from source
           </div>
           <div class="code-body">
-            <span class="comment"># Clone the repository</span><br />
+            <span class="comment"># Clone and run in dev mode</span><br />
             <span class="cmd">git clone</span> https://github.com/lookitstony/clautime.git<br />
-            <span class="cmd">cd</span> clautime<br /><br />
-            <span class="comment"># Install and run</span><br />
+            <span class="cmd">cd</span> clautime<br />
             <span class="cmd">npm install</span><br />
             <span class="cmd">npm run</span> <span class="flag">dev</span>
           </div>
