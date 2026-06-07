@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react'
 import { toast } from 'sonner'
+import { triggerUpdateCheck } from './use-updater'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Volume2,
@@ -46,49 +47,10 @@ function SectionCard({ children }: { children: React.ReactNode }): React.JSX.Ele
 export function SettingsPage(): React.JSX.Element {
   const queryClient = useQueryClient()
   const [appVersion, setAppVersion] = useState<string | null>(null)
-  const userTriggeredCheck = useRef(false)
 
   useEffect(() => {
     window.api.updater.getVersion().then((r) => {
       if (r.success) setAppVersion(r.data)
-    })
-
-    window.api.updater.onUpdateAvailable((info) => {
-      userTriggeredCheck.current = false
-      toast.success(`Update available: v${info.version}`, {
-        duration: 10_000,
-        action: {
-          label: 'Download',
-          onClick: () => {
-            window.api.updater.downloadAndInstall()
-            toast.info('Downloading update…')
-          }
-        }
-      })
-    })
-
-    window.api.updater.onUpdateNotAvailable(() => {
-      if (userTriggeredCheck.current) {
-        userTriggeredCheck.current = false
-        toast.success("You're on the latest version")
-      }
-    })
-
-    window.api.updater.onUpdateDownloaded(() => {
-      toast.success('Update ready — restart to apply', {
-        duration: 15_000,
-        action: {
-          label: 'Restart',
-          onClick: () => window.api.updater.downloadAndInstall()
-        }
-      })
-    })
-
-    window.api.updater.onUpdateError((info) => {
-      if (userTriggeredCheck.current) {
-        userTriggeredCheck.current = false
-        toast.error(`Update check failed: ${info.message}`)
-      }
     })
   }, [])
 
@@ -1908,11 +1870,7 @@ export function SettingsPage(): React.JSX.Element {
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-[11px]"
-                onClick={() => {
-                  userTriggeredCheck.current = true
-                  window.api.updater.checkForUpdates()
-                  toast.info('Checking for updates…')
-                }}
+                onClick={triggerUpdateCheck}
               >
                 Check for Updates
               </Button>

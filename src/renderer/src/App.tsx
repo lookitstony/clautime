@@ -21,6 +21,7 @@ import { queryClient } from '@/lib/query-client'
 import { useLiveStore } from '@/stores/use-live-store'
 import { ManualTimerDialog } from '@/features/live/ManualTimerDialog'
 import { useLiveBroadcastSync } from '@/features/live/use-live'
+import { useUpdaterNotifications } from '@/features/settings/use-updater'
 import type { ProjectLiveStatus } from '../../shared/types/live'
 
 function useFileWatcherEvents(): void {
@@ -47,6 +48,7 @@ function useFileWatcherEvents(): void {
 function RootLayout(): React.JSX.Element {
   useFileWatcherEvents()
   useLiveBroadcastSync()
+  useUpdaterNotifications()
   const { isFirstLaunch, isLoading } = useIsFirstLaunch()
   const navigate = useNavigate()
   const [stopDialog, setStopDialog] = useState<{
