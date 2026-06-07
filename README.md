@@ -2,6 +2,8 @@
 
 **Automatic time tracking for Claude Code sessions.**
 
+🌐 [**clautime.github.io**](https://lookitstony.github.io/clautime/) · 📦 [Download latest release](https://github.com/lookitstony/clautime/releases/latest)
+
 ClauTime monitors your [Claude Code](https://docs.anthropic.com/en/docs/claude-code) usage and gives you a complete picture of how you spend your AI-assisted development time across projects, clients, and teams.
 
 ## Why ClauTime?
