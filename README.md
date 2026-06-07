@@ -10,6 +10,8 @@ ClauTime monitors your [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 Claude Code writes to JSONL log files as you work. ClauTime reads those files and automatically detects sessions, tracks token usage, counts prompts, and monitors activity in real time. No manual timers. No browser extensions. It just works.
 
+And when it's time to bill, ClauTime auto-generates Stripe invoices from your tracked hours with a one-click **ACH-only** option. Stripe's ACH rate is capped at **0.8% / $5 max** per charge, while credit cards run **2.9% + $0.30**. On a $5,000 monthly invoice that's $5 in fees instead of $145 — **you keep $140 more** for every invoice you send. The app pays for itself the first time you use it.
+
 ## Features
 
 ### Tracking
