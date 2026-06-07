@@ -3,6 +3,20 @@ import { join } from 'node:path'
 import log from 'electron-log/main.js'
 import { secretScanService } from './secret-scan-service'
 
+/**
+ * Resolve the tray icon path.
+ *
+ * In production the icon is copied to <install>/resources/tray-icon.png via
+ * electron-builder's extraResources, so process.resourcesPath gets it directly
+ * without going through asar (where nativeImage.createFromPath can silently
+ * fail on unpacked entries). In dev we read from the source tree.
+ */
+function getTrayIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'tray-icon.png')
+    : join(__dirname, '../../resources/tray-icon.png')
+}
+
 let tray: Tray | null = null
 let mainWindowRef: BrowserWindow | null = null
 let timerStartedAt: string | null = null
@@ -60,8 +74,12 @@ export const trayService = {
   initialize(mainWindow: BrowserWindow): void {
     mainWindowRef = mainWindow
 
-    const iconPath = join(__dirname, '../../resources/tray-icon.png')
+    const iconPath = getTrayIconPath()
     const icon = nativeImage.createFromPath(iconPath)
+
+    if (icon.isEmpty()) {
+      log.warn(`Tray icon failed to load from ${iconPath} — falling back to default`)
+    }
 
     tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
     tray.setToolTip('ClauTime')

@@ -18,6 +18,10 @@ files:
 extraResources:
   - from: src/main/db/migrations
     to: migrations
+  - from: resources/tray-icon.png
+    to: tray-icon.png
+  - from: resources/icon.png
+    to: icon.png
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**
