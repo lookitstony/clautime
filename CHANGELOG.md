@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-07
+
+### Fixed
+
+- Auto-updater UI was silent regardless of result. Now shows toast feedback for "update available" (with Download action), "downloaded" (with Restart action), "you're on the latest version", and check errors.
+- Background auto-update checks now prompt from any page in the app, not just Settings.
+- "Check for Updates" button in dev/unpacked builds now reports that auto-updates are disabled in development instead of silently no-op'ing.
+
+### Changed
+
+- Sample ticket IDs in invoice AI prompts and source comments switched from `TRI-*` to generic `PROJ-*` placeholders.
+
+### Docs
+
+- Expanded README features list (invoicing, AI summaries, billable toggle, ticket attribution, system tray, encrypted credentials, custom secret patterns).
+- Added First Run walkthrough and end-user download instructions to README.
+- Refreshed `docs/` landing page: updated feature grid (12 cards), new "For Contractors" section with ACH vs credit-card invoice fee comparison, Download Latest Release button.
+- Added `.github/FUNDING.yml` pointing to the existing Stripe donate link.
+
 ## [1.1.0] - 2026-06-05
 
 ### Added
