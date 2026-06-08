@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-06-08
+
+### Fixed
+
+- Main application window icon was showing the default Electron icon in packaged builds. Same root cause as the v1.1.2 tray icon fix: the `?asset` import resolved to a path inside `app.asar` where Electron's BrowserWindow `icon` option couldn't reliably load it. Now loaded from `process.resourcesPath` (outside asar) in production.
+
 ## [1.1.2] - 2026-06-07
 
 ### Fixed

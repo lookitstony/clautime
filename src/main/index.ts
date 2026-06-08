@@ -10,7 +10,6 @@ log.transports.console.level = 'debug'
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
 import { initializeDatabase, closeDatabase } from './db'
 import { registerIpcHandlers } from './ipc'
 import { updaterService } from './services/updater-service'
@@ -30,6 +29,14 @@ if (!gotLock) {
     app.quit()
   })
 }
+
+// Resolve the window icon from outside asar in production. The ?asset import
+// puts the path inside app.asar where Electron's BrowserWindow icon: option
+// can't reliably load it. icon.png ships as an extraResource (see
+// electron-builder.yml) so process.resourcesPath gets it directly.
+const icon = app.isPackaged
+  ? join(process.resourcesPath, 'icon.png')
+  : join(__dirname, '../../resources/icon.png')
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
