@@ -30,13 +30,14 @@ if (!gotLock) {
   })
 }
 
-// Resolve the window icon from outside asar in production. The ?asset import
-// puts the path inside app.asar where Electron's BrowserWindow icon: option
-// can't reliably load it. icon.png ships as an extraResource (see
-// electron-builder.yml) so process.resourcesPath gets it directly.
+// Resolve the window icon from outside asar in production. On Windows we use
+// the multi-size .ico so the taskbar gets a crisp icon at every DPI — single-
+// size PNGs often don't get picked up by the Windows taskbar at all. Other
+// platforms use the PNG. Both files ship as extraResources.
+const iconFile = process.platform === 'win32' ? 'icon.ico' : 'icon.png'
 const icon = app.isPackaged
-  ? join(process.resourcesPath, 'icon.png')
-  : join(__dirname, '../../resources/icon.png')
+  ? join(process.resourcesPath, iconFile)
+  : join(__dirname, '../../', process.platform === 'win32' ? 'build' : 'resources', iconFile)
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false

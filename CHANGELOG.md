@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-06-08
+
+### Fixed
+
+- Windows taskbar still showed the Electron default icon even after v1.1.4. The 256×256 PNG was loading successfully but Windows wants a multi-size `.ico` to actually use it as a taskbar icon. Now ships `build/icon.ico` as an extraResource and the BrowserWindow uses `.ico` on Windows, PNG on macOS/Linux.
+
 ## [1.1.4] - 2026-06-08
 
 ### Fixed
