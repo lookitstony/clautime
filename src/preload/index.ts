@@ -139,6 +139,8 @@ const api = {
       ipcRenderer.invoke('updater:checkForUpdates'),
     downloadAndInstall: (): Promise<import('../shared/types/ipc').IpcResult<void>> =>
       ipcRenderer.invoke('updater:downloadAndInstall'),
+    installAndRestart: (): Promise<import('../shared/types/ipc').IpcResult<void>> =>
+      ipcRenderer.invoke('updater:installAndRestart'),
     getVersion: (): Promise<import('../shared/types/ipc').IpcResult<string>> =>
       ipcRenderer.invoke('updater:getVersion'),
     onUpdateAvailable: (callback: (info: { version: string; releaseDate: string }) => void) => {

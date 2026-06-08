@@ -49,12 +49,21 @@ export const updaterService = {
     setInterval(() => this.checkForUpdates(), 4 * 60 * 60 * 1000)
   },
 
-  /** Download and install the update */
+  /** Download the available update. Fires update-downloaded event when ready. */
   downloadAndInstall(): void {
     if (updateAvailable) {
       autoUpdater.downloadUpdate().catch((err) => {
         log.error('Update download failed:', err)
       })
+    }
+  },
+
+  /** Quit the app and install the downloaded update. */
+  installAndRestart(): void {
+    try {
+      autoUpdater.quitAndInstall()
+    } catch (err) {
+      log.error('Install and restart failed:', err)
     }
   },
 

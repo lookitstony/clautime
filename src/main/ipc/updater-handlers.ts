@@ -26,6 +26,16 @@ export function registerUpdaterHandlers(): void {
     }
   })
 
+  ipcMain.handle('updater:installAndRestart', async (): Promise<IpcResult<void>> => {
+    try {
+      updaterService.installAndRestart()
+      return ipcSuccess(undefined)
+    } catch (error) {
+      log.error('IPC updater:installAndRestart failed:', error)
+      return ipcError('UPDATER_RESTART_ERROR', String(error))
+    }
+  })
+
   ipcMain.handle('updater:getVersion', async (): Promise<IpcResult<string>> => {
     try {
       return ipcSuccess(app.getVersion())

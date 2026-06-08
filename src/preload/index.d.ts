@@ -122,6 +122,7 @@ interface GitApi {
 interface UpdaterApi {
   checkForUpdates(): Promise<IpcResult<void>>
   downloadAndInstall(): Promise<IpcResult<void>>
+  installAndRestart(): Promise<IpcResult<void>>
   getVersion(): Promise<IpcResult<string>>
   onUpdateAvailable(callback: (info: { version: string; releaseDate: string }) => void): void
   onUpdateNotAvailable(callback: (info: { version?: string }) => void): void

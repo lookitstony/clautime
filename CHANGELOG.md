@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-06-08
+
+### Fixed
+
+- "Restart" button on the update-ready toast did nothing. It was wired to the same IPC channel as Download, which calls `autoUpdater.downloadUpdate()` (downloads only). Added a separate `installAndRestart` channel that calls `autoUpdater.quitAndInstall()` and wired the Restart button to it.
+
 ## [1.1.3] - 2026-06-08
 
 ### Fixed

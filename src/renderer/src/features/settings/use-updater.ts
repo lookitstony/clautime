@@ -40,7 +40,7 @@ export function useUpdaterNotifications(): void {
         duration: 15_000,
         action: {
           label: 'Restart',
-          onClick: () => window.api.updater.downloadAndInstall()
+          onClick: () => window.api.updater.installAndRestart()
         }
       })
     })
