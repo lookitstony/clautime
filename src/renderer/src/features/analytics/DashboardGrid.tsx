@@ -7,6 +7,7 @@ import type { DashboardLayout } from './widget-registry'
 interface DashboardGridProps {
   sessionData: WidgetProps['sessionData']
   summaryData: WidgetProps['summaryData']
+  filters?: WidgetProps['filters']
   layout: DashboardLayout
   onReorder: (fromIndex: number, toIndex: number) => void
   onResize: (id: string, size: WidgetSize) => void
@@ -25,6 +26,7 @@ function SortableWidget({
   index,
   sessionData,
   summaryData,
+  filters,
   onResize
 }: {
   widgetId: string
@@ -32,6 +34,7 @@ function SortableWidget({
   index: number
   sessionData: WidgetProps['sessionData']
   summaryData: WidgetProps['summaryData']
+  filters?: WidgetProps['filters']
   onResize: (id: string, size: WidgetSize) => void
 }): React.JSX.Element | null {
   const config = WIDGET_REGISTRY.find((w) => w.id === widgetId)
@@ -75,7 +78,7 @@ function SortableWidget({
         </button>
       </div>
       <div className="min-h-0 flex-1 p-2">
-        <Component sessionData={sessionData} summaryData={summaryData} />
+        <Component sessionData={sessionData} summaryData={summaryData} filters={filters} />
       </div>
     </div>
   )
@@ -84,6 +87,7 @@ function SortableWidget({
 export function DashboardGrid({
   sessionData,
   summaryData,
+  filters,
   layout,
   onReorder,
   onResize
@@ -120,6 +124,7 @@ export function DashboardGrid({
             index={i}
             sessionData={sessionData}
             summaryData={summaryData}
+            filters={filters}
             onResize={onResize}
           />
         ))}

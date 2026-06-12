@@ -9,6 +9,7 @@ import { scanState } from '../db/schema/scan-state'
 import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
+import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type {
   Session,
@@ -17,7 +18,9 @@ import type {
   PromptTiming,
   UpdateSession,
   GapAnalysis,
-  TimeBreakdownDay
+  TimeBreakdownDay,
+  ModelUsageAggregate,
+  ModelUsageFilters
 } from '../../shared/types/session'
 
 /** Map DB session row (billable as 0/1) to Session type (billable as boolean) */
@@ -73,6 +76,7 @@ export function registerSessionHandlers(): void {
     try {
       const db = getDb()
       db.delete(aiSummaries).run()
+      db.delete(sessionModelUsage).run()
       db.update(gitCommits).set({ sessionId: null }).run()
       db.delete(sessions).run()
       db.delete(rawMessages).run()
@@ -201,6 +205,19 @@ export function registerSessionHandlers(): void {
       } catch (error) {
         log.error('IPC session:getTimeBreakdown failed:', error)
         return ipcError('SESSION_TIME_BREAKDOWN_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'session:getModelUsage',
+    async (_event, filters?: ModelUsageFilters): Promise<IpcResult<ModelUsageAggregate[]>> => {
+      try {
+        const result = sessionService.getModelUsage(filters)
+        return ipcSuccess(result)
+      } catch (error) {
+        log.error('IPC session:getModelUsage failed:', error)
+        return ipcError('SESSION_MODEL_USAGE_ERROR', String(error))
       }
     }
   )

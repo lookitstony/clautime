@@ -1,5 +1,5 @@
-import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
-import type { DetectedSession } from '../../shared/types/session'
+import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
+import type { DetectedSession, SessionModelUsage } from '../../shared/types/session'
 import { normalizePath } from '../../shared/paths'
 
 /**
@@ -234,13 +234,15 @@ function buildDetectedSession(
   // Count only human prompts (user messages that are NOT tool results)
   const humanPrompts = segment.filter((m) => m.type === 'user' && !m.isToolResult).length
 
-  // Accumulate token usage for this segment
+  // Accumulate token usage for this segment, per model (including cache tokens)
   let inputTokens = 0
   let outputTokens = 0
+  const usageByModel = new Map<string, SessionModelUsage>()
   for (const m of segment) {
     if (m.usage) {
       inputTokens += m.usage.inputTokens
       outputTokens += m.usage.outputTokens
+      addModelUsage(usageByModel, m.model, m.usage)
     }
   }
 
@@ -252,6 +254,18 @@ function buildDetectedSession(
     const proportion = segmentTokens / totalMainTokens
     inputTokens += Math.round(parsed.subagentTokenUsage.inputTokens * proportion)
     outputTokens += Math.round(parsed.subagentTokenUsage.outputTokens * proportion)
+
+    // Same proportional split for subagent usage, but attributed to each
+    // subagent message's actual model so per-model costs stay accurate.
+    for (const sm of parsed.subagentMessages) {
+      if (!sm.usage) continue
+      addModelUsage(usageByModel, sm.model, {
+        inputTokens: Math.round(sm.usage.inputTokens * proportion),
+        outputTokens: Math.round(sm.usage.outputTokens * proportion),
+        cacheCreationInputTokens: Math.round(sm.usage.cacheCreationInputTokens * proportion),
+        cacheReadInputTokens: Math.round(sm.usage.cacheReadInputTokens * proportion)
+      })
+    }
   }
 
   return {
@@ -263,6 +277,33 @@ function buildDetectedSession(
     sourceFile: parsed.sourceFile,
     promptCount: humanPrompts,
     inputTokens,
-    outputTokens
+    outputTokens,
+    modelUsage: [...usageByModel.values()]
   }
+}
+
+/** Model key for messages without a model string (synthetic, old data). */
+const UNKNOWN_MODEL = 'unknown'
+
+function addModelUsage(
+  map: Map<string, SessionModelUsage>,
+  model: string | null,
+  usage: TokenUsage
+): void {
+  const key = model ?? UNKNOWN_MODEL
+  let entry = map.get(key)
+  if (!entry) {
+    entry = {
+      model: key,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0
+    }
+    map.set(key, entry)
+  }
+  entry.inputTokens += usage.inputTokens
+  entry.outputTokens += usage.outputTokens
+  entry.cacheCreationInputTokens += usage.cacheCreationInputTokens
+  entry.cacheReadInputTokens += usage.cacheReadInputTokens
 }

@@ -8,7 +8,9 @@ import type {
   PromptTiming,
   UpdateSession,
   GapAnalysis,
-  TimeBreakdownDay
+  TimeBreakdownDay,
+  ModelUsageAggregate,
+  ModelUsageFilters
 } from '../shared/types/session'
 import type { GitCommit, GitScanResult, GitIdentity } from '../shared/types/git'
 import type {
@@ -63,6 +65,7 @@ interface SessionsApi {
   split(id: number, splitAt: string): Promise<IpcResult<Session[]>>
   getTimeBreakdown(startDate: string, endDate: string): Promise<IpcResult<TimeBreakdownDay[]>>
   getGapAnalysis(): Promise<IpcResult<GapAnalysis>>
+  getModelUsage(filters?: ModelUsageFilters): Promise<IpcResult<ModelUsageAggregate[]>>
   create(data: {
     projectPath: string
     startedAt: string

@@ -55,6 +55,7 @@ vi.mock('node:fs/promises', () => ({
 }))
 
 import * as sessionsSchema from '../db/schema/sessions'
+import * as sessionModelUsageSchema from '../db/schema/session-model-usage'
 import * as appSettingsSchema from '../db/schema/app-settings'
 import * as scanStateSchema from '../db/schema/scan-state'
 import * as rawMessagesSchema from '../db/schema/raw-messages'
@@ -64,13 +65,17 @@ import * as clientsSchema from '../db/schema/clients'
 import * as projectsSchema from '../db/schema/projects'
 import * as projectAlertConfigSchema from '../db/schema/project-alert-config'
 import { sessions } from '../db/schema/sessions'
+import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { scanState } from '../db/schema/scan-state'
+import { clients } from '../db/schema/clients'
+import { projects } from '../db/schema/projects'
 import { rawMessages } from '../db/schema/raw-messages'
 import { sessionService } from './session-service'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
 const schema = {
   ...sessionsSchema,
+  ...sessionModelUsageSchema,
   ...appSettingsSchema,
   ...scanStateSchema,
   ...rawMessagesSchema,
@@ -97,7 +102,7 @@ function setupTestDb(): void {
     .run()
 }
 
-function makeMessage(timestamp: string): ParsedMessage {
+function makeMessage(timestamp: string, overrides: Partial<ParsedMessage> = {}): ParsedMessage {
   return {
     type: 'user',
     timestamp,
@@ -110,7 +115,8 @@ function makeMessage(timestamp: string): ParsedMessage {
     parentUuid: null,
     isToolResult: false,
     hasToolUse: false,
-    toolNames: []
+    toolNames: [],
+    ...overrides
   }
 }
 
@@ -453,6 +459,374 @@ describe('sessionService', () => {
     it('should return null for non-existent id', () => {
       const result = sessionService.getSessionById(9999)
       expect(result).toBeNull()
+    })
+  })
+
+  describe('model usage', () => {
+    it('should populate session_model_usage rows during scan', async () => {
+      const file1 = '/home/user/.claude/projects/test/session1.jsonl'
+
+      mockDiscoverFiles.mockResolvedValue([file1])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z') })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file1, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:01:00Z', {
+            type: 'assistant',
+            model: 'claude-opus-4-6',
+            usage: {
+              inputTokens: 100,
+              outputTokens: 200,
+              cacheCreationInputTokens: 30,
+              cacheReadInputTokens: 40
+            }
+          }),
+          makeMessage('2026-03-04T10:02:00Z', {
+            type: 'assistant',
+            model: 'claude-haiku-4-5',
+            usage: {
+              inputTokens: 10,
+              outputTokens: 20,
+              cacheCreationInputTokens: 5,
+              cacheReadInputTokens: 15
+            }
+          })
+        ])
+      )
+
+      const result = await sessionService.scanSessions('/home/user/.claude')
+      expect(result.newSessions).toBe(1)
+
+      const session = testDb.select().from(sessions).all()[0]
+      const usageRows = testDb
+        .select()
+        .from(sessionModelUsage)
+        .where(eq(sessionModelUsage.sessionId, session.id))
+        .all()
+
+      expect(usageRows).toHaveLength(2)
+      const opus = usageRows.find((u) => u.model === 'claude-opus-4-6')
+      expect(opus).toMatchObject({
+        inputTokens: 100,
+        outputTokens: 200,
+        cacheCreationInputTokens: 30,
+        cacheReadInputTokens: 40
+      })
+      const haiku = usageRows.find((u) => u.model === 'claude-haiku-4-5')
+      expect(haiku).toMatchObject({
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheCreationInputTokens: 5,
+        cacheReadInputTokens: 15
+      })
+    })
+
+    it('should replace stale model usage rows when re-scanning a changed file', async () => {
+      const file1 = '/home/user/.claude/projects/test/session1.jsonl'
+
+      mockDiscoverFiles.mockResolvedValue([file1])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z') })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file1, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:01:00Z', {
+            type: 'assistant',
+            model: 'claude-opus-4-6',
+            usage: {
+              inputTokens: 100,
+              outputTokens: 200,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0
+            }
+          })
+        ])
+      )
+      await sessionService.scanSessions('/home/user/.claude')
+
+      // File modified AFTER the first scan's lastScannedAt (wall clock) — second scan with more tokens
+      mockStat.mockResolvedValue({ mtime: new Date(Date.now() + 60_000) })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file1, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:01:00Z', {
+            type: 'assistant',
+            model: 'claude-opus-4-6',
+            usage: {
+              inputTokens: 150,
+              outputTokens: 300,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 0
+            }
+          })
+        ])
+      )
+      await sessionService.scanSessions('/home/user/.claude')
+
+      // No orphaned rows from the first scan
+      const allUsage = testDb.select().from(sessionModelUsage).all()
+      expect(allUsage).toHaveLength(1)
+      expect(allUsage[0].inputTokens).toBe(150)
+      const sessionIds = testDb
+        .select()
+        .from(sessions)
+        .all()
+        .map((s) => s.id)
+      expect(sessionIds).toContain(allUsage[0].sessionId)
+    })
+
+    it('getModelUsage should aggregate across sessions per model', () => {
+      testDb
+        .insert(sessions)
+        .values([
+          {
+            projectPath: '/projects/a',
+            startedAt: '2026-03-01T10:00:00Z',
+            endedAt: '2026-03-01T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          },
+          {
+            projectPath: '/projects/b',
+            startedAt: '2026-03-02T10:00:00Z',
+            endedAt: '2026-03-02T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          }
+        ])
+        .run()
+      const [s1, s2] = testDb.select().from(sessions).all()
+
+      testDb
+        .insert(sessionModelUsage)
+        .values([
+          {
+            sessionId: s1.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 100,
+            outputTokens: 200,
+            cacheCreationInputTokens: 10,
+            cacheReadInputTokens: 20
+          },
+          {
+            sessionId: s2.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 300,
+            outputTokens: 400,
+            cacheCreationInputTokens: 30,
+            cacheReadInputTokens: 40
+          },
+          {
+            sessionId: s2.id,
+            model: 'claude-haiku-4-5',
+            inputTokens: 5,
+            outputTokens: 6,
+            cacheCreationInputTokens: 7,
+            cacheReadInputTokens: 8
+          }
+        ])
+        .run()
+
+      const result = sessionService.getModelUsage()
+      expect(result).toHaveLength(2)
+
+      const opus = result.find((r) => r.model === 'claude-opus-4-6')
+      expect(opus).toEqual({
+        model: 'claude-opus-4-6',
+        inputTokens: 400,
+        outputTokens: 600,
+        cacheCreationInputTokens: 40,
+        cacheReadInputTokens: 60,
+        sessionCount: 2
+      })
+
+      const haiku = result.find((r) => r.model === 'claude-haiku-4-5')
+      expect(haiku).toEqual({
+        model: 'claude-haiku-4-5',
+        inputTokens: 5,
+        outputTokens: 6,
+        cacheCreationInputTokens: 7,
+        cacheReadInputTokens: 8,
+        sessionCount: 1
+      })
+    })
+
+    it('getModelUsage should respect date range filters', () => {
+      testDb
+        .insert(sessions)
+        .values([
+          {
+            projectPath: '/projects/a',
+            startedAt: '2026-03-01T10:00:00Z',
+            endedAt: '2026-03-01T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          },
+          {
+            projectPath: '/projects/a',
+            startedAt: '2026-03-10T10:00:00Z',
+            endedAt: '2026-03-10T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          }
+        ])
+        .run()
+      const [early, late] = testDb.select().from(sessions).all()
+
+      testDb
+        .insert(sessionModelUsage)
+        .values([
+          {
+            sessionId: early.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 100,
+            outputTokens: 100,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          },
+          {
+            sessionId: late.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 900,
+            outputTokens: 900,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          }
+        ])
+        .run()
+
+      const result = sessionService.getModelUsage({
+        startDate: '2026-03-05T00:00:00Z',
+        endDate: '2026-03-15T00:00:00Z'
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0].inputTokens).toBe(900)
+      expect(result[0].sessionCount).toBe(1)
+    })
+
+    it('getModelUsage should respect clientId and projectId filters', () => {
+      testDb.insert(clients).values({ name: 'Acme', color: '#ff0000' }).run()
+      const client = testDb.select().from(clients).all()[0]
+      testDb
+        .insert(projects)
+        .values({ clientId: client.id, name: 'Proj A', directoryPath: '/projects/a' })
+        .run()
+      const project = testDb.select().from(projects).all()[0]
+
+      testDb
+        .insert(sessions)
+        .values([
+          {
+            projectPath: '/projects/a',
+            startedAt: '2026-03-01T10:00:00Z',
+            endedAt: '2026-03-01T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed',
+            clientId: client.id,
+            projectId: project.id
+          },
+          {
+            projectPath: '/projects/other',
+            startedAt: '2026-03-02T10:00:00Z',
+            endedAt: '2026-03-02T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          }
+        ])
+        .run()
+      const [attributed, unattributed] = testDb.select().from(sessions).all()
+
+      testDb
+        .insert(sessionModelUsage)
+        .values([
+          {
+            sessionId: attributed.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 111,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          },
+          {
+            sessionId: unattributed.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 999,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          }
+        ])
+        .run()
+
+      const byClient = sessionService.getModelUsage({ clientId: client.id })
+      expect(byClient).toHaveLength(1)
+      expect(byClient[0].inputTokens).toBe(111)
+
+      const byProject = sessionService.getModelUsage({ projectId: project.id })
+      expect(byProject).toHaveLength(1)
+      expect(byProject[0].inputTokens).toBe(111)
+    })
+
+    it('getModelUsage should return empty array when no usage rows exist', () => {
+      expect(sessionService.getModelUsage()).toEqual([])
+    })
+
+    it('deleteSession should remove its session_model_usage rows', () => {
+      testDb
+        .insert(sessions)
+        .values([
+          {
+            projectPath: '/projects/a',
+            startedAt: '2026-03-01T10:00:00Z',
+            endedAt: '2026-03-01T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          },
+          {
+            projectPath: '/projects/b',
+            startedAt: '2026-03-02T10:00:00Z',
+            endedAt: '2026-03-02T11:00:00Z',
+            durationMinutes: 60,
+            source: 'auto',
+            status: 'completed'
+          }
+        ])
+        .run()
+      const [target, keep] = testDb.select().from(sessions).all()
+
+      testDb
+        .insert(sessionModelUsage)
+        .values([
+          {
+            sessionId: target.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 100,
+            outputTokens: 200,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          },
+          {
+            sessionId: keep.id,
+            model: 'claude-opus-4-6',
+            inputTokens: 300,
+            outputTokens: 400,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          }
+        ])
+        .run()
+
+      sessionService.deleteSession(target.id)
+
+      const remaining = testDb.select().from(sessionModelUsage).all()
+      expect(remaining).toHaveLength(1)
+      expect(remaining[0].sessionId).toBe(keep.id)
     })
   })
 })

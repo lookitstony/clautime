@@ -579,6 +579,186 @@ describe('detectSessions', () => {
   })
 })
 
+describe('detectSessions modelUsage', () => {
+  it('should produce one modelUsage entry per model with correct sums including cache tokens', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', {
+        type: 'assistant',
+        model: 'claude-opus-4-6',
+        usage: {
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheCreationInputTokens: 30,
+          cacheReadInputTokens: 40
+        }
+      }),
+      makeMessage('2026-03-04T10:02:00Z', {
+        type: 'assistant',
+        model: 'claude-opus-4-6',
+        usage: {
+          inputTokens: 50,
+          outputTokens: 60,
+          cacheCreationInputTokens: 70,
+          cacheReadInputTokens: 80
+        }
+      }),
+      makeMessage('2026-03-04T10:04:00Z', {
+        type: 'assistant',
+        model: 'claude-haiku-4-5',
+        usage: {
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheCreationInputTokens: 5,
+          cacheReadInputTokens: 15
+        }
+      })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].modelUsage).toHaveLength(2)
+
+    const opus = result[0].modelUsage.find((u) => u.model === 'claude-opus-4-6')
+    expect(opus).toEqual({
+      model: 'claude-opus-4-6',
+      inputTokens: 150,
+      outputTokens: 260,
+      cacheCreationInputTokens: 100,
+      cacheReadInputTokens: 120
+    })
+
+    const haiku = result[0].modelUsage.find((u) => u.model === 'claude-haiku-4-5')
+    expect(haiku).toEqual({
+      model: 'claude-haiku-4-5',
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheCreationInputTokens: 5,
+      cacheReadInputTokens: 15
+    })
+  })
+
+  it('should bucket null-model messages under "unknown"', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', {
+        type: 'assistant',
+        model: null,
+        usage: {
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheCreationInputTokens: 10,
+          cacheReadInputTokens: 20
+        }
+      }),
+      makeMessage('2026-03-04T10:01:00Z', {
+        type: 'assistant',
+        model: null,
+        usage: {
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheCreationInputTokens: 3,
+          cacheReadInputTokens: 4
+        }
+      })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].modelUsage).toEqual([
+      {
+        model: 'unknown',
+        inputTokens: 101,
+        outputTokens: 202,
+        cacheCreationInputTokens: 13,
+        cacheReadInputTokens: 24
+      }
+    ])
+  })
+
+  it('should distribute subagent usage proportionally attributed to the subagent model', () => {
+    const messages = [
+      makeMessage('2026-03-04T10:00:00Z', {
+        type: 'assistant',
+        model: 'claude-opus-4-6',
+        usage: {
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
+      }),
+      // 20 min gap → second segment
+      makeMessage('2026-03-04T10:20:00Z', {
+        type: 'assistant',
+        model: 'claude-opus-4-6',
+        usage: {
+          inputTokens: 300,
+          outputTokens: 600,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0
+        }
+      })
+    ]
+    const parsed = makeParsedSession(messages, {
+      totalTokenUsage: {
+        inputTokens: 400,
+        outputTokens: 800,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      },
+      subagentTokenUsage: {
+        inputTokens: 1000,
+        outputTokens: 2000,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      },
+      subagentMessages: [
+        makeMessage('2026-03-04T10:01:00Z', {
+          type: 'assistant',
+          model: 'claude-haiku-4-5',
+          usage: {
+            inputTokens: 1000,
+            outputTokens: 2000,
+            cacheCreationInputTokens: 400,
+            cacheReadInputTokens: 800
+          }
+        })
+      ]
+    })
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+
+    // Segment 1: 300 of 1200 main tokens = 25% of subagent usage
+    const haiku1 = result[0].modelUsage.find((u) => u.model === 'claude-haiku-4-5')
+    expect(haiku1).toEqual({
+      model: 'claude-haiku-4-5',
+      inputTokens: 250,
+      outputTokens: 500,
+      cacheCreationInputTokens: 100,
+      cacheReadInputTokens: 200
+    })
+    // Main model entry is untouched by subagent distribution
+    const opus1 = result[0].modelUsage.find((u) => u.model === 'claude-opus-4-6')
+    expect(opus1!.inputTokens).toBe(100)
+    expect(opus1!.outputTokens).toBe(200)
+
+    // Segment 2: 900 of 1200 main tokens = 75% of subagent usage
+    const haiku2 = result[1].modelUsage.find((u) => u.model === 'claude-haiku-4-5')
+    expect(haiku2).toEqual({
+      model: 'claude-haiku-4-5',
+      inputTokens: 750,
+      outputTokens: 1500,
+      cacheCreationInputTokens: 300,
+      cacheReadInputTokens: 600
+    })
+    const opus2 = result[1].modelUsage.find((u) => u.model === 'claude-opus-4-6')
+    expect(opus2!.inputTokens).toBe(300)
+    expect(opus2!.outputTokens).toBe(600)
+  })
+})
+
 describe('detectSessionsFromMultiple', () => {
   it('should combine sessions from multiple parsed files', () => {
     const parsed1 = makeParsedSession(

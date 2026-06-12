@@ -17,6 +17,7 @@ import * as projectAlertConfigSchema from './schema/project-alert-config'
 import * as rawMessagesSchema from './schema/raw-messages'
 import * as secretFindingsSchema from './schema/secret-findings'
 import * as invoicesSchema from './schema/invoices'
+import * as sessionModelUsageSchema from './schema/session-model-usage'
 
 const schema = {
   ...sessionsSchema,
@@ -29,7 +30,8 @@ const schema = {
   ...projectAlertConfigSchema,
   ...rawMessagesSchema,
   ...secretFindingsSchema,
-  ...invoicesSchema
+  ...invoicesSchema,
+  ...sessionModelUsageSchema
 }
 
 let db: BetterSQLite3Database<typeof schema>
