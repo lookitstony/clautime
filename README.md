@@ -44,7 +44,8 @@ And when it's time to bill, ClauTime auto-generates Stripe invoices from your tr
 
 - **Three report formats**: session breakdown (every session as a line), daily summary (totals per day with project rollups), and period summary (week/month/quarter rollups with AI-written overall summary)
 - **Multi-format export**: save reports as Markdown, CSV, or PDF, or copy them straight to clipboard
-- **Customizable analytics dashboard**: nine drag-and-drop widgets covering daily hours, billable earnings, hours by client, hours by project, peak hours, prompts per day, session length distribution, token usage, and work vs idle time
+- **Customizable analytics dashboard**: ten drag-and-drop widgets covering daily hours, billable earnings, hours by client, hours by project, peak hours, prompts per day, session length distribution, token usage, estimated API cost, and work vs idle time
+- **Estimated API cost**: see what your Claude usage would have cost at pay-as-you-go API rates — per-model breakdown (Opus, Sonnet, Haiku) including cache-write and cache-read pricing, with a cost card on the Sessions page that follows your active filters. Great for quantifying what a subscription saves you
 - **Configurable week start**: pick Monday, Sunday, or Saturday as the start of your week; applies across sessions, reports, and analytics
 
 ### AI summaries

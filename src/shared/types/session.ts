@@ -89,6 +89,35 @@ export interface GapAnalysis {
   totalMessages: number
 }
 
+/** Per-model token usage for a session (session_model_usage table, minus ids) */
+export interface SessionModelUsage {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+}
+
+/** Aggregated token usage across sessions, grouped by model */
+export interface ModelUsageAggregate {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationInputTokens: number
+  cacheReadInputTokens: number
+  sessionCount: number
+}
+
+/** Filters for aggregating model usage */
+export interface ModelUsageFilters {
+  startDate?: string
+  endDate?: string
+  clientId?: number
+  projectId?: number
+  /** Restrict to specific sessions (takes care of any client-side filtering, e.g. after-hours) */
+  sessionIds?: number[]
+}
+
 /** A detected session before DB insertion (output of detection algorithm) */
 export interface DetectedSession {
   startedAt: string
@@ -100,4 +129,6 @@ export interface DetectedSession {
   promptCount: number
   inputTokens: number
   outputTokens: number
+  /** Per-model token usage within this session (includes cache tokens) */
+  modelUsage: SessionModelUsage[]
 }

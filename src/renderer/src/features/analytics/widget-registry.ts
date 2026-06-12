@@ -7,16 +7,19 @@ import {
   Timer,
   Activity,
   Clock,
+  DollarSign,
   type LucideIcon
 } from 'lucide-react'
 import { lazy, type ComponentType } from 'react'
-import type { SessionLineItem, ReportSummary } from '../../../../shared/types/report'
+import type { SessionLineItem, ReportSummary, ReportFilters } from '../../../../shared/types/report'
 
 export type WidgetSize = 'small' | 'medium' | 'large'
 
 export interface WidgetProps {
   sessionData: SessionLineItem[]
   summaryData: ReportSummary | null
+  /** Active page filters (date range, client, project) — for widgets that run their own queries */
+  filters?: ReportFilters | null
 }
 
 export interface WidgetConfig {
@@ -106,6 +109,13 @@ const WIDGET_REGISTRY: readonly WidgetConfig[] = Object.freeze([
     icon: Clock,
     defaultSize: 'medium' as WidgetSize,
     component: lazy(() => import('./widgets/WorkVsIdleChart'))
+  },
+  {
+    id: 'estimated-cost',
+    title: 'Estimated API Cost',
+    icon: DollarSign,
+    defaultSize: 'medium' as WidgetSize,
+    component: lazy(() => import('./widgets/EstimatedCostChart'))
   }
 ]) as unknown as WidgetConfig[]
 

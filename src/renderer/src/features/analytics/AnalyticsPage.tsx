@@ -188,6 +188,7 @@ export function AnalyticsPage(): React.JSX.Element {
             <DashboardGrid
               sessionData={sessionData}
               summaryData={summaryData}
+              filters={filters}
               layout={layout}
               onReorder={reorderWidgets}
               onResize={resizeWidget}

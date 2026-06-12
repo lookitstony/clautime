@@ -10,6 +10,7 @@ import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages } from '../db/schema/raw-messages'
 import { progressEvents } from '../db/schema/raw-messages'
+import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
@@ -20,7 +21,10 @@ import type {
   PromptTiming,
   UpdateSession,
   GapAnalysis,
-  TimeBreakdownDay
+  TimeBreakdownDay,
+  DetectedSession,
+  ModelUsageAggregate,
+  ModelUsageFilters
 } from '../../shared/types/session'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
@@ -131,6 +135,9 @@ export const sessionService = {
 
           if (staleIds.length > 0) {
             tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, staleIds)).run()
+            tx.delete(sessionModelUsage)
+              .where(inArray(sessionModelUsage.sessionId, staleIds))
+              .run()
             tx.update(gitCommits)
               .set({ sessionId: null })
               .where(inArray(gitCommits.sessionId, staleIds))
@@ -142,12 +149,13 @@ export const sessionService = {
         }
       }
 
-      // Batch insert detected sessions
+      // Insert detected sessions (per-row to capture ids for model usage rows)
       if (detected.length > 0) {
         const now = new Date().toISOString()
-        tx.insert(sessions)
-          .values(
-            detected.map((d) => ({
+        for (const d of detected) {
+          const inserted = tx
+            .insert(sessions)
+            .values({
               projectPath: d.projectPath,
               startedAt: d.startedAt,
               endedAt: d.endedAt,
@@ -161,9 +169,11 @@ export const sessionService = {
               sourceFile: d.sourceFile,
               createdAt: now,
               updatedAt: now
-            }))
-          )
-          .run()
+            })
+            .returning({ id: sessions.id })
+            .get()
+          insertModelUsage(tx, inserted.id, d)
+        }
       }
 
       // Update scan_state records
@@ -348,7 +358,10 @@ export const sessionService = {
               gitBranch: sm.gitBranch,
               model: sm.model,
               usage:
-                sm.inputTokens || sm.outputTokens
+                sm.inputTokens ||
+                sm.outputTokens ||
+                sm.cacheCreationInputTokens ||
+                sm.cacheReadInputTokens
                   ? {
                       inputTokens: sm.inputTokens,
                       outputTokens: sm.outputTokens,
@@ -428,6 +441,7 @@ export const sessionService = {
       if (autoIds.length > 0) {
         // FK cleanup before deleting auto sessions
         tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, autoIds)).run()
+        tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, autoIds)).run()
         tx.update(gitCommits)
           .set({ sessionId: null })
           .where(inArray(gitCommits.sessionId, autoIds))
@@ -440,7 +454,8 @@ export const sessionService = {
         for (const d of detected) {
           const key = `${d.claudeSessionId}|${d.startedAt}`
           const edits = editsMap.get(key)
-          tx.insert(sessions)
+          const inserted = tx
+            .insert(sessions)
             .values({
               projectPath: d.projectPath,
               startedAt: d.startedAt,
@@ -459,7 +474,9 @@ export const sessionService = {
               createdAt: now,
               updatedAt: now
             })
-            .run()
+            .returning({ id: sessions.id })
+            .get()
+          insertModelUsage(tx, inserted.id, d)
         }
       }
     })
@@ -706,6 +723,7 @@ export const sessionService = {
 
     // FK cleanup before delete
     db.delete(aiSummaries).where(eq(aiSummaries.sessionId, id)).run()
+    db.delete(sessionModelUsage).where(eq(sessionModelUsage.sessionId, id)).run()
     db.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.sessionId, id)).run()
     db.delete(sessions).where(eq(sessions.id, id)).run()
   },
@@ -780,55 +798,95 @@ export const sessionService = {
     const outputTokens1 = Math.round(existing.outputTokens * ratio)
     const outputTokens2 = existing.outputTokens - outputTokens1
 
+    // Existing per-model usage, to be split proportionally between the halves
+    const existingUsage = db
+      .select()
+      .from(sessionModelUsage)
+      .where(eq(sessionModelUsage.sessionId, id))
+      .all()
+
     db.transaction((tx) => {
       // FK cleanup before deleting original session
       tx.delete(aiSummaries).where(eq(aiSummaries.sessionId, id)).run()
+      tx.delete(sessionModelUsage).where(eq(sessionModelUsage.sessionId, id)).run()
       tx.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.sessionId, id)).run()
 
       // Delete original
       tx.delete(sessions).where(eq(sessions.id, id)).run()
 
       // Insert two new sessions
-      tx.insert(sessions)
-        .values([
-          {
-            projectPath: existing.projectPath,
-            startedAt: existing.startedAt,
-            endedAt: splitAt,
-            durationMinutes: dur1,
-            source: existing.source as 'auto' | 'manual',
-            description: existing.description,
-            status: 'completed' as const,
-            claudeSessionId: existing.claudeSessionId,
-            promptCount: prompts1,
-            inputTokens: inputTokens1,
-            outputTokens: outputTokens1,
-            sourceFile: existing.sourceFile,
-            projectId: existing.projectId,
-            clientId: existing.clientId,
-            createdAt: now,
-            updatedAt: now
-          },
-          {
-            projectPath: existing.projectPath,
-            startedAt: splitAt,
-            endedAt: existing.endedAt,
-            durationMinutes: dur2,
-            source: existing.source as 'auto' | 'manual',
-            description: existing.description,
-            status: 'completed' as const,
-            claudeSessionId: existing.claudeSessionId,
-            promptCount: prompts2,
-            inputTokens: inputTokens2,
-            outputTokens: outputTokens2,
-            sourceFile: existing.sourceFile,
-            projectId: existing.projectId,
-            clientId: existing.clientId,
-            createdAt: now,
-            updatedAt: now
-          }
-        ])
-        .run()
+      const first = tx
+        .insert(sessions)
+        .values({
+          projectPath: existing.projectPath,
+          startedAt: existing.startedAt,
+          endedAt: splitAt,
+          durationMinutes: dur1,
+          source: existing.source as 'auto' | 'manual',
+          description: existing.description,
+          status: 'completed' as const,
+          claudeSessionId: existing.claudeSessionId,
+          promptCount: prompts1,
+          inputTokens: inputTokens1,
+          outputTokens: outputTokens1,
+          sourceFile: existing.sourceFile,
+          projectId: existing.projectId,
+          clientId: existing.clientId,
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning({ id: sessions.id })
+        .get()
+      const second = tx
+        .insert(sessions)
+        .values({
+          projectPath: existing.projectPath,
+          startedAt: splitAt,
+          endedAt: existing.endedAt,
+          durationMinutes: dur2,
+          source: existing.source as 'auto' | 'manual',
+          description: existing.description,
+          status: 'completed' as const,
+          claudeSessionId: existing.claudeSessionId,
+          promptCount: prompts2,
+          inputTokens: inputTokens2,
+          outputTokens: outputTokens2,
+          sourceFile: existing.sourceFile,
+          projectId: existing.projectId,
+          clientId: existing.clientId,
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning({ id: sessions.id })
+        .get()
+
+      // Split per-model usage by the same time ratio as prompts/tokens
+      for (const u of existingUsage) {
+        const in1 = Math.round(u.inputTokens * ratio)
+        const out1 = Math.round(u.outputTokens * ratio)
+        const cc1 = Math.round(u.cacheCreationInputTokens * ratio)
+        const cr1 = Math.round(u.cacheReadInputTokens * ratio)
+        tx.insert(sessionModelUsage)
+          .values([
+            {
+              sessionId: first.id,
+              model: u.model,
+              inputTokens: in1,
+              outputTokens: out1,
+              cacheCreationInputTokens: cc1,
+              cacheReadInputTokens: cr1
+            },
+            {
+              sessionId: second.id,
+              model: u.model,
+              inputTokens: u.inputTokens - in1,
+              outputTokens: u.outputTokens - out1,
+              cacheCreationInputTokens: u.cacheCreationInputTokens - cc1,
+              cacheReadInputTokens: u.cacheReadInputTokens - cr1
+            }
+          ])
+          .run()
+      }
     })
 
     // Return the two new sessions (most recent inserts)
@@ -989,6 +1047,43 @@ export const sessionService = {
       }))
   },
 
+  /**
+   * Aggregate per-model token usage across sessions (for API cost estimation).
+   * Applies the same excluded-project logic as getAllSessions.
+   */
+  getModelUsage(filters?: ModelUsageFilters): ModelUsageAggregate[] {
+    const db = getDb()
+    const conditions: SQL[] = []
+
+    const excludedIds = clientProjectService.getExcludedProjectIds()
+    if (excludedIds.length > 0) {
+      conditions.push(or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!)
+    }
+    if (filters?.startDate) conditions.push(gte(sessions.startedAt, filters.startDate))
+    if (filters?.endDate) conditions.push(lte(sessions.endedAt, filters.endDate))
+    if (filters?.clientId != null) conditions.push(eq(sessions.clientId, filters.clientId))
+    if (filters?.projectId != null) conditions.push(eq(sessions.projectId, filters.projectId))
+    if (filters?.sessionIds) {
+      if (filters.sessionIds.length === 0) return []
+      conditions.push(inArray(sessionModelUsage.sessionId, filters.sessionIds))
+    }
+
+    return db
+      .select({
+        model: sessionModelUsage.model,
+        inputTokens: sql<number>`sum(${sessionModelUsage.inputTokens})`,
+        outputTokens: sql<number>`sum(${sessionModelUsage.outputTokens})`,
+        cacheCreationInputTokens: sql<number>`sum(${sessionModelUsage.cacheCreationInputTokens})`,
+        cacheReadInputTokens: sql<number>`sum(${sessionModelUsage.cacheReadInputTokens})`,
+        sessionCount: sql<number>`count(distinct ${sessionModelUsage.sessionId})`
+      })
+      .from(sessionModelUsage)
+      .innerJoin(sessions, eq(sessionModelUsage.sessionId, sessions.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(sessionModelUsage.model)
+      .all()
+  },
+
   /** @internal */
   _getIdleTimeout(): number {
     const setting = settingsService.getSetting('idle_timeout_minutes')
@@ -1090,6 +1185,18 @@ function buildTimingsFromMessages(
     timings.push({ promptAt: msg.timestamp, responseAt, latencySeconds })
   }
   return timings
+}
+
+/** Insert per-model usage rows for a freshly inserted session. */
+function insertModelUsage(
+  tx: Pick<ReturnType<typeof getDb>, 'insert'>,
+  sessionId: number,
+  d: DetectedSession
+): void {
+  if (!d.modelUsage || d.modelUsage.length === 0) return
+  tx.insert(sessionModelUsage)
+    .values(d.modelUsage.map((u) => ({ sessionId, ...u })))
+    .run()
 }
 
 /**

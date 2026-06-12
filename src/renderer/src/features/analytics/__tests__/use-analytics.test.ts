@@ -102,7 +102,7 @@ describe('useDashboardLayout', () => {
     const { result } = renderHook(() => useDashboardLayout(), { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(9)
+      expect(result.current.layout.widgets).toHaveLength(10)
     })
     expect(result.current.layout).toEqual(DEFAULT_LAYOUT)
   })
@@ -140,7 +140,7 @@ describe('useDashboardLayout', () => {
     const { result } = renderHook(() => useDashboardLayout(), { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(9)
+      expect(result.current.layout.widgets).toHaveLength(10)
     })
 
     act(() => {
@@ -148,7 +148,7 @@ describe('useDashboardLayout', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(8)
+      expect(result.current.layout.widgets).toHaveLength(9)
     })
     expect(result.current.layout.widgets.find((w) => w.id === 'daily-hours')).toBeUndefined()
   })
@@ -210,7 +210,7 @@ describe('useDashboardLayout', () => {
     const { result } = renderHook(() => useDashboardLayout(), { wrapper: createWrapper() })
 
     await waitFor(() => {
-      expect(result.current.layout.widgets).toHaveLength(9)
+      expect(result.current.layout.widgets).toHaveLength(10)
     })
 
     act(() => {

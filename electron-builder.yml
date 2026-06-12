@@ -22,6 +22,8 @@ extraResources:
     to: tray-icon.png
   - from: resources/icon.png
     to: icon.png
+  - from: build/icon.ico
+    to: icon.ico
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/**

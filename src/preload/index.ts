@@ -58,6 +58,10 @@ const api = {
       ipcRenderer.invoke('session:getTimeBreakdown', startDate, endDate),
     getGapAnalysis: (): Promise<IpcResult<import('../shared/types/session').GapAnalysis>> =>
       ipcRenderer.invoke('session:getGapAnalysis'),
+    getModelUsage: (
+      filters?: import('../shared/types/session').ModelUsageFilters
+    ): Promise<IpcResult<import('../shared/types/session').ModelUsageAggregate[]>> =>
+      ipcRenderer.invoke('session:getModelUsage', filters),
     create: (data: {
       projectPath: string
       startedAt: string
