@@ -53,18 +53,26 @@ export default function EstimatedCostChart({
 
   const rows = useMemo(() => {
     if (!usage) return []
-    return usage
-      .map((u) => {
-        const pricing = getModelPricing(u.model)
-        return {
-          model: u.model,
-          displayName: pricing.displayName,
-          totalTokens:
-            u.inputTokens + u.outputTokens + u.cacheCreationInputTokens + u.cacheReadInputTokens,
-          cost: estimateCostUsd(u.model, u)
-        }
-      })
-      .sort((a, b) => b.cost - a.cost)
+    // Collapse per-model-version rows into pricing families (Opus, Sonnet, ...)
+    const byFamily = new Map<
+      string,
+      { displayName: string; models: string[]; totalTokens: number; cost: number }
+    >()
+    for (const u of usage) {
+      const pricing = getModelPricing(u.model)
+      const entry = byFamily.get(pricing.displayName) ?? {
+        displayName: pricing.displayName,
+        models: [],
+        totalTokens: 0,
+        cost: 0
+      }
+      entry.models.push(u.model)
+      entry.totalTokens +=
+        u.inputTokens + u.outputTokens + u.cacheCreationInputTokens + u.cacheReadInputTokens
+      entry.cost += estimateCostUsd(u.model, u)
+      byFamily.set(pricing.displayName, entry)
+    }
+    return [...byFamily.values()].sort((a, b) => b.cost - a.cost)
   }, [usage])
 
   const totalCost = rows.reduce((s, r) => s + r.cost, 0)
@@ -105,8 +113,8 @@ export default function EstimatedCostChart({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.model} className="border-t border-[var(--surface-border)]">
-                <td className="py-1 text-[var(--text-primary)]" title={r.model}>
+              <tr key={r.displayName} className="border-t border-[var(--surface-border)]">
+                <td className="py-1 text-[var(--text-primary)]" title={r.models.join(', ')}>
                   {r.displayName}
                 </td>
                 <td className="py-1 text-right text-[var(--text-muted)]">
