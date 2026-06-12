@@ -28,6 +28,7 @@ import { useFilterStore } from '@/stores/use-filter-store'
 import { cn } from '@/lib/utils'
 import { getProjectColor, getDateKey, formatDateLabel, formatDuration } from '@/lib/format'
 import type { Session } from '../../../../shared/types/session'
+import { estimateCostUsd } from '../../../../shared/pricing'
 
 function SessionListSkeleton(): React.JSX.Element {
   return (
@@ -77,6 +78,28 @@ export function SessionsPage(): React.JSX.Element {
 
   const { data: sessionIdsWithCommits } = useSessionIdsWithCommits()
   const stats = useSessionStats(sessions, clients, sessionIdsWithCommits)
+
+  const { data: modelUsage } = useQuery({
+    queryKey: ['sessions', 'modelUsage', filters],
+    queryFn: async () => {
+      const r = await window.api.sessions.getModelUsage({
+        startDate: filters?.startDate,
+        endDate: filters?.endDate,
+        clientId: filters?.clientId,
+        projectId: filters?.projectId
+      })
+      return r.success ? r.data : []
+    }
+  })
+  const estimatedCost = useMemo(() => {
+    if (!modelUsage || modelUsage.length === 0) return null
+    const total = modelUsage.reduce((sum, u) => sum + estimateCostUsd(u.model, u), 0)
+    return total.toLocaleString('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    })
+  }, [modelUsage])
   const groups = useGroupedSessions(sessions, allProjects, clients)
   const queryClient = useQueryClient()
   const setActiveView = useUIStore((s) => s.setActiveView)
@@ -201,6 +224,7 @@ export function SessionsPage(): React.JSX.Element {
         totalTokens={stats.totalTokens}
         clientCount={stats.clientCount}
         commitSessions={stats.commitSessions}
+        estimatedCost={estimatedCost}
         isLoading={isLoading}
       />
 

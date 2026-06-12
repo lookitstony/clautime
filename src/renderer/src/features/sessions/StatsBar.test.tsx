@@ -10,6 +10,7 @@ const baseProps = {
   totalTokens: 125000,
   clientCount: 0,
   commitSessions: 0,
+  estimatedCost: null,
   isLoading: false
 }
 
@@ -46,5 +47,16 @@ describe('StatsBar', () => {
   it('hides client card when no clients', () => {
     render(<StatsBar {...baseProps} clientCount={0} />)
     expect(screen.queryByText('Clients')).not.toBeInTheDocument()
+  })
+
+  it('shows estimated cost card when provided', () => {
+    render(<StatsBar {...baseProps} estimatedCost="$1,234" />)
+    expect(screen.getByText('Est. API Cost')).toBeInTheDocument()
+    expect(screen.getByText('$1,234')).toBeInTheDocument()
+  })
+
+  it('hides estimated cost card when null', () => {
+    render(<StatsBar {...baseProps} estimatedCost={null} />)
+    expect(screen.queryByText('Est. API Cost')).not.toBeInTheDocument()
   })
 })

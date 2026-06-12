@@ -10,6 +10,7 @@ interface StatsBarProps {
   totalTokens: number
   clientCount: number
   commitSessions: number
+  estimatedCost: string | null
   isLoading: boolean
 }
 
@@ -55,6 +56,7 @@ export function StatsBar({
   totalTokens,
   clientCount,
   commitSessions,
+  estimatedCost,
   isLoading
 }: StatsBarProps): React.JSX.Element {
   if (isLoading) {
@@ -86,6 +88,7 @@ export function StatsBar({
       <StatCard label="Prompts" value={totalPrompts.toLocaleString()} />
       {commitSessions > 0 && <StatCard label="Commits" value={commitSessions} />}
       {totalTokens > 0 && <StatCard label="Tokens" value={formatCompactNumber(totalTokens)} />}
+      {estimatedCost != null && <StatCard label="Est. API Cost" value={estimatedCost} />}
       {clientCount > 0 && <StatCard label="Clients" value={clientCount} />}
     </div>
   )
