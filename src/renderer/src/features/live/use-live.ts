@@ -5,6 +5,7 @@ import type {
   ProjectLiveStatus,
   ProjectAlertConfig
 } from '../../../../shared/types/live'
+import { estimateCostUsd } from '../../../../shared/pricing'
 
 // Cross-window query invalidation
 const liveChannel = new BroadcastChannel('clautime-live-queries')
@@ -56,6 +57,30 @@ export function useTodayStats() {
     queryFn: fetchTodayStats,
     refetchInterval: 15000
   })
+}
+
+/** Estimated API cost (USD) for today's scanned usage. Null until data exists. */
+export function useTodayCost(): string | null {
+  const { data } = useQuery({
+    queryKey: ['live', 'todayCost'],
+    queryFn: async () => {
+      const start = new Date()
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(start)
+      end.setDate(end.getDate() + 1)
+      const result = await window.api.sessions.getModelUsage({
+        startDate: start.toISOString(),
+        endDate: end.toISOString()
+      })
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    },
+    refetchInterval: 15000
+  })
+
+  if (!data || data.length === 0) return null
+  const total = data.reduce((sum, u) => sum + estimateCostUsd(u.model, u), 0)
+  return total.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
 export function useProjectStatuses() {

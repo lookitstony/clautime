@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LiveStatsBar } from './LiveStatsBar'
 import { ProjectWatchList } from './ProjectWatchList'
-import { useTodayStats, useProjectStatuses } from './use-live'
+import { useTodayStats, useProjectStatuses, useTodayCost } from './use-live'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useLiveStore } from '@/stores/use-live-store'
 import { useCreateSession } from '@/features/sessions/use-sessions'
@@ -21,6 +21,7 @@ import { formatDuration } from '@/lib/format'
 export function LivePage(): React.JSX.Element {
   const { data: todayStats, isLoading: statsLoading } = useTodayStats()
   const { data: projectStatuses, isLoading: statusesLoading } = useProjectStatuses()
+  const todayCost = useTodayCost()
 
   const [staleDialog, setStaleDialog] = useState(false)
   const [allWidgetsOpen, setAllWidgetsOpen] = useState(false)
@@ -69,7 +70,7 @@ export function LivePage(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
-      <LiveStatsBar stats={todayStats} isLoading={statsLoading} />
+      <LiveStatsBar stats={todayStats} estimatedCost={todayCost} isLoading={statsLoading} />
       <div className="flex-1 overflow-auto px-4 pb-4">
         <div className="mb-3 flex items-center gap-2">
           <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Projects</h2>
