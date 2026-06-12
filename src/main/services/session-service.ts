@@ -1063,6 +1063,10 @@ export const sessionService = {
     if (filters?.endDate) conditions.push(lte(sessions.endedAt, filters.endDate))
     if (filters?.clientId != null) conditions.push(eq(sessions.clientId, filters.clientId))
     if (filters?.projectId != null) conditions.push(eq(sessions.projectId, filters.projectId))
+    if (filters?.sessionIds) {
+      if (filters.sessionIds.length === 0) return []
+      conditions.push(inArray(sessionModelUsage.sessionId, filters.sessionIds))
+    }
 
     return db
       .select({

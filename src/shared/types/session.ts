@@ -114,6 +114,8 @@ export interface ModelUsageFilters {
   endDate?: string
   clientId?: number
   projectId?: number
+  /** Restrict to specific sessions (takes care of any client-side filtering, e.g. after-hours) */
+  sessionIds?: number[]
 }
 
 /** A detected session before DB insertion (output of detection algorithm) */

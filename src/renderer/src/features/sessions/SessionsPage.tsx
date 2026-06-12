@@ -79,17 +79,15 @@ export function SessionsPage(): React.JSX.Element {
   const { data: sessionIdsWithCommits } = useSessionIdsWithCommits()
   const stats = useSessionStats(sessions, clients, sessionIdsWithCommits)
 
+  // Aggregate cost over exactly the sessions shown (respects all filters incl. after-hours)
+  const visibleSessionIds = useMemo(() => sessions?.map((s) => s.id) ?? [], [sessions])
   const { data: modelUsage } = useQuery({
-    queryKey: ['sessions', 'modelUsage', filters],
+    queryKey: ['sessions', 'modelUsage', visibleSessionIds],
     queryFn: async () => {
-      const r = await window.api.sessions.getModelUsage({
-        startDate: filters?.startDate,
-        endDate: filters?.endDate,
-        clientId: filters?.clientId,
-        projectId: filters?.projectId
-      })
+      const r = await window.api.sessions.getModelUsage({ sessionIds: visibleSessionIds })
       return r.success ? r.data : []
-    }
+    },
+    enabled: visibleSessionIds.length > 0
   })
   const estimatedCost = useMemo(() => {
     if (!modelUsage || modelUsage.length === 0) return null
