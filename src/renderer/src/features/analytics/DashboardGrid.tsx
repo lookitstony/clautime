@@ -95,18 +95,20 @@ export function DashboardGrid({
   return (
     <DragDropProvider
       onDragEnd={(event) => {
-        const { operation } = event
-        const source = operation.source
-        const target = operation.target
-        if (!source || !target) return
+        if (event.canceled) return
+        const source = event.operation.source
+        if (!source) return
 
-        // Find indices from widget IDs
-        const fromId = source.id
-        const toId = target.id
-        const fromIndex = layout.widgets.findIndex((w) => w.id === fromId)
-        const toIndex = layout.widgets.findIndex((w) => w.id === toId)
-        if (fromIndex >= 0 && toIndex >= 0 && fromIndex !== toIndex) {
-          onReorder(fromIndex, toIndex)
+        // Sortable items track their own start/end positions — more reliable than
+        // resolving the drop target, which can be null when dropping over gaps.
+        // dnd-kit optimistically reorders the DOM during drag, so a missed state
+        // update here leaves the visual order out of sync until the next remount.
+        const { initialIndex, index } = source as unknown as {
+          initialIndex?: number
+          index?: number
+        }
+        if (initialIndex != null && index != null && initialIndex !== index) {
+          onReorder(initialIndex, index)
         }
       }}
     >
