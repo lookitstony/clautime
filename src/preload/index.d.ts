@@ -12,7 +12,12 @@ import type {
   ModelUsageAggregate,
   ModelUsageFilters
 } from '../shared/types/session'
-import type { GitCommit, GitScanResult, GitIdentity } from '../shared/types/git'
+import type {
+  GitCommit,
+  GitScanResult,
+  GitIdentity,
+  UnconfiguredAuthor
+} from '../shared/types/git'
 import type {
   Client,
   NewClient,
@@ -117,6 +122,7 @@ interface GitApi {
   detectIdentity(): Promise<IpcResult<GitIdentity | null>>
   getIdentity(): Promise<IpcResult<GitIdentity | null>>
   setIdentity(name: string, email: string): Promise<IpcResult<void>>
+  findUnconfiguredEmails(): Promise<IpcResult<UnconfiguredAuthor[]>>
   correlate(): Promise<IpcResult<number>>
   getSessionIdsWithCommits(): Promise<IpcResult<number[]>>
   getRemoteUrl(projectId: number): Promise<IpcResult<string | null>>

@@ -23,3 +23,14 @@ export interface GitIdentity {
   name: string
   email: string
 }
+
+/**
+ * An author email that appears in project repos but is NOT in the configured
+ * scan filter — i.e. commits the scan would silently skip. Surfaced so the
+ * user can add the email to their identity.
+ */
+export interface UnconfiguredAuthor {
+  email: string
+  name: string
+  count: number
+}

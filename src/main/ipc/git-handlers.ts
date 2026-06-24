@@ -2,7 +2,12 @@ import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { gitService } from '../services/git-service'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
-import type { GitCommit, GitScanResult, GitIdentity } from '../../shared/types/git'
+import type {
+  GitCommit,
+  GitScanResult,
+  GitIdentity,
+  UnconfiguredAuthor
+} from '../../shared/types/git'
 
 export function registerGitHandlers(): void {
   ipcMain.handle(
@@ -80,6 +85,19 @@ export function registerGitHandlers(): void {
       } catch (error) {
         log.error('IPC git:setIdentity failed:', error)
         return ipcError('GIT_SET_IDENTITY_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'git:findUnconfiguredEmails',
+    async (): Promise<IpcResult<UnconfiguredAuthor[]>> => {
+      try {
+        const emails = await gitService.findUnconfiguredAuthorEmails()
+        return ipcSuccess(emails)
+      } catch (error) {
+        log.error('IPC git:findUnconfiguredEmails failed:', error)
+        return ipcError('GIT_UNCONFIGURED_EMAILS_ERROR', String(error))
       }
     }
   )
