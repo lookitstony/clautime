@@ -9,6 +9,7 @@ import { gitCommits } from '../db/schema/git-commits'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
 import { settingsService } from './settings-service'
+import type { UnconfiguredAuthor } from '../../shared/types/git'
 
 const execFileAsync = promisify(execFile)
 const BATCH_SIZE = 100
@@ -170,6 +171,66 @@ export const gitService = {
     // Fall back to git-config-derived single email
     const identity = await this.getGitIdentity(dirPath)
     return identity?.email ? [identity.email] : []
+  },
+
+  /**
+   * Find author emails that appear in project repos (last 90 days) but are NOT
+   * in the configured filter list for that repo — i.e. commits the scan would
+   * silently skip. Excludes bot authors and emails the user has chosen to
+   * ignore (`git_ignored_author_emails` setting). Returns emails sorted by
+   * how many commits they account for. Used to prompt the user to add an
+   * email after they change their git identity (e.g. to a GitHub noreply).
+   */
+  async findUnconfiguredAuthorEmails(): Promise<UnconfiguredAuthor[]> {
+    const gitAvailable = await this.isGitAvailable()
+    if (!gitAvailable) return []
+
+    const ignoredRaw = settingsService.getSetting('git_ignored_author_emails') ?? ''
+    const ignored = new Set(
+      ignoredRaw
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.length > 0)
+    )
+
+    const db = getDb()
+    const allProjects = db.select().from(projects).all()
+    const found = new Map<string, UnconfiguredAuthor>()
+
+    for (const project of allProjects) {
+      if (!(await this.isGitRepo(project.directoryPath))) continue
+
+      // Compare against the SAME emails the scan filters this repo by, so an
+      // "unconfigured" email is precisely one whose commits would be dropped.
+      const configured = new Set(
+        (await this.getGitAuthorEmails(project.directoryPath)).map((e) => e.toLowerCase())
+      )
+
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['log', '--branches', '--no-merges', '--since=90 days ago', '--format=%ae|%an'],
+          { cwd: project.directoryPath, maxBuffer: 10 * 1024 * 1024 }
+        )
+        for (const line of stdout.trim().split('\n')) {
+          if (!line) continue
+          const sep = line.indexOf('|')
+          const email = (sep >= 0 ? line.slice(0, sep) : line).trim()
+          const name = sep >= 0 ? line.slice(sep + 1).trim() : ''
+          if (!email) continue
+          const key = email.toLowerCase()
+          if (configured.has(key) || ignored.has(key)) continue
+          if (key.includes('[bot]')) continue // dependabot[bot] etc.
+          const existing = found.get(key)
+          if (existing) existing.count++
+          else found.set(key, { email, name, count: 1 })
+        }
+      } catch (error) {
+        log.warn(`Failed to read authors from ${project.directoryPath}:`, error)
+      }
+    }
+
+    return [...found.values()].sort((a, b) => b.count - a.count)
   },
 
   /**

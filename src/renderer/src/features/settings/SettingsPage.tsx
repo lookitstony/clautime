@@ -13,9 +13,12 @@ import {
   FlaskConical,
   AlertTriangle,
   Pencil,
-  RotateCcw
+  RotateCcw,
+  GitBranch
 } from 'lucide-react'
+import { useGitIdentity, useDetectGitIdentity, useUnconfiguredGitEmails } from '../git/use-git'
 import type { CustomSecretPattern, PatternTestResult } from '../../../../shared/types/secret-scan'
+import type { UnconfiguredAuthor } from '../../../../shared/types/git'
 import {
   DEFAULT_AI_SUMMARY_INSTRUCTIONS,
   DEFAULT_AI_BRIEF_INSTRUCTIONS
@@ -285,6 +288,90 @@ export function SettingsPage(): React.JSX.Element {
       toast.success('Settings saved')
     }
   })
+
+  // ============= Git Identity =============
+  const { data: gitIdentity } = useGitIdentity()
+  const { data: detectedGitIdentity } = useDetectGitIdentity()
+  const { data: unconfiguredEmails = [] } = useUnconfiguredGitEmails()
+  const [gitEmailsInput, setGitEmailsInput] = useState('')
+  const [gitEmailsDirty, setGitEmailsDirty] = useState(false)
+  const [isSavingGit, setIsSavingGit] = useState(false)
+
+  // Hydrate the input from the saved identity, falling back to auto-detected
+  // git config. Stop once the user starts editing so we don't clobber input.
+  useEffect(() => {
+    if (gitEmailsDirty) return
+    const seed = gitIdentity?.email || detectedGitIdentity?.email || ''
+    if (seed) setGitEmailsInput(seed)
+  }, [gitIdentity, detectedGitIdentity, gitEmailsDirty])
+
+  const gitAuthorName = gitIdentity?.name || detectedGitIdentity?.name || 'You'
+
+  const saveGitIdentity = useCallback(
+    async (emails: string) => {
+      setIsSavingGit(true)
+      try {
+        const r = await window.api.git.setIdentity(gitAuthorName, emails.trim())
+        if (!r.success) throw new Error(r.error.message)
+        await window.api.git.scan()
+        setGitEmailsDirty(false)
+        queryClient.invalidateQueries({ queryKey: ['git'] })
+        queryClient.invalidateQueries({ queryKey: ['sessions'] })
+        toast.success('Git identity saved — commits rescanned')
+      } catch {
+        toast.error('Failed to save git identity')
+      } finally {
+        setIsSavingGit(false)
+      }
+    },
+    [gitAuthorName, queryClient]
+  )
+
+  // Drop an email from the cached warning list immediately, so Add/Ignore feel
+  // instant even though the backing query re-scans every repo (slow on big lists).
+  const removeUnconfiguredFromCache = useCallback(
+    (email: string) => {
+      queryClient.setQueryData<UnconfiguredAuthor[]>(['git', 'unconfiguredEmails'], (old) =>
+        Array.isArray(old)
+          ? old.filter((a) => a.email.toLowerCase() !== email.toLowerCase())
+          : old
+      )
+    },
+    [queryClient]
+  )
+
+  const addUnconfiguredEmail = useCallback(
+    (email: string) => {
+      const existing = gitEmailsInput
+        .split(',')
+        .map((e) => e.trim())
+        .filter(Boolean)
+      if (!existing.some((e) => e.toLowerCase() === email.toLowerCase())) {
+        existing.push(email)
+      }
+      const next = existing.join(', ')
+      setGitEmailsInput(next)
+      removeUnconfiguredFromCache(email)
+      saveGitIdentity(next)
+    },
+    [gitEmailsInput, saveGitIdentity, removeUnconfiguredFromCache]
+  )
+
+  const ignoreUnconfiguredEmail = useCallback(
+    async (email: string) => {
+      removeUnconfiguredFromCache(email)
+      const r = await window.api.settings.get('git_ignored_author_emails')
+      const current = r.success && r.data ? r.data : ''
+      const list = current
+        .split(',')
+        .map((e) => e.trim())
+        .filter(Boolean)
+      if (!list.some((e) => e.toLowerCase() === email.toLowerCase())) list.push(email)
+      await window.api.settings.set('git_ignored_author_emails', list.join(', '))
+      queryClient.invalidateQueries({ queryKey: ['git', 'unconfiguredEmails'] })
+    },
+    [queryClient, removeUnconfiguredFromCache]
+  )
 
   const handleBrowseClaudeDir = useCallback(async () => {
     const r = await window.api.dialog.openFolder()
@@ -1005,6 +1092,106 @@ export function SettingsPage(): React.JSX.Element {
               {isResetting ? 'Rescanning...' : 'Reset & Rescan'}
             </Button>
           </div>
+        </SectionCard>
+      </section>
+
+      {/* Git Identity */}
+      <section>
+        <SectionHeader title="Git Identity" />
+        <SectionCard>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
+              Author Emails
+            </label>
+            <p className="mb-2 text-[11px] text-[var(--text-muted)]">
+              Commits are matched to your sessions by author email. List every email you commit
+              under, separated by commas — including GitHub <code>noreply</code> addresses. Commits
+              authored under an email not listed here are silently skipped.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={gitEmailsInput}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  setGitEmailsInput(e.target.value)
+                  setGitEmailsDirty(true)
+                }}
+                placeholder="you@example.com, 123+you@users.noreply.github.com"
+                className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!detectedGitIdentity?.email}
+                onClick={() => {
+                  if (detectedGitIdentity?.email) addUnconfiguredEmail(detectedGitIdentity.email)
+                }}
+                title="Add the email from your local git config"
+              >
+                <GitBranch size={14} className="mr-1" />
+                Detect
+              </Button>
+              <Button
+                size="sm"
+                disabled={!gitEmailsDirty || isSavingGit || !gitEmailsInput.trim()}
+                className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                onClick={() => saveGitIdentity(gitEmailsInput)}
+              >
+                {isSavingGit && <LoaderCircle size={14} className="mr-1 animate-spin" />}
+                {isSavingGit ? 'Rescanning...' : 'Save & Rescan'}
+              </Button>
+            </div>
+          </div>
+
+          {unconfiguredEmails.length > 0 && (
+            <div className="mt-4 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-400">
+                <AlertTriangle size={14} />
+                Unmatched commit authors found ({unconfiguredEmails.length})
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                These emails appear in your repos&apos; recent history but aren&apos;t configured, so
+                their commits are being skipped. Add the ones that are you.
+              </p>
+              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                {unconfiguredEmails.map((author) => (
+                  <div
+                    key={author.email}
+                    className="flex items-center justify-between gap-2 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-mono text-[12px] text-[var(--text-primary)]">
+                        {author.email}
+                      </div>
+                      <div className="truncate text-[11px] text-[var(--text-muted)]">
+                        {author.name || 'unknown'} · {author.count} commit
+                        {author.count === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        size="sm"
+                        disabled={isSavingGit}
+                        className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                        onClick={() => addUnconfiguredEmail(author.email)}
+                      >
+                        <Plus size={14} className="mr-1" />
+                        Add
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-[11px] text-[var(--text-muted)]"
+                        onClick={() => ignoreUnconfiguredEmail(author.email)}
+                      >
+                        Ignore
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </SectionCard>
       </section>
 

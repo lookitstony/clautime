@@ -158,8 +158,8 @@ export function InvoiceDetailView({
             <div>
               <span className="text-[var(--text-muted)]">Period</span>
               <p className="text-[var(--text-primary)]">
-                {new Date(invoice.periodStart).toLocaleDateString()} –{' '}
-                {new Date(invoice.periodEnd).toLocaleDateString()}
+                {new Date(invoice.periodStart.slice(0, 10) + 'T00:00:00').toLocaleDateString()} –{' '}
+                {new Date(invoice.periodEnd.slice(0, 10) + 'T00:00:00').toLocaleDateString()}
               </p>
             </div>
           )}

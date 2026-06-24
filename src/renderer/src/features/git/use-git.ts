@@ -55,8 +55,19 @@ export function useSetGitIdentity() {
       if (!result.success) throw new Error(result.error.message)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['git', 'identity'] })
+      queryClient.invalidateQueries({ queryKey: ['git'] })
       toast.success('Git identity saved')
+    }
+  })
+}
+
+export function useUnconfiguredGitEmails() {
+  return useQuery({
+    queryKey: ['git', 'unconfiguredEmails'],
+    queryFn: async () => {
+      const result = await window.api.git.findUnconfiguredEmails()
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
     }
   })
 }

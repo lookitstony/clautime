@@ -132,6 +132,9 @@ const api = {
       ipcRenderer.invoke('git:getIdentity'),
     setIdentity: (name: string, email: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('git:setIdentity', name, email),
+    findUnconfiguredEmails: (): Promise<
+      IpcResult<import('../shared/types/git').UnconfiguredAuthor[]>
+    > => ipcRenderer.invoke('git:findUnconfiguredEmails'),
     correlate: (): Promise<IpcResult<number>> => ipcRenderer.invoke('git:correlate'),
     getSessionIdsWithCommits: (): Promise<IpcResult<number[]>> =>
       ipcRenderer.invoke('git:getSessionIdsWithCommits'),
