@@ -810,9 +810,23 @@ export const mockApi = {
     onNewProject: noop,
     timerStarted: () => ok(undefined),
     timerStopped: () => ok(undefined),
-    toggleWidget: () => ok(undefined),
-    showAllWidgets: () => ok(undefined),
-    hideAllWidgets: () => ok(undefined),
+    // Widget windows don't exist in the browser — the landing page listens for
+    // these messages and shows/hides a floating iframe of ./demo/#widget/<id>.
+    toggleWidget: (projectId: number) => {
+      window.parent.postMessage({ type: 'clautime-demo-widget', action: 'toggle', projectId }, '*')
+      return ok(undefined)
+    },
+    showAllWidgets: (projectIds: number[]) => {
+      window.parent.postMessage(
+        { type: 'clautime-demo-widget', action: 'show', projectId: projectIds[0] ?? 1 },
+        '*'
+      )
+      return ok(undefined)
+    },
+    hideAllWidgets: () => {
+      window.parent.postMessage({ type: 'clautime-demo-widget', action: 'hide-all' }, '*')
+      return ok(undefined)
+    },
     showStopDialog: () => ok(undefined),
     getWidgetHotkey: () => ok('CommandOrControl+Shift+W'),
     setWidgetHotkey: () => ok(undefined),

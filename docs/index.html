@@ -399,6 +399,64 @@
         box-shadow: 0 0 16px var(--accent-glow);
       }
 
+      /* ═══ FLOATING WIDGET (real app widget in a fixed iframe) ═══ */
+      .float-widget {
+        position: fixed;
+        top: 76px;
+        right: 24px;
+        z-index: 99;
+        display: none;
+        align-items: stretch;
+        filter: drop-shadow(0 8px 24px #00000080);
+        animation: widget-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      .float-widget.on {
+        display: flex;
+      }
+
+      @keyframes widget-in {
+        from {
+          opacity: 0;
+          transform: translateY(-12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .float-widget iframe {
+        width: 240px;
+        height: 60px;
+        border: 0;
+        background: transparent;
+        color-scheme: normal;
+      }
+
+      .float-widget-handle {
+        width: 14px;
+        margin-right: -2px;
+        border-radius: 8px 0 0 8px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-right: none;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        font-size: 9px;
+        letter-spacing: -1px;
+        user-select: none;
+        touch-action: none;
+      }
+
+      .float-widget-handle:active {
+        cursor: grabbing;
+        color: var(--accent);
+      }
+
       .demo-caption {
         margin-top: 20px;
         text-align: center;
@@ -1060,7 +1118,8 @@
             </button>
           </div>
           <p class="demo-caption">
-            Real app, sample data &mdash; every tab works.
+            Real app, sample data &mdash; every tab works, and that little bar floating up top is
+            the always-on-top desktop widget.
             <a href="./demo/" target="_blank">Open full screen &rarr;</a>
           </p>
         </div>
@@ -1393,6 +1452,12 @@
       </div>
     </section>
 
+    <!-- FLOATING WIDGET — the app's real always-on-top widget, live from the demo bundle -->
+    <div class="float-widget" id="floatWidget">
+      <div class="float-widget-handle" title="Drag me around">&#8942;&#8942;</div>
+      <iframe src="./demo/#widget/1" title="ClauTime floating widget (demo)" loading="lazy"></iframe>
+    </div>
+
     <!-- FOOTER -->
     <footer>
       <div class="container">
@@ -1459,6 +1524,70 @@
         },
         { passive: true }
       )
+
+      // ═══ FLOATING WIDGET ═══
+      // The real app's always-on-top widget, rendered by the demo bundle at
+      // #widget/<projectId>. It appears shortly after load and stays fixed as
+      // you scroll — just like it floats over your desktop. The pop-out icons
+      // inside the embedded demo toggle it via postMessage.
+      const floatWidget = document.getElementById('floatWidget')
+      const widgetFrame = floatWidget.querySelector('iframe')
+      let widgetProjectId = 1
+
+      function showWidget(projectId) {
+        if (projectId !== widgetProjectId) {
+          widgetProjectId = projectId
+          widgetFrame.src = './demo/#widget/' + projectId
+          widgetFrame.contentWindow?.location.reload()
+        }
+        floatWidget.classList.add('on')
+      }
+
+      function hideWidget() {
+        floatWidget.classList.remove('on')
+      }
+
+      window.addEventListener('message', (e) => {
+        const d = e.data
+        if (!d || d.type !== 'clautime-demo-widget') return
+        if (d.action === 'hide-all') {
+          hideWidget()
+        } else if (d.action === 'show') {
+          showWidget(d.projectId)
+        } else if (d.action === 'toggle') {
+          if (floatWidget.classList.contains('on') && d.projectId === widgetProjectId) {
+            hideWidget()
+          } else {
+            showWidget(d.projectId)
+          }
+        }
+      })
+
+      // Drag by the grip on the left edge
+      const widgetHandle = floatWidget.querySelector('.float-widget-handle')
+      widgetHandle.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        widgetHandle.setPointerCapture(e.pointerId)
+        const rect = floatWidget.getBoundingClientRect()
+        const offX = e.clientX - rect.left
+        const offY = e.clientY - rect.top
+        const move = (ev) => {
+          floatWidget.style.right = 'auto'
+          floatWidget.style.left =
+            Math.max(0, Math.min(ev.clientX - offX, window.innerWidth - rect.width)) + 'px'
+          floatWidget.style.top =
+            Math.max(0, Math.min(ev.clientY - offY, window.innerHeight - rect.height)) + 'px'
+        }
+        const up = () => {
+          widgetHandle.removeEventListener('pointermove', move)
+          widgetHandle.removeEventListener('pointerup', up)
+        }
+        widgetHandle.addEventListener('pointermove', move)
+        widgetHandle.addEventListener('pointerup', up)
+      })
+
+      // Pop it in automatically once the page has settled
+      setTimeout(() => showWidget(1), 1600)
     </script>
   </body>
 </html>

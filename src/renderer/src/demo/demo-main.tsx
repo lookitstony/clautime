@@ -32,7 +32,10 @@ function addDemoBadge(): void {
   document.body.appendChild(badge)
 }
 
-addDemoBadge()
+// Widget iframes (#widget/<id>) render just the floating widget — no badge.
+if (!window.location.hash.startsWith('#widget/')) {
+  addDemoBadge()
+}
 
 // Dynamic import so the mock api is in place before any app module evaluates.
 void import('../main')
