@@ -32,8 +32,51 @@ function addDemoBadge(): void {
   document.body.appendChild(badge)
 }
 
-// Widget iframes (#widget/<id>) render just the floating widget — no badge.
-if (!window.location.hash.startsWith('#widget/')) {
+/**
+ * Widget mode (#widget/<id>): the whole widget acts as its drag handle, like
+ * the frameless Electron window it mimics. Pointer drags anywhere except on
+ * buttons stream screen-space deltas to the parent page, which moves this
+ * iframe under the cursor.
+ */
+function enableWidgetDrag(): void {
+  const projectId = parseInt(window.location.hash.replace('#widget/', ''), 10)
+  let dragging = false
+  let lastX = 0
+  let lastY = 0
+
+  const style = document.createElement('style')
+  style.textContent =
+    'body { cursor: grab; user-select: none; -webkit-user-select: none; } body:active { cursor: grabbing; } button { cursor: pointer; }'
+  document.head.appendChild(style)
+
+  document.addEventListener('pointerdown', (e) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    e.preventDefault()
+    dragging = true
+    lastX = e.screenX
+    lastY = e.screenY
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  })
+  document.addEventListener('pointermove', (e) => {
+    if (!dragging) return
+    const dx = e.screenX - lastX
+    const dy = e.screenY - lastY
+    lastX = e.screenX
+    lastY = e.screenY
+    if (dx || dy) {
+      window.parent.postMessage({ type: 'clautime-demo-widget', action: 'drag-by', projectId, dx, dy }, '*')
+    }
+  })
+  const endDrag = (): void => {
+    dragging = false
+  }
+  document.addEventListener('pointerup', endDrag)
+  document.addEventListener('pointercancel', endDrag)
+}
+
+if (window.location.hash.startsWith('#widget/')) {
+  enableWidgetDrag()
+} else {
   addDemoBadge()
 }
 

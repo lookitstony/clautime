@@ -429,29 +429,6 @@
         color-scheme: normal;
       }
 
-      .float-widget-handle {
-        width: 14px;
-        margin-right: -2px;
-        border-radius: 8px 0 0 8px;
-        background: var(--bg-elevated);
-        border: 1px solid var(--border);
-        border-right: none;
-        cursor: grab;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-muted);
-        font-size: 9px;
-        letter-spacing: -1px;
-        user-select: none;
-        touch-action: none;
-      }
-
-      .float-widget-handle:active {
-        cursor: grabbing;
-        color: var(--accent);
-      }
-
       .demo-caption {
         margin-top: 20px;
         text-align: center;
@@ -1522,29 +1499,6 @@
       // via postMessage.
       const widgets = new Map() // projectId -> { el, slot }
 
-      function makeWidgetDraggable(el, handle) {
-        handle.addEventListener('pointerdown', (e) => {
-          e.preventDefault()
-          handle.setPointerCapture(e.pointerId)
-          const rect = el.getBoundingClientRect()
-          const offX = e.clientX - rect.left
-          const offY = e.clientY - rect.top
-          const move = (ev) => {
-            el.style.right = 'auto'
-            el.style.left =
-              Math.max(0, Math.min(ev.clientX - offX, window.innerWidth - rect.width)) + 'px'
-            el.style.top =
-              Math.max(0, Math.min(ev.clientY - offY, window.innerHeight - rect.height)) + 'px'
-          }
-          const up = () => {
-            handle.removeEventListener('pointermove', move)
-            handle.removeEventListener('pointerup', up)
-          }
-          handle.addEventListener('pointermove', move)
-          handle.addEventListener('pointerup', up)
-        })
-      }
-
       function showWidget(projectId) {
         if (widgets.has(projectId)) return
         const used = new Set([...widgets.values()].map((w) => w.slot))
@@ -1555,19 +1509,24 @@
         el.className = 'float-widget'
         el.style.top = 76 + slot * 70 + 'px'
 
-        const handle = document.createElement('div')
-        handle.className = 'float-widget-handle'
-        handle.title = 'Drag me around'
-        handle.innerHTML = '&#8942;&#8942;'
-
         const iframe = document.createElement('iframe')
         iframe.src = './demo/#widget/' + projectId
-        iframe.title = 'ClauTime floating widget (demo)'
+        iframe.title = 'ClauTime floating widget (demo) — drag to move'
 
-        el.append(handle, iframe)
+        el.append(iframe)
         document.body.appendChild(el)
-        makeWidgetDraggable(el, handle)
         widgets.set(projectId, { el, slot })
+      }
+
+      // Drag is initiated inside the widget iframe (the whole widget is the
+      // handle); it streams screen-space deltas up here to move the container.
+      function dragWidgetBy(projectId, dx, dy) {
+        const w = widgets.get(projectId)
+        if (!w) return
+        const r = w.el.getBoundingClientRect()
+        w.el.style.right = 'auto'
+        w.el.style.left = Math.max(0, Math.min(r.left + dx, window.innerWidth - r.width)) + 'px'
+        w.el.style.top = Math.max(0, Math.min(r.top + dy, window.innerHeight - r.height)) + 'px'
       }
 
       function hideWidget(projectId) {
@@ -1589,6 +1548,8 @@
         } else if (d.action === 'toggle') {
           if (widgets.has(d.projectId)) hideWidget(d.projectId)
           else showWidget(d.projectId)
+        } else if (d.action === 'drag-by') {
+          dragWidgetBy(d.projectId, d.dx, d.dy)
         }
       })
 
