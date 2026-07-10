@@ -312,349 +312,138 @@
       }
 
       .hero-window {
-        max-width: 900px;
+        max-width: 1072px;
         margin: 0 auto;
         border-radius: 16px;
         border: 1px solid var(--border);
         background: var(--bg-primary);
         overflow: hidden;
+        position: relative;
         box-shadow:
           0 0 0 1px var(--border),
           0 24px 80px #00000060,
           0 0 120px var(--accent-glow);
       }
 
-      /* ═══ MOCK APP LAYOUT ═══ */
-      .mock-titlebar {
-        display: flex;
-        align-items: center;
-        padding: 0 10px;
-        height: 32px;
-        background: #12121e;
-        border-bottom: 1px solid var(--border);
-        font-size: 11px;
-        color: var(--text-muted);
-        text-align: left;
-      }
-      .mock-titlebar-name {
-        flex: 1;
-        font-size: 10px;
-        text-align: left;
-      }
-      .mock-titlebar-controls {
-        display: flex;
-        gap: 0;
-        align-items: center;
-      }
-      .mock-titlebar-btn {
-        width: 32px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-muted);
-      }
-      .mock-titlebar-btn svg {
-        width: 13px;
-        height: 13px;
-      }
-      .mock-titlebar-btn.theme-toggle {
-        margin-right: 4px;
-      }
-      .mock-titlebar-divider {
-        width: 1px;
-        height: 14px;
-        background: var(--border);
-        margin: 0 2px;
-      }
-      .mock-titlebar-btn.close:hover {
-        color: #ef4444;
+      .hero-demo {
+        display: block;
+        width: 100%;
+        height: clamp(420px, 60vw, 660px);
+        border: 0;
+        background: var(--bg-primary);
       }
 
-      .mock-app-body {
-        display: flex;
-        min-height: 380px;
-        text-align: left;
-      }
-
-      /* Activity bar (left sidebar) */
-      .mock-sidebar {
-        width: 48px;
-        background: #12121e;
-        border-right: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 10px 0;
-        gap: 4px;
-        flex-shrink: 0;
-      }
-      .mock-nav-btn {
-        width: 34px;
-        height: 34px;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-muted);
-        position: relative;
-      }
-      .mock-nav-btn svg {
-        width: 18px;
-        height: 18px;
-        stroke: currentColor;
-        fill: none;
-        stroke-width: 1.8;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-      .mock-nav-btn.active {
-        background: #14b8a610;
-        color: var(--accent);
-      }
-      .mock-nav-btn.active::before {
-        content: '';
-        position: absolute;
-        left: -7px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 3px;
-        height: 18px;
-        background: var(--accent);
-        border-radius: 0 3px 3px 0;
-      }
-
-      /* Main content area */
-      .mock-main {
-        flex: 1;
-        padding: 14px 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        overflow: hidden;
-        background: #16162a;
-      }
-
-      /* Stats bar */
-      .mock-stats {
-        display: grid;
-        grid-template-columns: repeat(6, 1fr);
-        gap: 6px;
-      }
-      .mock-stat {
-        background: #1e1e32;
-        border: 1px solid #2a2a3e;
-        border-radius: 8px;
-        padding: 8px 10px;
-      }
-      .mock-stat-label {
-        font-size: 9px;
-        color: #555;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        font-family: 'JetBrains Mono', monospace;
-        margin-bottom: 3px;
-      }
-      .mock-stat-value {
-        font-size: 16px;
-        font-weight: 700;
-        font-family: 'JetBrains Mono', monospace;
-        letter-spacing: -0.5px;
-        color: #e0e0e0;
-      }
-      .mock-stat-value.teal {
-        color: #14b8a6;
-      }
-
-      /* Section header */
-      .mock-section-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        font-size: 12px;
-        font-weight: 500;
-        color: #888;
-      }
-      .mock-section-btn {
-        font-size: 10px;
-        color: #555;
-        padding: 3px 8px;
-        border: 1px solid #2a2a3e;
-        border-radius: 5px;
-        background: transparent;
-      }
-
-      /* Project cards grid — Layout 6 (Grid Stats) */
-      .mock-projects {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
-      }
-      .mock-project-card {
-        background: #1e1e32;
-        border: 1px solid #2a2a3e;
-        border-radius: 10px;
-        overflow: hidden;
-        position: relative;
-        transition: border-color 0.3s;
-      }
-      .mock-project-card.glowing {
-        border-color: #14b8a640;
-        box-shadow: 0 0 24px #14b8a60c;
-      }
-      .mock-project-card.glowing::before {
-        content: '';
+      /* Invisible cover that keeps page scrolling smooth until the visitor
+         clicks in — then the iframe becomes fully interactive. */
+      .hero-demo-cover {
         position: absolute;
         inset: 0;
-        background: linear-gradient(135deg, #14b8a608 0%, transparent 60%);
-        pointer-events: none;
-      }
-      .mock-card-header {
-        padding: 8px 10px 4px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
         display: flex;
-        align-items: flex-start;
-        gap: 6px;
-        position: relative;
-      }
-      .mock-color-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        flex-shrink: 0;
-        display: inline-block;
-        margin-top: 5px;
-      }
-      .mock-card-name-group {
-        flex: 1;
-        min-width: 0;
-        text-align: left;
-      }
-      .mock-card-project-name {
-        font-size: 12px;
-        font-weight: 600;
-        line-height: 1.2;
-        display: block;
-        text-align: left;
-      }
-      .mock-card-client {
-        font-size: 9px;
-        color: #555;
-        line-height: 1.2;
-        margin-top: 1px;
-        text-align: left;
-      }
-      .mock-card-popout {
-        color: #555;
-        flex-shrink: 0;
-        margin-top: 2px;
-      }
-      .mock-card-popout svg {
-        width: 13px;
-        height: 13px;
-      }
-      .mock-card-hours-row {
-        padding: 2px 10px 8px;
-        position: relative;
-        text-align: center;
-      }
-      .mock-card-hours {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 24px;
-        font-weight: 700;
-        color: #14b8a6;
-        letter-spacing: -1.5px;
-        line-height: 1;
-      }
-      .mock-card-hours span {
-        font-size: 14px;
-        font-weight: 600;
-      }
-      /* Stats grid row */
-      .mock-card-stats {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        border-top: 1px solid #2a2a3e;
-        position: relative;
-      }
-      .mock-card-stat {
-        padding: 5px 4px;
-        text-align: center;
-        font-family: 'JetBrains Mono', monospace;
-        border-right: 1px solid #2a2a3e;
-      }
-      .mock-card-stat:last-child {
-        border-right: none;
-      }
-      .mock-card-stat b {
-        display: block;
-        font-size: 12px;
-        font-weight: 600;
-        color: #888;
-      }
-      .mock-card-stat-label {
-        font-size: 8px;
-        color: #555;
-      }
-      /* Footer row */
-      .mock-card-footer {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 6px 10px;
-        border-top: 1px solid #2a2a3e;
-        font-size: 10px;
-        color: #555;
-        position: relative;
-      }
-      .mock-footer-left {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .mock-bell svg {
-        width: 14px;
-        height: 14px;
-      }
-      .mock-footer-right {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .mock-start-btn {
-        font-size: 9px;
-        padding: 2px 8px;
-        border-radius: 5px;
-        font-weight: 600;
-        font-family: 'JetBrains Mono', monospace;
-        background: #10b98115;
-        color: #34d399;
-        display: flex;
-        align-items: center;
-        gap: 3px;
-      }
-      .mock-start-btn svg {
-        width: 8px;
-        height: 8px;
-        fill: currentColor;
-        stroke: none;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 24px;
       }
 
-      /* Status bar (bottom) */
-      .mock-statusbar {
+      .hero-demo-cover.off {
+        display: none;
+      }
+
+      .hero-demo-cover span {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: var(--accent);
+        background: #06080cd9;
+        border: 1px solid var(--accent-glow);
+        border-radius: 100px;
+        padding: 10px 22px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 24px #00000080;
+        transition: all 0.2s ease;
+      }
+
+      .hero-demo-cover:hover span {
+        border-color: var(--accent);
+        box-shadow: 0 0 24px var(--accent-glow);
+        transform: translateY(-2px);
+      }
+
+      .hero-demo-fs {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #06080cd9;
+        color: var(--text-secondary);
+        cursor: pointer;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        height: 24px;
-        padding: 0 12px;
-        background: #12121e;
-        border-top: 1px solid var(--border);
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 10px;
-        color: #555;
+        justify-content: center;
+        backdrop-filter: blur(8px);
+        transition: all 0.2s ease;
       }
-      .mock-statusbar-hours {
-        color: #14b8a6;
-        font-weight: 600;
+
+      .hero-demo-fs svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .hero-demo-fs:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 16px var(--accent-glow);
+      }
+
+      /* ═══ FLOATING WIDGET (real app widget in a fixed iframe) ═══ */
+      .float-widget {
+        position: fixed;
+        right: 24px;
+        z-index: 99;
+        display: flex;
+        align-items: stretch;
+        filter: drop-shadow(0 8px 24px #00000080);
+        animation: widget-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      @keyframes widget-in {
+        from {
+          opacity: 0;
+          transform: translateY(-12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .float-widget iframe {
+        width: 240px;
+        height: 60px;
+        border: 0;
+        background: transparent;
+        color-scheme: normal;
+      }
+
+      .demo-caption {
+        margin-top: 20px;
+        text-align: center;
+        font-size: 14px;
+        color: var(--text-muted);
+      }
+
+      .demo-caption a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .demo-caption a:hover {
+        text-decoration: underline;
       }
 
       /* ═══ FEATURES ═══ */
@@ -1151,15 +940,6 @@
         .hero {
           padding: 140px 0 80px;
         }
-        .mock-stats {
-          grid-template-columns: repeat(3, 1fr);
-        }
-        .mock-projects {
-          grid-template-columns: repeat(2, 1fr);
-        }
-        .mock-sidebar {
-          display: none;
-        }
         .features-grid {
           grid-template-columns: 1fr;
         }
@@ -1195,15 +975,6 @@
           width: 100%;
           justify-content: center;
         }
-        .mock-stats {
-          grid-template-columns: repeat(2, 1fr);
-        }
-        .mock-projects {
-          grid-template-columns: 1fr;
-        }
-        .mock-card-stats {
-          display: none;
-        }
       }
 
       /* ═══ SCROLLBAR ═══ */
@@ -1233,6 +1004,7 @@
           ClauTime
         </a>
         <ul class="nav-links">
+          <li><a href="./demo/" class="hide-mobile">Live Demo</a></li>
           <li><a href="#features" class="hide-mobile">Features</a></li>
           <li><a href="#invoicing-savings" class="hide-mobile">Invoicing</a></li>
           <li><a href="#how-it-works" class="hide-mobile">How It Works</a></li>
@@ -1259,7 +1031,17 @@
           Bill your clients, send invoices through Stripe, and keep more of every dollar.
         </p>
         <div class="hero-actions">
-          <a href="https://github.com/lookitstony/clautime" target="_blank" class="btn btn-primary">
+          <a href="./demo/" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="6 3 20 12 6 21 6 3" />
+            </svg>
+            Try the Live Demo
+          </a>
+          <a
+            href="https://github.com/lookitstony/clautime"
+            target="_blank"
+            class="btn btn-secondary"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path
                 d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
@@ -1273,549 +1055,45 @@
         <!-- MOCK APP WINDOW -->
         <div class="hero-visual">
           <div class="hero-window">
-            <!-- Title Bar -->
-            <div class="mock-titlebar">
-              <span class="mock-titlebar-name">ClauTime</span>
-              <div class="mock-titlebar-controls">
-                <!-- Theme toggle (sun icon) -->
-                <div class="mock-titlebar-btn theme-toggle">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <circle cx="12" cy="12" r="5" />
-                    <line x1="12" y1="1" x2="12" y2="3" />
-                    <line x1="12" y1="21" x2="12" y2="23" />
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                    <line x1="1" y1="12" x2="3" y2="12" />
-                    <line x1="21" y1="12" x2="23" y2="12" />
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                  </svg>
-                </div>
-                <div class="mock-titlebar-divider"></div>
-                <!-- Minimize -->
-                <div class="mock-titlebar-btn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </div>
-                <!-- Maximize -->
-                <div class="mock-titlebar-btn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="5" y="5" width="14" height="14" rx="1" />
-                  </svg>
-                </div>
-                <!-- Tray (down arrow) -->
-                <div class="mock-titlebar-btn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <polyline points="19 12 12 19 5 12" />
-                  </svg>
-                </div>
-                <!-- Close (X) -->
-                <div class="mock-titlebar-btn close">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            <div class="mock-app-body">
-              <!-- Activity Bar (Lucide-style SVG icons) -->
-              <div class="mock-sidebar">
-                <!-- Sessions: LayoutList -->
-                <div class="mock-nav-btn">
-                  <svg viewBox="0 0 24 24">
-                    <rect x="3" y="3" width="7" height="7" rx="1" />
-                    <rect x="3" y="14" width="7" height="7" rx="1" />
-                    <line x1="14" y1="4" x2="21" y2="4" />
-                    <line x1="14" y1="9" x2="21" y2="9" />
-                    <line x1="14" y1="15" x2="21" y2="15" />
-                    <line x1="14" y1="20" x2="21" y2="20" />
-                  </svg>
-                </div>
-                <!-- Live: Activity -->
-                <div class="mock-nav-btn active">
-                  <svg viewBox="0 0 24 24">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                </div>
-                <!-- Reports: FileBarChart -->
-                <div class="mock-nav-btn">
-                  <svg viewBox="0 0 24 24">
-                    <path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="8" y1="18" x2="8" y2="13" />
-                    <line x1="12" y1="18" x2="12" y2="11" />
-                    <line x1="16" y1="18" x2="16" y2="15" />
-                  </svg>
-                </div>
-                <!-- Analytics: BarChart3 -->
-                <div class="mock-nav-btn">
-                  <svg viewBox="0 0 24 24">
-                    <line x1="18" y1="20" x2="18" y2="10" />
-                    <line x1="12" y1="20" x2="12" y2="4" />
-                    <line x1="6" y1="20" x2="6" y2="14" />
-                  </svg>
-                </div>
-                <!-- Projects: FolderKanban -->
-                <div class="mock-nav-btn">
-                  <svg viewBox="0 0 24 24">
-                    <path
-                      d="M4 20h16a2 2 0 002-2V8a2 2 0 00-2-2h-7.93a2 2 0 01-1.66-.9l-.82-1.2A2 2 0 007.93 3H4a2 2 0 00-2 2v13c0 1.1.9 2 2 2z"
-                    />
-                    <line x1="8" y1="10" x2="8" y2="16" />
-                    <line x1="12" y1="10" x2="12" y2="14" />
-                    <line x1="16" y1="10" x2="16" y2="16" />
-                  </svg>
-                </div>
-                <!-- Settings: Gear -->
-                <div class="mock-nav-btn">
-                  <svg viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="3" />
-                    <path
-                      d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
-                    />
-                  </svg>
-                </div>
-              </div>
-
-              <!-- Main Content: Live Dashboard -->
-              <div class="mock-main">
-                <!-- Stats Bar (6 stats) -->
-                <div class="mock-stats">
-                  <div class="mock-stat">
-                    <div class="mock-stat-label">Human Hours</div>
-                    <div class="mock-stat-value teal">4h</div>
-                  </div>
-                  <div class="mock-stat">
-                    <div class="mock-stat-label">Agent Hours</div>
-                    <div class="mock-stat-value">6h 55m</div>
-                  </div>
-                  <div class="mock-stat">
-                    <div class="mock-stat-label">Sessions</div>
-                    <div class="mock-stat-value">30</div>
-                  </div>
-                  <div class="mock-stat">
-                    <div class="mock-stat-label">Prompts</div>
-                    <div class="mock-stat-value">160</div>
-                  </div>
-                  <div class="mock-stat">
-                    <div class="mock-stat-label">Commits</div>
-                    <div class="mock-stat-value">7</div>
-                  </div>
-                  <div class="mock-stat">
-                    <div class="mock-stat-label">Tokens</div>
-                    <div class="mock-stat-value">394.1K</div>
-                  </div>
-                </div>
-
-                <!-- Section Header -->
-                <div class="mock-section-header">
-                  <span>Projects</span>
-                  <span class="mock-section-btn">Open all widgets</span>
-                </div>
-
-                <!-- Project Cards Grid (Layout 6 — Grid Stats) -->
-                <div class="mock-projects">
-                  <!-- project-alpha — active, glowing -->
-                  <div class="mock-project-card glowing">
-                    <div class="mock-card-header">
-                      <span class="mock-color-dot" style="background: #14b8a6"></span>
-                      <div class="mock-card-name-group">
-                        <span class="mock-card-project-name">project-alpha</span>
-                        <div class="mock-card-client">Acme Inc</div>
-                      </div>
-                      <span class="mock-card-popout"
-                        ><svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="M12 13V7" />
-                          <path d="m15 10-3-3-3 3" />
-                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
-                      ></span>
-                    </div>
-                    <div class="mock-card-hours-row">
-                      <span class="mock-card-hours">2<span>h</span>24<span>m</span></span>
-                    </div>
-                    <div class="mock-card-stats">
-                      <div class="mock-card-stat">
-                        <b>8</b><span class="mock-card-stat-label">sessions</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>49</b><span class="mock-card-stat-label">prompts</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>140K</b><span class="mock-card-stat-label">tokens</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>7</b><span class="mock-card-stat-label">commits</span>
-                      </div>
-                    </div>
-                    <div class="mock-card-footer">
-                      <div class="mock-footer-left">
-                        <span class="mock-bell"
-                          ><svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#eab308"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
-                        ></span>
-                        <span>2m ago</span>
-                      </div>
-                      <div class="mock-footer-right">
-                        <span class="mock-start-btn"
-                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          Start</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- api-service -->
-                  <div class="mock-project-card">
-                    <div class="mock-card-header">
-                      <span class="mock-color-dot" style="background: #a78bfa"></span>
-                      <div class="mock-card-name-group">
-                        <span class="mock-card-project-name">api-service</span>
-                        <div class="mock-card-client">Acme Inc</div>
-                      </div>
-                      <span class="mock-card-popout"
-                        ><svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="M12 13V7" />
-                          <path d="m15 10-3-3-3 3" />
-                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
-                      ></span>
-                    </div>
-                    <div class="mock-card-hours-row">
-                      <span class="mock-card-hours">45<span>m</span></span>
-                    </div>
-                    <div class="mock-card-stats">
-                      <div class="mock-card-stat">
-                        <b>4</b><span class="mock-card-stat-label">sessions</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>20</b><span class="mock-card-stat-label">prompts</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>81K</b><span class="mock-card-stat-label">tokens</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
-                      </div>
-                    </div>
-                    <div class="mock-card-footer">
-                      <div class="mock-footer-left">
-                        <span class="mock-bell"
-                          ><svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#eab308"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
-                        ></span>
-                        <span>4m ago</span>
-                      </div>
-                      <div class="mock-footer-right">
-                        <span class="mock-start-btn"
-                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          Start</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- looki -->
-                  <div class="mock-project-card">
-                    <div class="mock-card-header">
-                      <span class="mock-color-dot" style="background: #fbbf24"></span>
-                      <div class="mock-card-name-group">
-                        <span class="mock-card-project-name">dashboard</span>
-                        <div class="mock-card-client">None</div>
-                      </div>
-                      <span class="mock-card-popout"
-                        ><svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="M12 13V7" />
-                          <path d="m15 10-3-3-3 3" />
-                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
-                      ></span>
-                    </div>
-                    <div class="mock-card-hours-row">
-                      <span class="mock-card-hours">25<span>m</span></span>
-                    </div>
-                    <div class="mock-card-stats">
-                      <div class="mock-card-stat">
-                        <b>11</b><span class="mock-card-stat-label">sessions</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>44</b><span class="mock-card-stat-label">prompts</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>19K</b><span class="mock-card-stat-label">tokens</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
-                      </div>
-                    </div>
-                    <div class="mock-card-footer">
-                      <div class="mock-footer-left">
-                        <span class="mock-bell"
-                          ><svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#555"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-                            <line x1="1" y1="1" x2="23" y2="23" /></svg
-                        ></span>
-                        <span>7h 2m ago</span>
-                      </div>
-                      <div class="mock-footer-right">
-                        <span class="mock-start-btn"
-                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          Start</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- ai bots -->
-                  <div class="mock-project-card">
-                    <div class="mock-card-header">
-                      <span class="mock-color-dot" style="background: #fb7185"></span>
-                      <div class="mock-card-name-group">
-                        <span class="mock-card-project-name">ml-pipeline</span>
-                        <div class="mock-card-client">Internal</div>
-                      </div>
-                      <span class="mock-card-popout"
-                        ><svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="M12 13V7" />
-                          <path d="m15 10-3-3-3 3" />
-                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
-                      ></span>
-                    </div>
-                    <div class="mock-card-hours-row">
-                      <span class="mock-card-hours">2<span>m</span></span>
-                    </div>
-                    <div class="mock-card-stats">
-                      <div class="mock-card-stat">
-                        <b>2</b><span class="mock-card-stat-label">sessions</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>3</b><span class="mock-card-stat-label">prompts</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>10K</b><span class="mock-card-stat-label">tokens</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
-                      </div>
-                    </div>
-                    <div class="mock-card-footer">
-                      <div class="mock-footer-left">
-                        <span class="mock-bell"
-                          ><svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#555"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-                            <line x1="1" y1="1" x2="23" y2="23" /></svg
-                        ></span>
-                        <span>5h 5m ago</span>
-                      </div>
-                      <div class="mock-footer-right">
-                        <span class="mock-start-btn"
-                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          Start</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- wmux -->
-                  <div class="mock-project-card">
-                    <div class="mock-card-header">
-                      <span class="mock-color-dot" style="background: #38bdf8"></span>
-                      <div class="mock-card-name-group">
-                        <span class="mock-card-project-name">infra-tools</span>
-                        <div class="mock-card-client">Unassigned</div>
-                      </div>
-                      <span class="mock-card-popout"
-                        ><svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="M12 13V7" />
-                          <path d="m15 10-3-3-3 3" />
-                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
-                      ></span>
-                    </div>
-                    <div class="mock-card-hours-row">
-                      <span class="mock-card-hours">2<span>h</span>7<span>m</span></span>
-                    </div>
-                    <div class="mock-card-stats">
-                      <div class="mock-card-stat">
-                        <b>4</b><span class="mock-card-stat-label">sessions</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>31</b><span class="mock-card-stat-label">prompts</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>134K</b><span class="mock-card-stat-label">tokens</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
-                      </div>
-                    </div>
-                    <div class="mock-card-footer">
-                      <div class="mock-footer-left">
-                        <span class="mock-bell"
-                          ><svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#eab308"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
-                        ></span>
-                        <span>4h 59m ago</span>
-                      </div>
-                      <div class="mock-footer-right">
-                        <span class="mock-start-btn"
-                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          Start</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- code -->
-                  <div class="mock-project-card">
-                    <div class="mock-card-header">
-                      <span class="mock-color-dot" style="background: #f97316"></span>
-                      <div class="mock-card-name-group">
-                        <span class="mock-card-project-name">web-app</span>
-                        <div class="mock-card-client">main</div>
-                      </div>
-                      <span class="mock-card-popout"
-                        ><svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="1.8"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="M12 13V7" />
-                          <path d="m15 10-3-3-3 3" />
-                          <rect x="3" y="3" width="18" height="18" rx="2" /></svg
-                      ></span>
-                    </div>
-                    <div class="mock-card-hours-row">
-                      <span class="mock-card-hours">1<span>h</span>12<span>m</span></span>
-                    </div>
-                    <div class="mock-card-stats">
-                      <div class="mock-card-stat">
-                        <b>1</b><span class="mock-card-stat-label">sessions</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>13</b><span class="mock-card-stat-label">prompts</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>9K</b><span class="mock-card-stat-label">tokens</span>
-                      </div>
-                      <div class="mock-card-stat">
-                        <b>&mdash;</b><span class="mock-card-stat-label">commits</span>
-                      </div>
-                    </div>
-                    <div class="mock-card-footer">
-                      <div class="mock-footer-left">
-                        <span class="mock-bell"
-                          ><svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#eab308"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg
-                        ></span>
-                        <span>1m ago</span>
-                      </div>
-                      <div class="mock-footer-right">
-                        <span class="mock-start-btn"
-                          ><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          Start</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Status Bar -->
-            <div class="mock-statusbar">
-              <span
-                >30 sessions &middot; 160 prompts &middot; 394.1K tokens &middot; 7 commits</span
+            <iframe
+              class="hero-demo"
+              src="./demo/"
+              title="ClauTime live demo (sample data)"
+              loading="lazy"
+            ></iframe>
+            <button
+              class="hero-demo-cover"
+              onclick="this.classList.add('off')"
+              aria-label="Activate the interactive demo"
+            >
+              <span>&#9654;&nbsp; Click to explore &mdash; live demo, sample data</span>
+            </button>
+            <button
+              class="hero-demo-fs"
+              onclick="document.querySelector('.hero-demo-cover').classList.add('off'); const f = document.querySelector('.hero-demo'); (f.requestFullscreen ? f.requestFullscreen() : Promise.reject()).catch(() => window.open('./demo/', '_blank'))"
+              title="Fullscreen"
+              aria-label="View demo fullscreen"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
               >
-              <span class="mock-statusbar-hours">4h today</span>
-            </div>
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+            </button>
           </div>
+          <p class="demo-caption">
+            Real app, sample data &mdash; every tab works, and that little bar floating up top is
+            the always-on-top desktop widget.
+            <a href="./demo/" target="_blank">Open full screen &rarr;</a>
+          </p>
         </div>
       </div>
     </section>
@@ -2139,6 +1417,7 @@
               </svg>
               View on GitHub
             </a>
+            <a href="./demo/" class="btn btn-secondary">Try the Live Demo</a>
             <a href="#features" class="btn btn-secondary">Explore Features</a>
           </div>
         </div>
@@ -2211,6 +1490,71 @@
         },
         { passive: true }
       )
+
+      // ═══ FLOATING WIDGETS ═══
+      // The real app's always-on-top widgets, rendered by the demo bundle at
+      // #widget/<projectId> — one per project, stacked top-right, fixed while
+      // you scroll, just like they float over your desktop. checkout-api pops
+      // in on load; the pop-out icons inside the embedded demo toggle the rest
+      // via postMessage.
+      const widgets = new Map() // projectId -> { el, slot }
+
+      function showWidget(projectId) {
+        if (widgets.has(projectId)) return
+        const used = new Set([...widgets.values()].map((w) => w.slot))
+        let slot = 0
+        while (used.has(slot)) slot++
+
+        const el = document.createElement('div')
+        el.className = 'float-widget'
+        el.style.top = 76 + slot * 70 + 'px'
+
+        const iframe = document.createElement('iframe')
+        iframe.src = './demo/#widget/' + projectId
+        iframe.title = 'ClauTime floating widget (demo) — drag to move'
+
+        el.append(iframe)
+        document.body.appendChild(el)
+        widgets.set(projectId, { el, slot })
+      }
+
+      // Drag is initiated inside the widget iframe (the whole widget is the
+      // handle); it streams screen-space deltas up here to move the container.
+      function dragWidgetBy(projectId, dx, dy) {
+        const w = widgets.get(projectId)
+        if (!w) return
+        const r = w.el.getBoundingClientRect()
+        w.el.style.right = 'auto'
+        w.el.style.left = Math.max(0, Math.min(r.left + dx, window.innerWidth - r.width)) + 'px'
+        w.el.style.top = Math.max(0, Math.min(r.top + dy, window.innerHeight - r.height)) + 'px'
+      }
+
+      function hideWidget(projectId) {
+        const w = widgets.get(projectId)
+        if (!w) return
+        w.el.remove()
+        widgets.delete(projectId)
+      }
+
+      window.addEventListener('message', (e) => {
+        const d = e.data
+        if (!d || d.type !== 'clautime-demo-widget') return
+        if (d.action === 'hide-all') {
+          for (const id of [...widgets.keys()]) hideWidget(id)
+        } else if (d.action === 'show') {
+          showWidget(d.projectId)
+        } else if (d.action === 'show-all') {
+          ;(d.projectIds ?? []).forEach(showWidget)
+        } else if (d.action === 'toggle') {
+          if (widgets.has(d.projectId)) hideWidget(d.projectId)
+          else showWidget(d.projectId)
+        } else if (d.action === 'drag-by') {
+          dragWidgetBy(d.projectId, d.dx, d.dy)
+        }
+      })
+
+      // Pop the first one in automatically once the page has settled
+      setTimeout(() => showWidget(1), 1600)
     </script>
   </body>
 </html>
