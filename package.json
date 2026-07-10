@@ -26,6 +26,7 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "app": "node scripts/kill-app.mjs && npm run rebuild:electron && npm run build:unpack && node scripts/launch-app.mjs",
+    "build:demo": "vite build --config vite.demo.config.ts",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
