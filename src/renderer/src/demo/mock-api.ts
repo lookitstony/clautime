@@ -24,7 +24,6 @@ import type {
   NewProject,
   UpdateProject
 } from '../../../shared/types/client-project'
-import type { GitCommit } from '../../../shared/types/git'
 import type {
   ReportFilters,
   ReportFormat,
