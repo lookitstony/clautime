@@ -817,10 +817,7 @@ export const mockApi = {
       return ok(undefined)
     },
     showAllWidgets: (projectIds: number[]) => {
-      window.parent.postMessage(
-        { type: 'clautime-demo-widget', action: 'show', projectId: projectIds[0] ?? 1 },
-        '*'
-      )
+      window.parent.postMessage({ type: 'clautime-demo-widget', action: 'show-all', projectIds }, '*')
       return ok(undefined)
     },
     hideAllWidgets: () => {
