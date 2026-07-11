@@ -8,7 +8,7 @@ import type {
   UpdateSession
 } from '../../../../shared/types/session'
 import type { Client, Project } from '../../../../shared/types/client-project'
-import { formatDuration, getProjectName } from '@/lib/format'
+import { formatDuration, getProjectName, resolveProjectName, resolveClientName } from '@/lib/format'
 
 async function fetchSessions(filters?: SessionFilters): Promise<Session[]> {
   const result = await window.api.sessions.getAll(filters)
@@ -252,7 +252,8 @@ export function useSessionStats(
 export function useGroupedSessions(
   sessions: Session[] | undefined,
   projects?: Project[],
-  clients?: Client[]
+  clients?: Client[],
+  presentationMode = false
 ): ProjectGroup[] {
   if (!sessions || sessions.length === 0) return []
 
@@ -285,8 +286,12 @@ export function useGroupedSessions(
 
     return {
       projectPath: group.sessions[0].projectPath,
-      projectName: project?.name ?? getProjectName(group.sessions[0].projectPath),
-      clientName: client?.name ?? null,
+      projectName: resolveProjectName(
+        project,
+        presentationMode,
+        getProjectName(group.sessions[0].projectPath)
+      ),
+      clientName: client ? resolveClientName(client, presentationMode) : null,
       clientColor: client?.color ?? null,
       projectId: group.projectId,
       isUnassigned: group.projectId == null,

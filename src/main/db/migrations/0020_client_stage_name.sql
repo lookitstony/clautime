@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD `stage_name` text;

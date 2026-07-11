@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionFilterBar } from './SessionFilterBar'
 import { useFilterStore } from '@/stores/use-filter-store'
+
+// SessionFilterBar reads presentation mode via a react-query hook, so every
+// render needs a QueryClient provider (and a stubbed settings API).
+function render(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return rtlRender(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+  })
+}
 
 const mockClients = [
   {
@@ -11,6 +23,7 @@ const mockClients = [
     billableRate: null,
     email: null,
     stripeCustomerId: null,
+    stageName: null,
     isActive: true,
     createdAt: '',
     updatedAt: ''
@@ -22,6 +35,7 @@ const mockClients = [
     billableRate: null,
     email: null,
     stripeCustomerId: null,
+    stageName: null,
     isActive: true,
     createdAt: '',
     updatedAt: ''
@@ -34,6 +48,8 @@ const mockProjects = [
     clientId: 1,
     name: 'ClauTime',
     invoiceName: null,
+    stageName: null,
+    hourlyRate: null,
     directoryPath: 'C:\\apps\\ClauTime',
     isBillable: true,
     isActive: true,
@@ -45,6 +61,8 @@ const mockProjects = [
     clientId: 2,
     name: 'OtherApp',
     invoiceName: null,
+    stageName: null,
+    hourlyRate: null,
     directoryPath: 'C:\\apps\\OtherApp',
     isBillable: true,
     isActive: true,
@@ -54,6 +72,11 @@ const mockProjects = [
 ]
 
 beforeEach(() => {
+  vi.stubGlobal('api', {
+    settings: {
+      getAll: vi.fn().mockResolvedValue({ success: true, data: {} })
+    }
+  })
   useFilterStore.getState().clearFilters()
 })
 

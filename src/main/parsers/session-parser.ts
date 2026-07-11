@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, basename, dirname } from 'node:path'
 import log from 'electron-log/main.js'
+import { isExcludedProjectDir } from '../../shared/paths'
 import type {
   ParsedSessionData,
   ParsedMessage,
@@ -88,6 +89,7 @@ export async function discoverSessionFiles(
 
   for (const dir of projectDirs) {
     if (!dir.isDirectory()) continue
+    if (isExcludedProjectDir(dir.name)) continue
     if (filterSet && !filterSet.has(dir.name)) continue
 
     const projectPath = join(projectsDir, dir.name)
@@ -133,7 +135,12 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
   let projectDirectory: string | null = null
   let summary: string | null = null
 
+  let lineIdx = 0
   for (const line of lines) {
+    // Yield to the event loop periodically so parsing a large (actively-growing)
+    // session file doesn't block the main process and freeze the UI.
+    if (++lineIdx % 2000 === 0) await new Promise((resolve) => setImmediate(resolve))
+
     const raw = parseJsonlLine(line)
     if (!raw) {
       log.warn(`Malformed JSONL line in ${filePath}, skipping`)

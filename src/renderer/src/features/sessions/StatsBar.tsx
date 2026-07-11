@@ -13,6 +13,7 @@ interface StatsBarProps {
   clientCount: number
   commitSessions: number
   estimatedCost: string | null
+  earnings: string | null
   isLoading: boolean
 }
 
@@ -25,10 +26,18 @@ export function StatsBar({
   clientCount,
   commitSessions,
   estimatedCost,
+  earnings,
   isLoading
 }: StatsBarProps): React.JSX.Element {
   const defs: StatCardDef[] = [
     { id: 'human-hours', label: 'Human Hours', value: humanHours, accent: true },
+    {
+      id: 'earnings',
+      label: 'Earned',
+      value: earnings ?? '',
+      accent: true,
+      available: earnings != null
+    },
     { id: 'agent-hours', label: 'Agent Hours', value: totalHours },
     { id: 'sessions', label: 'Sessions', value: totalSessions },
     { id: 'prompts', label: 'Prompts', value: totalPrompts.toLocaleString() },

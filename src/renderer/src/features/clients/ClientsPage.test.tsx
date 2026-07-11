@@ -12,6 +12,7 @@ const mockClients: Client[] = [
     billableRate: null,
     email: null,
     stripeCustomerId: null,
+    stageName: null,
     isActive: true,
     createdAt: '2026-03-04T00:00:00.000Z',
     updatedAt: '2026-03-04T00:00:00.000Z'
@@ -23,6 +24,7 @@ const mockClients: Client[] = [
     billableRate: null,
     email: null,
     stripeCustomerId: null,
+    stageName: null,
     isActive: true,
     createdAt: '2026-03-04T00:00:00.000Z',
     updatedAt: '2026-03-04T00:00:00.000Z'

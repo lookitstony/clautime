@@ -5,6 +5,8 @@ export interface TodayStats {
   totalPrompts: number
   totalTokens: number
   totalCommits: number
+  /** Earned so far today (USD): billable human hours × effective rate. */
+  earnedToday: number
 }
 
 export interface ProjectLiveStatus {

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { WIDGET_REGISTRY, DEFAULT_LAYOUT, SIZE_CONFIG } from '../widget-registry'
 
 describe('widget-registry', () => {
-  it('has 10 widgets registered', () => {
-    expect(WIDGET_REGISTRY).toHaveLength(10)
+  it('has 11 widgets registered', () => {
+    expect(WIDGET_REGISTRY).toHaveLength(11)
   })
 
   it('each widget has required fields', () => {
@@ -22,8 +22,8 @@ describe('widget-registry', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('DEFAULT_LAYOUT includes all 10 widgets', () => {
-    expect(DEFAULT_LAYOUT.widgets).toHaveLength(10)
+  it('DEFAULT_LAYOUT includes all 11 widgets', () => {
+    expect(DEFAULT_LAYOUT.widgets).toHaveLength(11)
     const ids = DEFAULT_LAYOUT.widgets.map((w) => w.id)
     for (const widget of WIDGET_REGISTRY) {
       expect(ids).toContain(widget.id)

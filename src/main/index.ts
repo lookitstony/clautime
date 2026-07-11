@@ -140,7 +140,7 @@ app.whenReady().then(() => {
 
   // Initialize tray, live monitor, file watcher, and restore widgets
   trayService.initialize(mainWindow!)
-  liveMonitorService.startMonitoring(5000)
+  liveMonitorService.startMonitoring(10000)
   fileWatcherService.start(mainWindow!)
   widgetService.restoreAll()
   widgetService.registerHotkey(settingsService.getSetting('widget_toggle_hotkey') || undefined)

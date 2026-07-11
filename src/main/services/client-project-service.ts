@@ -6,7 +6,7 @@ import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
 import { AppError } from '../../shared/types/ipc'
 import { CLIENT_COLORS } from '../../shared/types/client-project'
-import { normalizePath, getProjectName } from '../../shared/paths'
+import { normalizePath, getProjectName, isExcludedProjectPath } from '../../shared/paths'
 import type {
   Client,
   NewClient,
@@ -21,6 +21,7 @@ function toClient(row: typeof clients.$inferSelect): Client {
   return {
     id: row.id,
     name: row.name,
+    stageName: row.stageName ?? null,
     color: row.color,
     billableRate: row.billableRate ?? null,
     email: row.email ?? null,
@@ -38,6 +39,8 @@ function toProject(row: typeof projects.$inferSelect): Project {
     clientId: row.clientId,
     name: row.name,
     invoiceName: row.invoiceName ?? null,
+    stageName: row.stageName ?? null,
+    hourlyRate: row.hourlyRate ?? null,
     directoryPath: row.directoryPath,
     isBillable: row.isBillable,
     isActive: row.isActive,
@@ -81,6 +84,7 @@ export const clientProjectService = {
       .insert(clients)
       .values({
         name: data.name,
+        stageName: data.stageName ?? null,
         color,
         billableRate: data.billableRate ?? null,
         email: data.email ?? null,
@@ -106,6 +110,7 @@ export const clientProjectService = {
       .update(clients)
       .set({
         ...(data.name !== undefined && { name: data.name }),
+        ...(data.stageName !== undefined && { stageName: data.stageName }),
         ...(data.color !== undefined && { color: data.color }),
         ...(data.billableRate !== undefined && { billableRate: data.billableRate }),
         ...(data.email !== undefined && { email: data.email }),
@@ -214,6 +219,8 @@ export const clientProjectService = {
         name: data.name,
         directoryPath: normalized,
         isBillable: data.isBillable ?? true,
+        stageName: data.stageName ?? null,
+        hourlyRate: data.hourlyRate ?? null,
         createdAt: now,
         updatedAt: now
       })
@@ -247,6 +254,8 @@ export const clientProjectService = {
           directoryPath: normalizePath(data.directoryPath)
         }),
         ...(data.invoiceName !== undefined && { invoiceName: data.invoiceName }),
+        ...(data.stageName !== undefined && { stageName: data.stageName }),
+        ...(data.hourlyRate !== undefined && { hourlyRate: data.hourlyRate }),
         ...(data.isBillable !== undefined && { isBillable: data.isBillable }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         ...(data.clientId !== undefined && { clientId: data.clientId }),
@@ -324,6 +333,8 @@ export const clientProjectService = {
   },
 
   autoCreateProject(directoryPath: string): Project | null {
+    // Never auto-create projects for piped-swarm worktrees (…/pipes/…)
+    if (isExcludedProjectPath(directoryPath)) return null
     const existing = this.findProjectByDirectory(directoryPath)
     if (existing) return null
 

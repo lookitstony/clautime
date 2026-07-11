@@ -1,16 +1,22 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, extname } from 'node:path'
-import { homedir } from 'node:os'
 import log from 'electron-log/main.js'
 import { BrowserWindow } from 'electron'
 import { settingsService } from './settings-service'
 import { sessionService } from './session-service'
 import { clientProjectService } from './client-project-service'
 import { gitService } from './git-service'
+import { getClaudeConfigDirs } from './discovery-service'
 import { decodeProjectPath } from './session-detector'
 
-const DEBOUNCE_MS = 3000
+// Per-project debounce before an incremental scan. Kept high because each scan
+// re-parses the project's (often large, actively-growing) JSONL and writes to
+// better-sqlite3 synchronously — expensive work that blocks the main process.
+// A short debounce meant the active project re-parsed every few seconds and
+// froze the UI. The Live view has its own poll, so real-time status is
+// unaffected by scanning less eagerly; this only delays session persistence.
+const DEBOUNCE_MS = 20000
 
 /**
  * Watches ~/.claude/projects/ for JSONL file changes and new project directories.
@@ -18,57 +24,65 @@ const DEBOUNCE_MS = 3000
  * On new directory → check if it's a known project, notify renderer if not.
  */
 export const fileWatcherService = {
-  _watcher: null as FSWatcher | null,
+  _watchers: [] as FSWatcher[],
   _mainWindow: null as BrowserWindow | null,
   _debounceTimers: new Map<string, ReturnType<typeof setTimeout>>(),
   _knownDirs: new Set<string>(),
 
   async start(mainWindow: BrowserWindow): Promise<void> {
-    if (this._watcher) return
+    if (this._watchers.length > 0) return
 
     this._mainWindow = mainWindow
-    const claudeDir = settingsService.getSetting('claude_dir') ?? join(homedir(), '.claude')
-    const projectsDir = join(claudeDir, 'projects')
 
-    // Snapshot known directories for new-project detection
-    try {
-      const entries = await readdir(projectsDir, { withFileTypes: true })
-      for (const e of entries) {
-        if (e.isDirectory()) this._knownDirs.add(e.name)
+    // Watch every Claude profile (~/.claude, ~/.claude-vss, …) so switching
+    // accounts keeps live tracking working. A claude_dir override pins to one.
+    const override = settingsService.getSetting('claude_dir')
+    const configDirs = override ? [override] : await getClaudeConfigDirs()
+
+    for (const configDir of configDirs) {
+      const projectsDir = join(configDir, 'projects')
+
+      // Snapshot known directories for new-project detection
+      try {
+        const entries = await readdir(projectsDir, { withFileTypes: true })
+        for (const e of entries) {
+          if (e.isDirectory()) this._knownDirs.add(e.name)
+        }
+      } catch {
+        log.warn(`File watcher: cannot read ${projectsDir}, will retry on next change`)
+        continue
       }
-    } catch {
-      log.warn('File watcher: cannot read projects dir, will retry on next change')
+
+      try {
+        const watcher = watch(projectsDir, { recursive: true }, (_eventType, filename) => {
+          if (!filename) return
+          this._handleChange(projectsDir, filename)
+        })
+        watcher.on('error', (err) => {
+          log.warn(`File watcher error (${projectsDir}):`, err)
+        })
+        this._watchers.push(watcher)
+        log.info(`File watcher started on: ${projectsDir}`)
+      } catch (err) {
+        log.warn(`File watcher: failed to start on ${projectsDir}:`, err)
+      }
     }
 
-    try {
-      this._watcher = watch(projectsDir, { recursive: true }, (_eventType, filename) => {
-        if (!filename) return
-        this._handleChange(projectsDir, filename)
-      })
-
-      this._watcher.on('error', (err) => {
-        log.warn('File watcher error:', err)
-      })
-
-      log.info(`File watcher started on: ${projectsDir}`)
-
-      // Run a full scan on startup to catch anything missed while the app was closed
-      this._runStartupScan()
-    } catch (err) {
-      log.warn('File watcher: failed to start:', err)
-    }
+    // Run a full scan on startup to catch anything missed while the app was closed
+    this._runStartupScan()
   },
 
   stop(): void {
-    if (this._watcher) {
-      this._watcher.close()
-      this._watcher = null
-      for (const timer of this._debounceTimers.values()) {
-        clearTimeout(timer)
-      }
-      this._debounceTimers.clear()
-      log.info('File watcher stopped')
+    if (this._watchers.length === 0) return
+    for (const watcher of this._watchers) {
+      watcher.close()
     }
+    this._watchers = []
+    for (const timer of this._debounceTimers.values()) {
+      clearTimeout(timer)
+    }
+    this._debounceTimers.clear()
+    log.info('File watcher stopped')
   },
 
   async _runStartupScan(): Promise<void> {

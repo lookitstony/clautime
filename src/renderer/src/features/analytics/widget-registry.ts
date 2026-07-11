@@ -2,6 +2,7 @@ import {
   BarChart3,
   PieChart,
   Coins,
+  Wallet,
   Zap,
   TrendingUp,
   Timer,
@@ -81,6 +82,13 @@ const WIDGET_REGISTRY: readonly WidgetConfig[] = Object.freeze([
     icon: TrendingUp,
     defaultSize: 'medium' as WidgetSize,
     component: lazy(() => import('./widgets/PromptsPerDayChart'))
+  },
+  {
+    id: 'earnings',
+    title: 'Earned',
+    icon: Wallet,
+    defaultSize: 'small' as WidgetSize,
+    component: lazy(() => import('./widgets/EarningsCard'))
   },
   {
     id: 'billable-earnings',

@@ -5,6 +5,8 @@ export const clients = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     name: text('name').notNull().unique(),
+    /** Optional display name used while presentation mode is on (streaming/demos). */
+    stageName: text('stage_name'),
     color: text('color').notNull(),
     billableRate: real('billable_rate'),
     email: text('email'),

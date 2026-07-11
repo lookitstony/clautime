@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import log from 'electron-log/main.js'
+import { isExcludedProjectDir } from '../../shared/paths'
 import type { DiscoveredProject } from '../../shared/types/session'
 
 /**
@@ -27,29 +28,70 @@ export const discoveryService = {
   }
 }
 
-async function readClaudeProjects(): Promise<DiscoveredProject[]> {
-  const projectsDir = join(homedir(), '.claude', 'projects')
-  log.info(`Discovery: reading projects from: ${projectsDir}`)
-  const projects: DiscoveredProject[] = []
+/**
+ * Resolve every Claude config directory to scan. Claude Code stores sessions
+ * under CLAUDE_CONFIG_DIR, and users who juggle multiple accounts point it at
+ * sibling dirs like ~/.claude-vss or ~/.claude-feature23. We enumerate every
+ * ~/.claude* folder that actually has a projects/ subdir so switching accounts
+ * doesn't silently stop tracking. Returns [~/.claude] as a fallback.
+ */
+export async function getClaudeConfigDirs(): Promise<string[]> {
+  const home = homedir()
+  const fallback = join(home, '.claude')
 
+  let entries: import('node:fs').Dirent<string>[]
   try {
-    const entries = await readdir(projectsDir, { withFileTypes: true })
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const encodedName = entry.name
-      const projectPath = decodeProjectName(encodedName)
-      projects.push({
-        projectPath,
-        projectName: basename(projectPath) || encodedName,
-        encodedName,
-        hasClaudeDir: true
-      })
-    }
+    entries = await readdir(home, { withFileTypes: true, encoding: 'utf8' })
   } catch {
-    log.warn('Discovery: ~/.claude/projects not found or inaccessible')
+    return [fallback]
   }
 
-  log.info(`Discovery: found ${projects.length} projects`)
+  const dirs: string[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    if (entry.name !== '.claude' && !entry.name.startsWith('.claude-')) continue
+    const base = join(home, entry.name)
+    try {
+      // Only include profiles that actually hold session data.
+      await readdir(join(base, 'projects'))
+      dirs.push(base)
+    } catch {
+      // No projects/ subdir — not a session-bearing profile, skip.
+    }
+  }
+
+  return dirs.length > 0 ? dirs : [fallback]
+}
+
+async function readClaudeProjects(): Promise<DiscoveredProject[]> {
+  const configDirs = await getClaudeConfigDirs()
+  const byEncodedName = new Map<string, DiscoveredProject>()
+
+  for (const configDir of configDirs) {
+    const projectsDir = join(configDir, 'projects')
+    log.info(`Discovery: reading projects from: ${projectsDir}`)
+    try {
+      const entries = await readdir(projectsDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        if (isExcludedProjectDir(entry.name)) continue
+        const encodedName = entry.name
+        if (byEncodedName.has(encodedName)) continue
+        const projectPath = decodeProjectName(encodedName)
+        byEncodedName.set(encodedName, {
+          projectPath,
+          projectName: basename(projectPath) || encodedName,
+          encodedName,
+          hasClaudeDir: true
+        })
+      }
+    } catch {
+      log.warn(`Discovery: ${projectsDir} not found or inaccessible`)
+    }
+  }
+
+  const projects = [...byEncodedName.values()]
+  log.info(`Discovery: found ${projects.length} projects across ${configDirs.length} config dir(s)`)
   return projects
 }
 

@@ -84,6 +84,8 @@ export interface ReportSummary {
   totalBilledCost: number
   /** Breakdown of billed cost per client */
   billedByClient: { clientName: string; hours: number; rate: number; cost: number }[]
+  /** Earned = billable human hours × effective (project-or-client) rate, for the filtered period */
+  totalEarned: number
 }
 
 /** Report result */

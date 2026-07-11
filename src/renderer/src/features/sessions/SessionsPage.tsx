@@ -26,9 +26,11 @@ import { useSessionIdsWithCommits } from '../git/use-git'
 import { useUIStore } from '@/stores/use-ui-store'
 import { useFilterStore } from '@/stores/use-filter-store'
 import { cn } from '@/lib/utils'
-import { getProjectColor, getDateKey, formatDateLabel, formatDuration } from '@/lib/format'
+import { getProjectColor, getDateKey, formatDateLabel, formatDuration, formatUsd } from '@/lib/format'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { Session } from '../../../../shared/types/session'
 import { estimateCostUsd } from '../../../../shared/pricing'
+import { computeEarnings } from '../../../../shared/earnings'
 
 function SessionListSkeleton(): React.JSX.Element {
   return (
@@ -98,7 +100,17 @@ export function SessionsPage(): React.JSX.Element {
       maximumFractionDigits: 0
     })
   }, [modelUsage])
-  const groups = useGroupedSessions(sessions, allProjects, clients)
+
+  const presentationMode = usePresentationMode()
+
+  // Earned = billable human hours × effective rate over the visible sessions.
+  const earnings = useMemo(() => {
+    if (!sessions || sessions.length === 0 || !allProjects || !clients) return null
+    const total = computeEarnings(sessions, allProjects, clients)
+    return total > 0 ? formatUsd(total) : null
+  }, [sessions, allProjects, clients])
+
+  const groups = useGroupedSessions(sessions, allProjects, clients, presentationMode)
   const queryClient = useQueryClient()
   const setActiveView = useUIStore((s) => s.setActiveView)
   const navigate = useNavigate()
@@ -223,6 +235,7 @@ export function SessionsPage(): React.JSX.Element {
         clientCount={stats.clientCount}
         commitSessions={stats.commitSessions}
         estimatedCost={estimatedCost}
+        earnings={earnings}
         isLoading={isLoading}
       />
 

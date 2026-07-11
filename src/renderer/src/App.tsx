@@ -24,15 +24,42 @@ import { useLiveBroadcastSync } from '@/features/live/use-live'
 import { useUpdaterNotifications } from '@/features/settings/use-updater'
 import type { ProjectLiveStatus } from '../../shared/types/live'
 
+// While you're actively coding, the file watcher emits a scan-complete event
+// every few seconds (across every Claude profile). Invalidating on each one
+// forces immediate refetches and makes the panels visibly churn. Throttle the
+// invalidation (leading + trailing) so bursts coalesce; the Live page keeps its
+// own 15s poll, so real-time freshness is unaffected.
+const WATCHER_INVALIDATE_THROTTLE_MS = 10_000
+
 function useFileWatcherEvents(): void {
   const qc = useQueryClient()
 
   useEffect(() => {
-    window.api.live.onSessionsUpdated(() => {
+    let lastRun = 0
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const flush = (): void => {
+      lastRun = Date.now()
+      timer = null
       qc.invalidateQueries({ queryKey: ['sessions'] })
-      qc.invalidateQueries({ queryKey: ['live'] })
       qc.invalidateQueries({ queryKey: ['git'] })
-    })
+      // Note: ['live'] is intentionally NOT invalidated here — the Live page
+      // polls its own data every 15s, and forcing the (heavy, FS-walking)
+      // live-monitor recompute on every file change piles work onto the main
+      // process and contributes to UI stalls.
+    }
+
+    const schedule = (): void => {
+      if (timer) return // a trailing flush is already pending
+      const elapsed = Date.now() - lastRun
+      if (elapsed >= WATCHER_INVALIDATE_THROTTLE_MS) {
+        flush() // leading edge — refresh immediately
+      } else {
+        timer = setTimeout(flush, WATCHER_INVALIDATE_THROTTLE_MS - elapsed)
+      }
+    }
+
+    window.api.live.onSessionsUpdated(schedule)
 
     window.api.live.onNewProject((info) => {
       toast.info(`New project detected: ${info.projectName}`, {
@@ -42,6 +69,10 @@ function useFileWatcherEvents(): void {
       qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['live'] })
     })
+
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
   }, [qc])
 }
 

@@ -100,6 +100,7 @@ const mockClients = [
     billableRate: null,
     email: null,
     stripeCustomerId: null,
+    stageName: null,
     isActive: true,
     createdAt: '',
     updatedAt: ''
@@ -111,6 +112,8 @@ const mockProjects = [
     clientId: 1,
     name: 'ClauTime',
     invoiceName: null,
+    stageName: null,
+    hourlyRate: null,
     directoryPath: 'C:\\apps\\ClauTime',
     isBillable: true,
     isActive: true,

@@ -5,7 +5,10 @@ import { sessions } from '../db/schema/sessions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { getProjectName } from '../../shared/paths'
+import { computeEarnings } from '../../shared/earnings'
+import { clientAlias, projectAlias } from '../../shared/presentation-alias'
 import { clientProjectService } from './client-project-service'
+import { settingsService } from './settings-service'
 import type {
   ReportFilters,
   ReportFormat,
@@ -103,24 +106,36 @@ export const reportService = {
     }
 
     // Build lookup maps for project and client names/rates
-    const projectMap = new Map<number, { name: string; clientId: number | null }>()
+    const presentationMode = settingsService.getSetting('presentation_mode') === 'true'
+    const projectMap = new Map<
+      number,
+      { name: string; stageName: string | null; clientId: number; hourlyRate: number | null }
+    >()
     const clientMap = new Map<number, string>()
     const clientRateMap = new Map<number, number>()
 
     const allProjects = db.select().from(projects).all()
     for (const p of allProjects) {
-      projectMap.set(p.id, { name: p.name, clientId: p.clientId })
+      projectMap.set(p.id, {
+        name: p.name,
+        stageName: p.stageName ?? null,
+        clientId: p.clientId,
+        hourlyRate: p.hourlyRate ?? null
+      })
     }
     const allClients = db.select().from(clients).all()
     for (const c of allClients) {
-      clientMap.set(c.id, c.name)
+      clientMap.set(c.id, presentationMode ? c.stageName || clientAlias(c.id) : c.name)
       if (c.billableRate != null) clientRateMap.set(c.id, c.billableRate)
     }
 
     const getProjectInfo = (row: (typeof rows)[0]) => {
       if (row.projectId != null) {
         const proj = projectMap.get(row.projectId)
-        const projName = proj?.name ?? getProjectName(row.projectPath)
+        const rawName = proj?.name ?? getProjectName(row.projectPath)
+        const projName = presentationMode
+          ? proj?.stageName || projectAlias(row.projectId)
+          : rawName
         const clientName = row.clientId != null ? (clientMap.get(row.clientId) ?? null) : null
         return { projectName: projName, clientName }
       }
@@ -336,6 +351,8 @@ export const reportService = {
       }
     })
 
+    const totalEarned = computeEarnings(rows, allProjects, allClients)
+
     result.summary = {
       totalSessions: rows.length,
       totalDurationMinutes: rows.reduce((s, r) => s + r.durationMinutes, 0),
@@ -343,7 +360,8 @@ export const reportService = {
       totalInputTokens: rows.reduce((s, r) => s + r.inputTokens, 0),
       totalOutputTokens: rows.reduce((s, r) => s + r.outputTokens, 0),
       totalBilledCost: billedByClient.reduce((s, b) => s + b.cost, 0),
-      billedByClient
+      billedByClient,
+      totalEarned: Math.round(totalEarned * 100) / 100
     }
 
     const durationMs = Date.now() - startTime

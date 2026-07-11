@@ -134,6 +134,20 @@
       "when": 1775000000000,
       "tag": "0018_session_model_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1783309579545,
+      "tag": "0019_project_earnings_stage",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1783313930818,
+      "tag": "0020_client_stage_name",
+      "breakpoints": true
     }
   ]
 }
