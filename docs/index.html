@@ -60,7 +60,7 @@
         inset: 0;
         z-index: 2;
         pointer-events: none;
-        opacity: 0.02;
+        opacity: 0.032;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
       }
 
@@ -72,6 +72,31 @@
         overflow-x: hidden;
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
+      }
+
+      /* Structured backdrop: a fixed dot grid plus soft color pools so no
+         stretch of the page reads as flat black */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-color: var(--bg);
+        background-image:
+          linear-gradient(rgba(160, 160, 205, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 160, 205, 0.03) 1px, transparent 1px),
+          radial-gradient(circle at 1px 1px, rgba(175, 175, 210, 0.09) 1.2px, transparent 1.9px),
+          radial-gradient(ellipse 55% 48% at 6% 3%, rgba(20, 184, 166, 0.15), transparent 58%),
+          radial-gradient(ellipse 58% 50% at 96% 62%, rgba(139, 92, 246, 0.12), transparent 60%),
+          radial-gradient(ellipse 72% 55% at 50% 110%, rgba(20, 184, 166, 0.09), transparent 62%);
+        background-size:
+          64px 64px,
+          64px 64px,
+          32px 32px,
+          100% 100%,
+          100% 100%,
+          100% 100%;
       }
 
       ::selection {
@@ -90,11 +115,19 @@
         padding: 96px 0;
       }
 
-      /* Alternating raised bands with a slow breathing glow */
+      /* Alternating raised bands with a slow breathing glow + dotted grain */
       section.alt {
         position: relative;
         overflow: hidden;
-        background: var(--bg-raised);
+        background-color: var(--bg-raised);
+        background-image:
+          linear-gradient(rgba(160, 160, 205, 0.028) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 160, 205, 0.028) 1px, transparent 1px),
+          radial-gradient(circle at 1px 1px, rgba(170, 170, 205, 0.07) 1.2px, transparent 1.8px);
+        background-size:
+          64px 64px,
+          64px 64px,
+          32px 32px;
         border-top: 1px solid var(--border);
         border-bottom: 1px solid var(--border);
       }
@@ -132,6 +165,44 @@
 
       section.alt .container {
         position: relative;
+      }
+
+      /* Ambient corner glow behind the plain (non-band) sections */
+      #features,
+      #getting-started {
+        position: relative;
+      }
+
+      #features::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 48% 58% at 88% 6%,
+          rgba(20, 184, 166, 0.1),
+          transparent 58%
+        );
+      }
+
+      #getting-started::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse 52% 58% at 12% 12%,
+          rgba(139, 92, 246, 0.09),
+          transparent 58%
+        );
+      }
+
+      #features .container,
+      #getting-started .container {
+        position: relative;
+        z-index: 1;
       }
 
       /* Nav */
@@ -683,7 +754,13 @@
         position: relative;
         overflow: hidden;
         padding: 28px;
-        background: var(--card);
+        background-color: var(--card);
+        background-image: radial-gradient(
+          circle at 1px 1px,
+          rgba(255, 255, 255, 0.035) 1px,
+          transparent 0
+        );
+        background-size: 15px 15px;
         border: 1px solid var(--border);
         border-radius: 12px;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -836,7 +913,14 @@
       }
 
       .savings-compare {
-        background: var(--card);
+        position: relative;
+        background-color: var(--card);
+        background-image: radial-gradient(
+          circle at 1px 1px,
+          rgba(255, 255, 255, 0.035) 1px,
+          transparent 0
+        );
+        background-size: 15px 15px;
         border: 1px solid var(--border);
         border-radius: 14px;
         padding: 32px;
