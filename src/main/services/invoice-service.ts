@@ -8,9 +8,11 @@ import { projects } from '../db/schema/projects'
 import { gitCommits } from '../db/schema/git-commits'
 import { clientProjectService } from './client-project-service'
 import { credentialService } from './credential-service'
+import { settingsService } from './settings-service'
 import { stripeService } from './stripe-service'
 import { aiService } from './ai-service'
 import { AppError } from '../../shared/types/ipc'
+import { clientAlias } from '../../shared/presentation-alias'
 import {
   INVOICE_STATUSES,
   type GeneratedLineItem,
@@ -606,9 +608,12 @@ export const invoiceService = {
             .all()
         : db.select().from(invoices).orderBy(desc(invoices.createdAt)).all()
 
-    // Join client names
+    // Join client names (masked to stage names while presentation mode is on)
+    const presentationMode = settingsService.getSetting('presentation_mode') === 'true'
     const clientRows = db.select().from(clients).all()
-    const clientMap = new Map(clientRows.map((c) => [c.id, c.name]))
+    const clientMap = new Map(
+      clientRows.map((c) => [c.id, presentationMode ? c.stageName || clientAlias(c.id) : c.name])
+    )
 
     return rows.map((row) => ({
       id: row.id,
@@ -640,6 +645,12 @@ export const invoiceService = {
     if (!row) return null
 
     const clientRow = db.select().from(clients).where(eq(clients.id, row.clientId)).get()
+    const presentationMode = settingsService.getSetting('presentation_mode') === 'true'
+    const clientDisplayName = clientRow
+      ? presentationMode
+        ? clientRow.stageName || clientAlias(clientRow.id)
+        : clientRow.name
+      : 'Unknown'
     const items = db
       .select()
       .from(invoiceLineItems)
@@ -650,7 +661,7 @@ export const invoiceService = {
     return {
       id: row.id,
       clientId: row.clientId,
-      clientName: clientRow?.name ?? 'Unknown',
+      clientName: clientDisplayName,
       stripeInvoiceId: row.stripeInvoiceId,
       status: row.status as LocalInvoice['status'],
       amountDueCents: row.amountDueCents,

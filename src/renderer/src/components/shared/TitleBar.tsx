@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Minus, Square, X, Copy, Sun, Moon, ArrowDownToLine } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Minus, Square, X, Copy, Sun, Moon, ArrowDownToLine, VenetianMask } from 'lucide-react'
 import appIcon from '../../../../../resources/icon.png'
 
 function getSystemTheme(): string {
@@ -24,6 +25,24 @@ function useTheme(): [string, () => void] {
 export function TitleBar(): React.JSX.Element {
   const [isMaximized, setIsMaximized] = useState(false)
   const [theme, toggleTheme] = useTheme()
+  const queryClient = useQueryClient()
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings', 'all'],
+    queryFn: async () => {
+      const r = await window.api.settings.getAll()
+      return r.success ? r.data : {}
+    }
+  })
+  const presentationMode = settings?.['presentation_mode'] === 'true'
+
+  const togglePresentation = useCallback(async () => {
+    await window.api.settings.set('presentation_mode', presentationMode ? 'false' : 'true')
+    // Refresh every surface that renders project names or derives from settings.
+    for (const key of [['settings'], ['sessions'], ['live'], ['analytics'], ['projects']]) {
+      queryClient.invalidateQueries({ queryKey: key })
+    }
+  }, [presentationMode, queryClient])
 
   useEffect(() => {
     window.api.window.isMaximized().then(setIsMaximized)
@@ -46,6 +65,24 @@ export function TitleBar(): React.JSX.Element {
         className="flex h-full items-center"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
+        <button
+          type="button"
+          onClick={togglePresentation}
+          className={
+            'flex h-full w-9 items-center justify-center transition-colors hover:bg-[var(--background-elevated)] ' +
+            (presentationMode
+              ? 'text-[var(--accent)]'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]')
+          }
+          aria-label={presentationMode ? 'Turn off presentation mode' : 'Turn on presentation mode'}
+          title={
+            presentationMode
+              ? 'Presentation mode on — showing project stage names'
+              : 'Presentation mode off'
+          }
+        >
+          <VenetianMask size={14} />
+        </button>
         <button
           type="button"
           onClick={toggleTheme}

@@ -42,6 +42,8 @@ export function ProjectForm({
 
   const [name, setName] = useState('')
   const [invoiceName, setInvoiceName] = useState('')
+  const [stageName, setStageName] = useState('')
+  const [hourlyRate, setHourlyRate] = useState('')
   const [directoryPath, setDirectoryPath] = useState('')
   const [isBillable, setIsBillable] = useState(true)
   const [isExcluded, setIsExcluded] = useState(false)
@@ -53,6 +55,8 @@ export function ProjectForm({
       if (project) {
         setName(project.name)
         setInvoiceName(project.invoiceName ?? '')
+        setStageName(project.stageName ?? '')
+        setHourlyRate(project.hourlyRate != null ? String(project.hourlyRate) : '')
         setDirectoryPath(project.directoryPath)
         setIsBillable(project.isBillable)
         setIsExcluded(!project.isActive)
@@ -60,6 +64,8 @@ export function ProjectForm({
       } else {
         setName('')
         setInvoiceName('')
+        setStageName('')
+        setHourlyRate('')
         setDirectoryPath('')
         setIsBillable(true)
         setIsExcluded(false)
@@ -84,6 +90,9 @@ export function ProjectForm({
 
     setError('')
 
+    const parsedRate = hourlyRate.trim() === '' ? null : Number(hourlyRate)
+    const rate = parsedRate != null && Number.isFinite(parsedRate) && parsedRate >= 0 ? parsedRate : null
+
     try {
       if (isEdit && project) {
         await updateProject.mutateAsync({
@@ -91,6 +100,8 @@ export function ProjectForm({
           data: {
             name: trimmedName,
             invoiceName: invoiceName.trim() || null,
+            stageName: stageName.trim() || null,
+            hourlyRate: rate,
             directoryPath: trimmedPath,
             isBillable,
             isActive: !isExcluded,
@@ -103,7 +114,9 @@ export function ProjectForm({
           clientId: selectedClientId,
           name: trimmedName,
           directoryPath: trimmedPath,
-          isBillable
+          isBillable,
+          stageName: stageName.trim() || null,
+          hourlyRate: rate
         })
         toast.success('Project created')
       }
@@ -179,6 +192,58 @@ export function ProjectForm({
             />
             <p className="text-[11px] text-[var(--text-muted)]">
               Display name on invoices. Leave blank to use project name.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="project-stage-name" className="text-[13px] font-medium">
+              Stage Name
+            </label>
+            <input
+              id="project-stage-name"
+              type="text"
+              value={stageName}
+              onChange={(e) => setStageName(e.target.value)}
+              placeholder={name || 'Same as project name'}
+              className={cn(
+                'w-full rounded-md border px-3 py-2 text-[13px]',
+                'bg-[var(--background-secondary)] text-[var(--text-primary)]',
+                'placeholder:text-[var(--text-muted)]',
+                'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
+                'border-[var(--surface-border)]'
+              )}
+            />
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Shown in place of the real name when Presentation Mode is on (streaming/demos).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="project-hourly-rate" className="text-[13px] font-medium">
+              Hourly Rate
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] text-[var(--text-muted)]">$</span>
+              <input
+                id="project-hourly-rate"
+                type="number"
+                min={0}
+                step="1"
+                value={hourlyRate}
+                onChange={(e) => setHourlyRate(e.target.value)}
+                placeholder="Uses client rate"
+                className={cn(
+                  'w-full rounded-md border px-3 py-2 text-[13px]',
+                  'bg-[var(--background-secondary)] text-[var(--text-primary)]',
+                  'placeholder:text-[var(--text-muted)]',
+                  'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
+                  'border-[var(--surface-border)]'
+                )}
+              />
+              <span className="whitespace-nowrap text-[13px] text-[var(--text-muted)]">/hr</span>
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Per-project rate for Earned totals. Leave blank to use the client&apos;s rate.
             </p>
           </div>
 

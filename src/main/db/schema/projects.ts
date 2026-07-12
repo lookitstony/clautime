@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
 import { clients } from './clients'
 
 export const projects = sqliteTable(
@@ -11,6 +11,10 @@ export const projects = sqliteTable(
     name: text('name').notNull(),
     directoryPath: text('directory_path').notNull().unique(),
     invoiceName: text('invoice_name'),
+    /** Optional display name used while presentation mode is on (streaming/demos). */
+    stageName: text('stage_name'),
+    /** Per-project hourly rate in dollars. Null = fall back to the client's rate. */
+    hourlyRate: real('hourly_rate'),
     isBillable: integer('is_billable', { mode: 'boolean' }).notNull().default(true),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at')

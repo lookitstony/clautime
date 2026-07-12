@@ -11,7 +11,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { useFilterStore } from '@/stores/use-filter-store'
-import { formatShortDate, type DatePreset } from '@/lib/format'
+import { formatShortDate, resolveClientName, resolveProjectName, type DatePreset } from '@/lib/format'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { Client, Project } from '../../../../shared/types/client-project'
 
 interface SessionFilterBarProps {
@@ -41,6 +42,7 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
     hasActiveFilters
   } = useFilterStore()
 
+  const presentationMode = usePresentationMode()
   const [customOpen, setCustomOpen] = useState(false)
   const isCustomRange = datePreset == null && (startDate != null || endDate != null)
 
@@ -142,7 +144,7 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
             <SelectItem value="__all__">All Clients</SelectItem>
             {clients.map((c) => (
               <SelectItem key={c.id} value={String(c.id)}>
-                {c.name}
+                {resolveClientName(c, presentationMode)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -162,7 +164,7 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
             <SelectItem value="__all__">All Projects</SelectItem>
             {filteredProjects.map((p) => (
               <SelectItem key={p.id} value={String(p.id)}>
-                {p.name}
+                {resolveProjectName(p, presentationMode)}
               </SelectItem>
             ))}
           </SelectContent>

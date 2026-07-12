@@ -290,6 +290,7 @@ export function SettingsPage(): React.JSX.Element {
   })
 
   // ============= Git Identity =============
+  const presentationMode = settings?.['presentation_mode'] === 'true'
   const { data: gitIdentity } = useGitIdentity()
   const { data: detectedGitIdentity } = useDetectGitIdentity()
   const { data: unconfiguredEmails = [] } = useUnconfiguredGitEmails()
@@ -1003,6 +1004,34 @@ export function SettingsPage(): React.JSX.Element {
         </SectionCard>
       </section>
 
+      {/* Presentation */}
+      <section>
+        <SectionHeader title="Presentation" />
+        <SectionCard>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-[12px] font-semibold text-[var(--text-primary)]">
+                Presentation Mode
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Show each project&apos;s Stage Name instead of its real name across Sessions, Live,
+                and Analytics — for streaming or demos. Set stage names per project in Clients. Also
+                toggleable from the title bar (mask icon).
+              </p>
+            </div>
+            <Switch
+              checked={settings?.['presentation_mode'] === 'true'}
+              onCheckedChange={(checked) =>
+                saveSetting.mutate({
+                  key: 'presentation_mode',
+                  value: checked ? 'true' : 'false'
+                })
+              }
+            />
+          </div>
+        </SectionCard>
+      </section>
+
       {/* Session Detection */}
       <section>
         <SectionHeader title="Session Detection" />
@@ -1110,7 +1139,7 @@ export function SettingsPage(): React.JSX.Element {
             </p>
             <div className="flex items-center gap-2">
               <input
-                type="text"
+                type={presentationMode ? 'password' : 'text'}
                 value={gitEmailsInput}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => {
                   setGitEmailsInput(e.target.value)
@@ -1161,10 +1190,11 @@ export function SettingsPage(): React.JSX.Element {
                   >
                     <div className="min-w-0">
                       <div className="truncate font-mono text-[12px] text-[var(--text-primary)]">
-                        {author.email}
+                        {presentationMode ? '••••••••••' : author.email}
                       </div>
                       <div className="truncate text-[11px] text-[var(--text-muted)]">
-                        {author.name || 'unknown'} · {author.count} commit
+                        {presentationMode ? '••••••' : author.name || 'unknown'} · {author.count}{' '}
+                        commit
                         {author.count === 1 ? '' : 's'}
                       </div>
                     </div>

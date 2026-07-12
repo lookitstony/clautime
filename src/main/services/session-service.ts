@@ -1,5 +1,4 @@
 import { stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join, basename, dirname } from 'node:path'
 import { eq, and, gte, lte, inArray, notInArray, sql, or, isNull, type SQL } from 'drizzle-orm'
 import log from 'electron-log/main.js'
@@ -15,6 +14,8 @@ import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { discoverSessionFiles, parseSessionFile } from '../parsers'
 import { detectSessionsFromMultiple } from './session-detector'
+import { getClaudeConfigDirs } from './discovery-service'
+import { isExcludedProjectDir } from '../../shared/paths'
 import type {
   SessionFilters,
   ScanResult,
@@ -29,7 +30,25 @@ import type {
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
-const DEFAULT_CLAUDE_DIR = join(homedir(), '.claude')
+
+/**
+ * Resolve which Claude config dirs a scan should cover. An explicit dir (test
+ * fixture or a user-set claude_dir override) wins and is used alone; otherwise
+ * we auto-discover every ~/.claude* profile so switching accounts keeps tracking.
+ */
+async function resolveScanDirs(explicit?: string): Promise<string[]> {
+  const override = explicit ?? settingsService.getSetting('claude_dir') ?? undefined
+  return override ? [override] : getClaudeConfigDirs()
+}
+
+/** Discover session files across every resolved config dir. */
+async function discoverSessionFilesAcross(
+  dirs: string[],
+  projectFilter?: string[]
+): Promise<string[]> {
+  const perDir = await Promise.all(dirs.map((d) => discoverSessionFiles(d, projectFilter)))
+  return perDir.flat()
+}
 
 function safeParseJsonArray(str: string): string[] {
   try {
@@ -70,20 +89,22 @@ export const sessionService = {
 
   async _doScan(claudeDir?: string, projectFilter?: string[]): Promise<ScanResult> {
     const startTime = Date.now()
-    const dir = claudeDir ?? settingsService.getSetting('claude_dir') ?? DEFAULT_CLAUDE_DIR
+    const dirs = await resolveScanDirs(claudeDir)
 
     const idleTimeoutStr = settingsService.getSetting('idle_timeout_minutes')
     const parsed = idleTimeoutStr ? parseInt(idleTimeoutStr, 10) : NaN
     const idleTimeoutMinutes = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
 
-    log.info(`Starting session scan in: ${dir} (idle timeout: ${idleTimeoutMinutes}min)`)
+    log.info(
+      `Starting session scan in: ${dirs.join(', ')} (idle timeout: ${idleTimeoutMinutes}min)`
+    )
 
-    // 1. Discover session files (optionally filtered to specific projects)
-    const allFiles = await discoverSessionFiles(dir, projectFilter)
+    // 1. Discover session files across every config dir (optionally project-filtered)
+    const allFiles = await discoverSessionFilesAcross(dirs, projectFilter)
     log.info(`Discovered ${allFiles.length} total session files`)
 
     // Backfill raw_messages on first scan if table is empty
-    await this._backfillIfNeeded(dir, projectFilter)
+    await this._backfillIfNeeded(claudeDir, projectFilter)
 
     // 2. Filter to only new/changed files (also collects file mtimes and sizes)
     const { files: filesToProcess, mtimes, fileSizes } = await filterChangedFiles(allFiles)
@@ -135,9 +156,7 @@ export const sessionService = {
 
           if (staleIds.length > 0) {
             tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, staleIds)).run()
-            tx.delete(sessionModelUsage)
-              .where(inArray(sessionModelUsage.sessionId, staleIds))
-              .run()
+            tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, staleIds)).run()
             tx.update(gitCommits)
               .set({ sessionId: null })
               .where(inArray(gitCommits.sessionId, staleIds))
@@ -296,6 +315,8 @@ export const sessionService = {
       const first = msgs[0]
       const sessionId = first.claudeSessionId || basename(sourceFile, '.jsonl')
       const projectPathEncoded = first.projectPathEncoded || basename(dirname(sourceFile))
+      // Skip piped-swarm worktree dirs so a rebuild also purges any already-stored pipe sessions
+      if (isExcludedProjectDir(projectPathEncoded)) continue
       const projectDirectory = msgs.find((m) => m.cwd)?.cwd || null
 
       // Reconstruct messages
@@ -525,9 +546,9 @@ export const sessionService = {
     if (count && count.count > 0) return
 
     log.info('Raw messages table empty — running backfill...')
-    const dir = claudeDir ?? settingsService.getSetting('claude_dir') ?? DEFAULT_CLAUDE_DIR
+    const dirs = await resolveScanDirs(claudeDir)
 
-    const allFiles = await discoverSessionFiles(dir, projectFilter)
+    const allFiles = await discoverSessionFilesAcross(dirs, projectFilter)
     log.info(`Backfill: parsing ${allFiles.length} JSONL files`)
 
     for (const filePath of allFiles) {

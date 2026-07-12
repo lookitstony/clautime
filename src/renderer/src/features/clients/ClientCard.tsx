@@ -16,9 +16,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { resolveClientName } from '@/lib/format'
 import { ProjectList } from './ProjectList'
 import { useDeleteClient } from './use-clients'
 import { useProjects } from './use-projects'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { Client } from '../../../../shared/types/client-project'
 
 interface ClientCardProps {
@@ -38,6 +40,8 @@ export function ClientCard({
   const deleteClient = useDeleteClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const projectCount = projects?.length ?? 0
+  const presentationMode = usePresentationMode()
+  const displayName = resolveClientName(client, presentationMode)
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -65,7 +69,7 @@ export function ClientCard({
         <div
           role="group"
           aria-expanded={isExpanded}
-          aria-label={`${client.name} - ${projectCount} projects`}
+          aria-label={`${displayName} - ${projectCount} projects`}
           tabIndex={0}
           onKeyDown={handleKeyDown}
           className={cn(
@@ -85,7 +89,7 @@ export function ClientCard({
             className="h-2 w-2 shrink-0 rounded-full"
             style={{ backgroundColor: client.color }}
           />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{client.name}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{displayName}</span>
           {client.billableRate != null && (
             <span
               className="shrink-0 text-[13px] font-bold text-[var(--accent)]"
@@ -108,7 +112,7 @@ export function ClientCard({
                 e.stopPropagation()
                 onEdit()
               }}
-              aria-label={`Edit ${client.name}`}
+              aria-label={`Edit ${displayName}`}
             >
               <Pencil size={14} />
             </Button>
@@ -118,7 +122,7 @@ export function ClientCard({
                   variant="ghost"
                   size="icon-sm"
                   onClick={(e) => e.stopPropagation()}
-                  aria-label={`Delete ${client.name}`}
+                  aria-label={`Delete ${displayName}`}
                   className="text-[var(--text-muted)] hover:text-red-400"
                 >
                   <Trash2 size={14} />
@@ -126,7 +130,7 @@ export function ClientCard({
               </AlertDialogTrigger>
               <AlertDialogContent className="border-[var(--surface-border)] bg-[var(--background-primary)]">
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete client &ldquo;{client.name}&rdquo;?</AlertDialogTitle>
+                  <AlertDialogTitle>Delete client &ldquo;{displayName}&rdquo;?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will also remove all projects under this client. This action cannot be
                     undone.

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useCreateClient, useUpdateClient } from './use-clients'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import { CLIENT_COLORS } from '../../../../shared/types/client-project'
 import type { Client } from '../../../../shared/types/client-project'
 
@@ -36,8 +37,10 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
   const isEdit = client !== null
   const createClient = useCreateClient()
   const updateClient = useUpdateClient()
+  const presentationMode = usePresentationMode()
 
   const [name, setName] = useState('')
+  const [stageName, setStageName] = useState('')
   const [color, setColor] = useState<string>(CLIENT_COLORS[0])
   const [billableRate, setBillableRate] = useState('')
   const [email, setEmail] = useState('')
@@ -47,11 +50,13 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
     if (open) {
       if (client) {
         setName(client.name)
+        setStageName(client.stageName ?? '')
         setColor(client.color)
         setBillableRate(client.billableRate != null ? String(client.billableRate) : '')
         setEmail(client.email ?? '')
       } else {
         setName('')
+        setStageName('')
         setColor(CLIENT_COLORS[0])
         setBillableRate('')
         setEmail('')
@@ -74,12 +79,19 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
       if (isEdit && client) {
         await updateClient.mutateAsync({
           id: client.id,
-          data: { name: trimmedName, color, billableRate: rateValue, email: trimmedEmail }
+          data: {
+            name: trimmedName,
+            stageName: stageName.trim() || null,
+            color,
+            billableRate: rateValue,
+            email: trimmedEmail
+          }
         })
         toast.success('Client updated')
       } else {
         await createClient.mutateAsync({
           name: trimmedName,
+          stageName: stageName.trim() || null,
           color,
           billableRate: rateValue,
           email: trimmedEmail
@@ -142,12 +154,35 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
           </div>
 
           <div className="space-y-2">
+            <label htmlFor="client-stage-name" className="text-[13px] font-medium">
+              Stage Name
+            </label>
+            <input
+              id="client-stage-name"
+              type="text"
+              value={stageName}
+              onChange={(e) => setStageName(e.target.value)}
+              placeholder={name || 'Same as client name'}
+              className={cn(
+                'w-full rounded-md border px-3 py-2 text-[13px]',
+                'bg-[var(--background-secondary)] text-[var(--text-primary)]',
+                'placeholder:text-[var(--text-muted)]',
+                'focus:outline-none focus:ring-2 focus:ring-[var(--accent)]',
+                'border-[var(--surface-border)]'
+              )}
+            />
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Shown in place of the real name when Presentation Mode is on (streaming/demos).
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <label htmlFor="client-email" className="text-[13px] font-medium">
               Email
             </label>
             <input
               id="client-email"
-              type="email"
+              type={presentationMode ? 'password' : 'email'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="client@example.com"

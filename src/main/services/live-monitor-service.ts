@@ -1,7 +1,6 @@
 import { open, stat, readdir } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { Notification, shell } from 'electron'
 import { eq, gte, and, count, or, isNull, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main.js'
@@ -13,8 +12,11 @@ import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
+import { getClaudeConfigDirs } from './discovery-service'
 import { encodeProjectPath } from './session-detector'
 import { widgetService } from './widget-service'
+import { computeEarnings } from '../../shared/earnings'
+import { clientAlias, projectAlias } from '../../shared/presentation-alias'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../shared/types/live'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
@@ -86,6 +88,18 @@ export const liveMonitorService = {
   _wasProcessing: new Map<number, boolean>(),
   // Processing holdover: bridges brief gaps (e.g. during compaction) where no files are written
   _lastActiveAt: new Map<string, number>(),
+  // Short-lived shared result for the (expensive) prompt-timestamp FS walk. The
+  // monitor interval, the renderer poll, and every widget poll all call this;
+  // without sharing they each walk 100+ project dirs across every profile,
+  // saturating the main thread. In-flight + TTL dedup collapses overlapping and
+  // rapid calls into one walk. Safe: this is seconds-granularity display data.
+  _promptTsCache: null as {
+    at: number
+    value: Map<string, { lastPromptAt: string; isProcessing: boolean }>
+  } | null,
+  _promptTsInflight: null as Promise<
+    Map<string, { lastPromptAt: string; isProcessing: boolean }>
+  > | null,
 
   _escapeXml(str: string): string {
     return str
@@ -138,7 +152,8 @@ export const liveMonitorService = {
         totalSessions: 0,
         totalPrompts: 0,
         totalTokens: 0,
-        totalCommits
+        totalCommits,
+        earnedToday: 0
       }
     }
 
@@ -163,13 +178,19 @@ export const liveMonitorService = {
     })
     const humanMinutes = computeHumanMinutes(clampedSessions)
 
+    // Earned today: billable human hours × effective (project-or-client) rate.
+    const allProjects = db.select().from(projects).all()
+    const allClients = db.select().from(clients).all()
+    const earnedToday = Math.round(computeEarnings(clampedSessions, allProjects, allClients) * 100) / 100
+
     return {
       humanHours: formatDuration(humanMinutes),
       agentHours: formatDuration(totalMinutes),
       totalSessions: todaySessions.length,
       totalPrompts,
       totalTokens,
-      totalCommits
+      totalCommits,
+      earnedToday
     }
   },
 
@@ -185,8 +206,10 @@ export const liveMonitorService = {
       .select({
         projectId: projects.id,
         projectName: projects.name,
+        stageName: projects.stageName,
         projectPath: projects.directoryPath,
         clientName: clients.name,
+        clientStageName: clients.stageName,
         clientId: projects.clientId,
         alertSound: projectAlertConfig.alertSound,
         isWatching: projectAlertConfig.isWatching
@@ -196,6 +219,8 @@ export const liveMonitorService = {
       .leftJoin(projectAlertConfig, eq(projects.id, projectAlertConfig.projectId))
       .where(eq(projects.isActive, true))
       .all()
+
+    const presentationMode = settingsService.getSetting('presentation_mode') === 'true'
 
     // Get today's sessions grouped by projectId to find which projects have activity.
     const afterHoursOnly = settingsService.getSetting('after_hours_mode') === 'true'
@@ -282,9 +307,11 @@ export const liveMonitorService = {
 
       results.push({
         projectId: p.projectId,
-        projectName: p.projectName,
+        projectName: presentationMode ? p.stageName || projectAlias(p.projectId) : p.projectName,
         projectPath: p.projectPath,
-        clientName: p.clientName,
+        clientName: presentationMode
+          ? p.clientStageName || (p.clientId != null ? clientAlias(p.clientId) : p.clientName)
+          : p.clientName,
         clientId: p.clientId,
         lastPromptAt,
         isProcessing,
@@ -301,19 +328,48 @@ export const liveMonitorService = {
     return results
   },
 
+  /** ~4s in-flight + TTL dedup wrapper around the FS walk (see _promptTsCache). */
   async getLatestPromptTimestamps(): Promise<
     Map<string, { lastPromptAt: string; isProcessing: boolean }>
   > {
-    const claudeDir = settingsService.getSetting('claude_dir') ?? join(homedir(), '.claude')
-    const projectsDir = join(claudeDir, 'projects')
-    log.debug(`getLatestPromptTimestamps: scanning ${projectsDir}`)
+    const CACHE_TTL_MS = 4000
+    const cached = this._promptTsCache
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value
+    if (this._promptTsInflight) return this._promptTsInflight
+
+    const inflight = this._computeLatestPromptTimestamps()
+    this._promptTsInflight = inflight
+    try {
+      const value = await inflight
+      this._promptTsCache = { at: Date.now(), value }
+      return value
+    } finally {
+      this._promptTsInflight = null
+    }
+  },
+
+  async _computeLatestPromptTimestamps(): Promise<
+    Map<string, { lastPromptAt: string; isProcessing: boolean }>
+  > {
+    const override = settingsService.getSetting('claude_dir')
+    const configDirs = override ? [override] : await getClaudeConfigDirs()
     const result = new Map<string, { lastPromptAt: string; isProcessing: boolean }>()
 
-    let projectDirs: import('node:fs').Dirent<string>[]
-    try {
-      projectDirs = await readdir(projectsDir, { withFileTypes: true, encoding: 'utf8' })
-    } catch {
-      return result
+    // The same encoded project dir can exist under multiple config profiles
+    // (e.g. one account per client). Keep whichever entry is more recent/active
+    // so switching accounts still reflects live activity.
+    const setResult = (
+      name: string,
+      value: { lastPromptAt: string; isProcessing: boolean }
+    ): void => {
+      const existing = result.get(name)
+      if (
+        !existing ||
+        value.lastPromptAt > existing.lastPromptAt ||
+        (value.isProcessing && !existing.isProcessing)
+      ) {
+        result.set(name, value)
+      }
     }
 
     const now = new Date()
@@ -330,149 +386,162 @@ export const liveMonitorService = {
       this._lastEvictionDate = todayDate
     }
 
-    for (const dir of projectDirs) {
-      if (!dir.isDirectory()) continue
+    for (const configDir of configDirs) {
+      const projectsDir = join(configDir, 'projects')
+      log.debug(`getLatestPromptTimestamps: scanning ${projectsDir}`)
 
-      const projectPath = join(projectsDir, dir.name)
+      let projectDirs: import('node:fs').Dirent<string>[]
       try {
-        const entries = await readdir(projectPath, { withFileTypes: true, encoding: 'utf8' })
-        const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+        projectDirs = await readdir(projectsDir, { withFileTypes: true, encoding: 'utf8' })
+      } catch {
+        continue
+      }
 
-        // Also scan subagent JSONL files (in {conversation-id}/subagents/ dirs).
-        // These include Agent tool subagents AND compaction sidechains, which write
-        // to separate files while the main conversation JSONL stays idle.
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue
-          try {
-            const subagentsDir = join(projectPath, entry.name, 'subagents')
-            const subEntries = await readdir(subagentsDir, {
-              withFileTypes: true,
-              encoding: 'utf8'
-            })
-            for (const sub of subEntries) {
-              if (sub.isFile() && sub.name.endsWith('.jsonl')) {
-                const composedName = join(entry.name, 'subagents', sub.name)
-                // Push with adjusted path info for stat checking below
-                jsonlFiles.push({ ...sub, name: composedName } as typeof sub)
+      for (const dir of projectDirs) {
+        if (!dir.isDirectory()) continue
+
+        const projectPath = join(projectsDir, dir.name)
+        try {
+          const entries = await readdir(projectPath, { withFileTypes: true, encoding: 'utf8' })
+          const jsonlFiles = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+
+          // Also scan subagent JSONL files (in {conversation-id}/subagents/ dirs).
+          // These include Agent tool subagents AND compaction sidechains, which write
+          // to separate files while the main conversation JSONL stays idle.
+          for (const entry of entries) {
+            if (!entry.isDirectory()) continue
+            try {
+              const subagentsDir = join(projectPath, entry.name, 'subagents')
+              const subEntries = await readdir(subagentsDir, {
+                withFileTypes: true,
+                encoding: 'utf8'
+              })
+              for (const sub of subEntries) {
+                if (sub.isFile() && sub.name.endsWith('.jsonl')) {
+                  const composedName = join(entry.name, 'subagents', sub.name)
+                  // Push with adjusted path info for stat checking below
+                  jsonlFiles.push({ ...sub, name: composedName } as typeof sub)
+                }
               }
+            } catch {
+              // No subagents dir — normal
             }
-          } catch {
-            // No subagents dir — normal
           }
-        }
 
-        // Check ALL today's JSONL files for activity (not just the latest).
-        // When Agent subagents or compaction run, they write to separate JSONL files.
-        // We need to detect activity across ALL files in the project dir tree.
-        let latestFile: string | null = null
-        let latestMtime = 0
-        let latestAnyMtime = 0 // Across ALL files including subagents
-        let anyRecentlyWritten = false
-        let subagentRecentlyWritten = false
+          // Check ALL today's JSONL files for activity (not just the latest).
+          // When Agent subagents or compaction run, they write to separate JSONL files.
+          // We need to detect activity across ALL files in the project dir tree.
+          let latestFile: string | null = null
+          let latestMtime = 0
+          let latestAnyMtime = 0 // Across ALL files including subagents
+          let anyRecentlyWritten = false
+          let subagentRecentlyWritten = false
 
-        for (const entry of jsonlFiles) {
-          const fp = join(projectPath, entry.name)
-          const isSubagentFile = entry.name.includes('/') || entry.name.includes('\\')
-          try {
-            const s = await stat(fp)
-            const mtime = s.mtime.getTime()
-            if (mtime < todayStart) continue
+          for (const entry of jsonlFiles) {
+            const fp = join(projectPath, entry.name)
+            const isSubagentFile = entry.name.includes('/') || entry.name.includes('\\')
+            try {
+              const s = await stat(fp)
+              const mtime = s.mtime.getTime()
+              if (mtime < todayStart) continue
 
-            // Track mtime changes for EACH file to detect active writing
-            const prev = this._lastMtimeChange.get(fp)
-            if (!prev || prev.prevMtime !== mtime) {
-              this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
+              // Track mtime changes for EACH file to detect active writing
+              const prev = this._lastMtimeChange.get(fp)
+              if (!prev || prev.prevMtime !== mtime) {
+                this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
+              }
+              const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
+              if (now.getTime() - lastChanged < 30_000) {
+                anyRecentlyWritten = true
+                if (isSubagentFile) subagentRecentlyWritten = true
+              }
+
+              // Track most recent mtime across ALL files (including subagents)
+              if (mtime > latestAnyMtime) latestAnyMtime = mtime
+
+              // Only track top-level JSONL files as "latest" for state machine reading.
+              // Subagent files contribute to anyRecentlyWritten but not awaitingResponse.
+              if (!isSubagentFile) {
+                if (mtime > latestMtime) {
+                  latestMtime = mtime
+                  latestFile = fp
+                }
+              }
+            } catch {
+              continue
             }
-            const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
-            if (now.getTime() - lastChanged < 30_000) {
-              anyRecentlyWritten = true
-              if (isSubagentFile) subagentRecentlyWritten = true
-            }
+          }
 
-            // Track most recent mtime across ALL files (including subagents)
-            if (mtime > latestAnyMtime) latestAnyMtime = mtime
+          if (!latestFile) continue
 
-            // Only track top-level JSONL files as "latest" for state machine reading.
-            // Subagent files contribute to anyRecentlyWritten but not awaitingResponse.
-            if (!isSubagentFile) {
-              if (mtime > latestMtime) {
-                latestMtime = mtime
-                latestFile = fp
+          // Use latestAnyMtime (includes subagent files) for staleness — covers gaps
+          // where main JSONL is old but subagent files were written recently.
+          // 3min window bridges compaction gaps (sidechain finishes before main JSONL rewrite).
+          // Post-compaction false positives handled by consecutive user-prompt detection in tailRead.
+          const recentlyModifiedAny = now.getTime() - latestAnyMtime < 3 * 60_000
+
+          // Check cache — only reuse if mtime unchanged
+          const cacheKey = latestFile
+          const cached = this._promptTimestampCache.get(cacheKey)
+          if (cached && cached.mtime === latestMtime) {
+            // Show processing if ANY of these are true:
+            // 1. Main JSONL was written to in the last 30s (active tool calls)
+            // 2. State machine says awaiting/processing AND file modified recently
+            //    - tool-pending uses 30s window (permission prompts should go green quickly)
+            //    - awaiting/processing uses 3min window (bridges compaction gaps)
+            // 3. A subagent file is actively being written (background agents/compaction)
+            const awaitingWindow =
+              cached.state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
+            let fileIsActive =
+              anyRecentlyWritten ||
+              (cached.awaitingResponse && awaitingWindow) ||
+              subagentRecentlyWritten
+            // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
+            if (fileIsActive) {
+              this._lastActiveAt.set(dir.name, now.getTime())
+            } else {
+              const lastActive = this._lastActiveAt.get(dir.name)
+              if (lastActive && now.getTime() - lastActive < 15_000) {
+                fileIsActive = true
               }
             }
-          } catch {
+            setResult(dir.name, { lastPromptAt: cached.lastPromptAt, isProcessing: fileIsActive })
             continue
           }
-        }
 
-        if (!latestFile) continue
-
-        // Use latestAnyMtime (includes subagent files) for staleness — covers gaps
-        // where main JSONL is old but subagent files were written recently.
-        // 3min window bridges compaction gaps (sidechain finishes before main JSONL rewrite).
-        // Post-compaction false positives handled by consecutive user-prompt detection in tailRead.
-        const recentlyModifiedAny = now.getTime() - latestAnyMtime < 3 * 60_000
-
-        // Check cache — only reuse if mtime unchanged
-        const cacheKey = latestFile
-        const cached = this._promptTimestampCache.get(cacheKey)
-        if (cached && cached.mtime === latestMtime) {
-          // Show processing if ANY of these are true:
-          // 1. Main JSONL was written to in the last 30s (active tool calls)
-          // 2. State machine says awaiting/processing AND file modified recently
-          //    - tool-pending uses 30s window (permission prompts should go green quickly)
-          //    - awaiting/processing uses 3min window (bridges compaction gaps)
-          // 3. A subagent file is actively being written (background agents/compaction)
-          const awaitingWindow =
-            cached.state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
-          let fileIsActive =
-            anyRecentlyWritten ||
-            (cached.awaitingResponse && awaitingWindow) ||
-            subagentRecentlyWritten
-          // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
-          if (fileIsActive) {
-            this._lastActiveAt.set(dir.name, now.getTime())
-          } else {
-            const lastActive = this._lastActiveAt.get(dir.name)
-            if (lastActive && now.getTime() - lastActive < 15_000) {
-              fileIsActive = true
+          // Tail-read last chunk — use 64KB to handle large assistant responses
+          const { lastPromptAt, awaitingResponse, state } = await tailReadLastPrompt(latestFile)
+          // Fall back to file mtime if user-prompt not found in tail chunk
+          // (happens when assistant/tool messages are so large they fill the 512KB window)
+          const effectivePromptAt = lastPromptAt ?? new Date(latestMtime).toISOString()
+          if (lastPromptAt || awaitingResponse || anyRecentlyWritten || subagentRecentlyWritten) {
+            this._promptTimestampCache.set(cacheKey, {
+              mtime: latestMtime,
+              lastPromptAt: effectivePromptAt,
+              awaitingResponse,
+              state
+            })
+            // tool-pending with no recent writes = permission prompt (use 30s window)
+            // awaiting/processing = Claude actively working (use 3min window for compaction gaps)
+            const awaitingWindow =
+              state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
+            let fileIsActive =
+              anyRecentlyWritten || (awaitingResponse && awaitingWindow) || subagentRecentlyWritten
+            // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
+            if (fileIsActive) {
+              this._lastActiveAt.set(dir.name, now.getTime())
+            } else {
+              const lastActive = this._lastActiveAt.get(dir.name)
+              if (lastActive && now.getTime() - lastActive < 15_000) {
+                fileIsActive = true
+              }
             }
+            setResult(dir.name, { lastPromptAt: effectivePromptAt, isProcessing: fileIsActive })
           }
-          result.set(dir.name, { lastPromptAt: cached.lastPromptAt, isProcessing: fileIsActive })
+        } catch (err) {
+          log.debug(`getLatestPromptTimestamps: error scanning ${dir.name}:`, err)
           continue
         }
-
-        // Tail-read last chunk — use 64KB to handle large assistant responses
-        const { lastPromptAt, awaitingResponse, state } = await tailReadLastPrompt(latestFile)
-        // Fall back to file mtime if user-prompt not found in tail chunk
-        // (happens when assistant/tool messages are so large they fill the 512KB window)
-        const effectivePromptAt = lastPromptAt ?? new Date(latestMtime).toISOString()
-        if (lastPromptAt || awaitingResponse || anyRecentlyWritten || subagentRecentlyWritten) {
-          this._promptTimestampCache.set(cacheKey, {
-            mtime: latestMtime,
-            lastPromptAt: effectivePromptAt,
-            awaitingResponse,
-            state
-          })
-          // tool-pending with no recent writes = permission prompt (use 30s window)
-          // awaiting/processing = Claude actively working (use 3min window for compaction gaps)
-          const awaitingWindow = state === 'tool-pending' ? anyRecentlyWritten : recentlyModifiedAny
-          let fileIsActive =
-            anyRecentlyWritten || (awaitingResponse && awaitingWindow) || subagentRecentlyWritten
-          // Processing holdover: if we were active within last 15s, stay active to bridge gaps (e.g. compaction pauses)
-          if (fileIsActive) {
-            this._lastActiveAt.set(dir.name, now.getTime())
-          } else {
-            const lastActive = this._lastActiveAt.get(dir.name)
-            if (lastActive && now.getTime() - lastActive < 15_000) {
-              fileIsActive = true
-            }
-          }
-          result.set(dir.name, { lastPromptAt: effectivePromptAt, isProcessing: fileIsActive })
-        }
-      } catch (err) {
-        log.debug(`getLatestPromptTimestamps: error scanning ${dir.name}:`, err)
-        continue
       }
     }
 
@@ -770,9 +839,7 @@ export const liveMonitorService = {
  * and whether the session is awaiting a response (no final assistant message).
  * Only reads the last ~64KB to minimize I/O.
  */
-async function tailReadLastPrompt(
-  filePath: string
-): Promise<{
+async function tailReadLastPrompt(filePath: string): Promise<{
   lastPromptAt: string | null
   awaitingResponse: boolean
   state: 'idle' | 'awaiting' | 'tool-pending' | 'processing'

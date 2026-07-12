@@ -18,6 +18,8 @@ import {
 } from '@/components/ui/select'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
+import { usePresentationMode } from '../settings/use-presentation-mode'
+import { resolveClientName, resolveProjectName } from '@/lib/format'
 import { useCreateSession } from './use-sessions'
 import type { Project } from '../../../../shared/types/client-project'
 
@@ -46,6 +48,7 @@ function toIso(dateStr: string, timeStr: string): string | null {
 export function ManualBlockForm({ open, onOpenChange }: ManualBlockFormProps): React.JSX.Element {
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
+  const presentationMode = usePresentationMode()
   const createSession = useCreateSession()
 
   const [projectId, setProjectId] = useState<string>('')
@@ -152,7 +155,7 @@ export function ManualBlockForm({ open, onOpenChange }: ManualBlockFormProps): R
   const projectsByClient = allProjects?.reduce(
     (acc, p) => {
       const client = clients?.find((c) => c.id === p.clientId)
-      const key = client?.name ?? 'Unknown'
+      const key = client ? resolveClientName(client, presentationMode) : 'Unknown'
       if (!acc[key]) acc[key] = []
       acc[key].push(p)
       return acc
@@ -184,7 +187,7 @@ export function ManualBlockForm({ open, onOpenChange }: ManualBlockFormProps): R
                         <SelectLabel>{clientName}</SelectLabel>
                         {projects.map((p) => (
                           <SelectItem key={p.id} value={p.id.toString()}>
-                            {p.name}
+                            {resolveProjectName(p, presentationMode)}
                           </SelectItem>
                         ))}
                       </SelectGroup>

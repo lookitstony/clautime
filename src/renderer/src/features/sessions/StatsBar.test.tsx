@@ -30,6 +30,7 @@ const baseProps = {
   clientCount: 0,
   commitSessions: 0,
   estimatedCost: null,
+  earnings: null,
   isLoading: false
 }
 

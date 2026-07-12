@@ -5,7 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import { ProjectForm } from './ProjectForm'
 import { ProjectPicker } from './ProjectPicker'
 import { useProjects } from './use-projects'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import { cn } from '@/lib/utils'
+import { resolveProjectName } from '@/lib/format'
 import type { Project } from '../../../../shared/types/client-project'
 
 interface ProjectListProps {
@@ -14,6 +16,7 @@ interface ProjectListProps {
 
 export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
   const { data: projects, isLoading } = useProjects(clientId)
+  const presentationMode = usePresentationMode()
   const [formOpen, setFormOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -48,10 +51,14 @@ export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
           )}
         >
           <FolderOpen size={14} className="shrink-0 text-[var(--text-muted)]" />
-          <span className="min-w-0 flex-1 truncate text-[13px]">{project.name}</span>
-          <span className="max-w-[200px] shrink-0 truncate font-mono text-[11px] text-[var(--text-muted)]">
-            {project.directoryPath}
+          <span className="min-w-0 flex-1 truncate text-[13px]">
+            {resolveProjectName(project, presentationMode)}
           </span>
+          {!presentationMode && (
+            <span className="max-w-[200px] shrink-0 truncate font-mono text-[11px] text-[var(--text-muted)]">
+              {project.directoryPath}
+            </span>
+          )}
           {!project.isActive && (
             <Badge variant="secondary" className="shrink-0 bg-red-500/15 text-[10px] text-red-400">
               <EyeOff size={10} className="mr-1" />

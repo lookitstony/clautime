@@ -33,10 +33,13 @@ import {
   formatDuration,
   formatCompactNumber,
   getDateRangeForPreset,
+  resolveClientName,
+  resolveProjectName,
   type DatePreset
 } from '@/lib/format'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import { useGenerateReport } from './use-reports'
 import type {
   ReportFormat,
@@ -1628,6 +1631,7 @@ export function ReportsPage(): React.JSX.Element {
 
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
+  const presentationMode = usePresentationMode()
   const generateMutation = useGenerateReport()
 
   const { data: settingsData } = useQuery({
@@ -1769,7 +1773,7 @@ export function ReportsPage(): React.JSX.Element {
                 <SelectItem value="__all__">All Clients</SelectItem>
                 {clients.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
+                    {resolveClientName(c, presentationMode)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1785,7 +1789,7 @@ export function ReportsPage(): React.JSX.Element {
                 <SelectItem value="__all__">All Projects</SelectItem>
                 {allProjects.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
-                    {p.name}
+                    {resolveProjectName(p, presentationMode)}
                   </SelectItem>
                 ))}
               </SelectContent>

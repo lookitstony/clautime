@@ -1,4 +1,4 @@
-import { formatCompactNumber } from '@/lib/format'
+import { formatCompactNumber, formatUsd } from '@/lib/format'
 import {
   ConfigurableStatsBar,
   type StatCardDef
@@ -20,6 +20,13 @@ export function LiveStatsBar({
   const defs: StatCardDef[] = stats
     ? [
         { id: 'human-hours', label: 'Human Hours', value: stats.humanHours, accent: true },
+        {
+          id: 'earnings',
+          label: 'Earned Today',
+          value: formatUsd(stats.earnedToday),
+          accent: true,
+          available: stats.earnedToday > 0
+        },
         { id: 'agent-hours', label: 'Agent Hours', value: stats.agentHours },
         { id: 'sessions', label: 'Sessions', value: stats.totalSessions },
         { id: 'prompts', label: 'Prompts', value: stats.totalPrompts.toLocaleString() },

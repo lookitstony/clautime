@@ -8,9 +8,10 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
-import { getDateRangeForPreset, type DatePreset } from '@/lib/format'
+import { getDateRangeForPreset, resolveProjectName, resolveClientName, type DatePreset } from '@/lib/format'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import { useAnalyticsData, useDashboardLayout } from './use-analytics'
 import { DashboardGrid } from './DashboardGrid'
 import { WidgetPanel } from './WidgetPanel'
@@ -34,6 +35,7 @@ export function AnalyticsPage(): React.JSX.Element {
 
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
+  const presentationMode = usePresentationMode()
 
   const filteredProjects = useMemo(() => {
     if (!allProjects || clientId === '__all__') return allProjects
@@ -137,7 +139,7 @@ export function AnalyticsPage(): React.JSX.Element {
               <SelectItem value="__all__">All Clients</SelectItem>
               {clients?.map((c) => (
                 <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
+                  {resolveClientName(c, presentationMode)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -151,7 +153,7 @@ export function AnalyticsPage(): React.JSX.Element {
               <SelectItem value="__all__">All Projects</SelectItem>
               {filteredProjects?.map((p) => (
                 <SelectItem key={p.id} value={String(p.id)}>
-                  {p.name}
+                  {resolveProjectName(p, presentationMode)}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -1,3 +1,5 @@
+import { clientAlias, projectAlias } from '../../../shared/presentation-alias'
+
 const PROJECT_COLORS = [
   'var(--project-1)',
   'var(--project-2)',
@@ -76,6 +78,47 @@ export function getProjectName(projectPath: string): string {
   const normalized = projectPath.replace(/\\/g, '/')
   const segments = normalized.split('/').filter(Boolean)
   return segments[segments.length - 1] || projectPath
+}
+
+/** USD currency formatter. Omit cents by default for tidy stat cards. */
+export function formatUsd(amount: number, fractionDigits = 0): string {
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: fractionDigits
+  })
+}
+
+/**
+ * Display name for a project. While presentation mode is on, the project's
+ * stage name (if set) is shown instead of its real name — for streaming/demos.
+ */
+export function resolveProjectName(
+  project: { id?: number; name: string; stageName?: string | null } | null | undefined,
+  presentationMode: boolean,
+  fallback = ''
+): string {
+  if (!project) return fallback
+  if (presentationMode) {
+    return project.stageName || (project.id != null ? projectAlias(project.id) : project.name)
+  }
+  return project.name
+}
+
+/**
+ * Display name for a client. While presentation mode is on, the client's stage
+ * name (if set) is shown instead of its real name — for streaming/demos.
+ */
+export function resolveClientName(
+  client: { id?: number; name: string; stageName?: string | null } | null | undefined,
+  presentationMode: boolean,
+  fallback = ''
+): string {
+  if (!client) return fallback
+  if (presentationMode) {
+    return client.stageName || (client.id != null ? clientAlias(client.id) : client.name)
+  }
+  return client.name
 }
 
 export function formatCompactNumber(n: number): string {

@@ -2,6 +2,8 @@
 export interface Client {
   id: number
   name: string
+  /** Display name shown while presentation mode is on. Falls back to `name` if null. */
+  stageName: string | null
   color: string
   /** Hourly rate in dollars. Null = no rate set. */
   billableRate: number | null
@@ -17,6 +19,7 @@ export interface Client {
 /** Data for creating a new client. */
 export interface NewClient {
   name: string
+  stageName?: string | null
   /** CSS variable reference, e.g. 'var(--project-1)'. Auto-assigned if omitted. */
   color?: string
   /** Hourly rate in dollars. */
@@ -28,6 +31,7 @@ export interface NewClient {
 /** Data for updating an existing client. All fields optional. */
 export interface UpdateClient {
   name?: string
+  stageName?: string | null
   color?: string
   billableRate?: number | null
   email?: string | null
@@ -41,6 +45,10 @@ export interface Project {
   name: string
   /** Display name on invoices. Falls back to `name` if null. */
   invoiceName: string | null
+  /** Display name shown while presentation mode is on. Falls back to `name` if null. */
+  stageName: string | null
+  /** Per-project hourly rate in dollars. Null = use the client's rate. */
+  hourlyRate: number | null
   directoryPath: string
   isBillable: boolean
   isActive: boolean
@@ -55,12 +63,16 @@ export interface NewProject {
   directoryPath: string
   /** Defaults to true if omitted. */
   isBillable?: boolean
+  stageName?: string | null
+  hourlyRate?: number | null
 }
 
 /** Data for updating an existing project. All fields optional. */
 export interface UpdateProject {
   name?: string
   invoiceName?: string | null
+  stageName?: string | null
+  hourlyRate?: number | null
   directoryPath?: string
   isBillable?: boolean
   isActive?: boolean

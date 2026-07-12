@@ -17,6 +17,8 @@ const mockProjects: Project[] = [
     clientId: 1,
     name: 'ClauTime',
     invoiceName: null,
+    stageName: null,
+    hourlyRate: null,
     directoryPath: 'C:\\apps\\ClauTime',
     isBillable: true,
     isActive: true,

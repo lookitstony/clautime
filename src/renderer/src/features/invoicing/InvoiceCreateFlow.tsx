@@ -11,7 +11,9 @@ import {
   DialogDescription
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { getDateRangeForPreset, type DatePreset } from '@/lib/format'
+import { getDateRangeForPreset, resolveClientName, type DatePreset } from '@/lib/format'
+import { usePresentationMode } from '../settings/use-presentation-mode'
+import { projectAlias } from '../../../../shared/presentation-alias'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import type { GeneratedLineItem, InvoiceOverlap } from '../../../../shared/types/invoice'
 
@@ -45,6 +47,7 @@ export function InvoiceCreateFlow({
     }
   })
   const weekStartDay = parseInt(settingsData?.['week_start_day'] ?? '1', 10)
+  const presentationMode = usePresentationMode()
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [startDate, setStartDate] = useState('')
@@ -329,7 +332,7 @@ export function InvoiceCreateFlow({
             <option value="">Select a client...</option>
             {invoiceableClients.map((c: Client) => (
               <option key={c.id} value={c.id}>
-                {c.name} — ${c.billableRate}/hr
+                {resolveClientName(c, presentationMode)} — ${c.billableRate}/hr
               </option>
             ))}
           </select>
@@ -348,7 +351,7 @@ export function InvoiceCreateFlow({
               <option value="">All projects</option>
               {clientProjects.map((p: Project) => (
                 <option key={p.id} value={p.id}>
-                  {p.invoiceName ?? p.name}
+                  {presentationMode ? p.stageName || projectAlias(p.id) : (p.invoiceName ?? p.name)}
                 </option>
               ))}
             </select>
