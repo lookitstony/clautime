@@ -84,12 +84,16 @@
         pointer-events: none;
         background-color: var(--bg);
         background-image:
-          radial-gradient(circle at 1px 1px, rgba(160, 160, 190, 0.05) 1px, transparent 1.6px),
-          radial-gradient(ellipse 48% 42% at 10% 6%, rgba(20, 184, 166, 0.07), transparent 62%),
-          radial-gradient(ellipse 52% 45% at 92% 96%, rgba(139, 92, 246, 0.06), transparent 62%),
-          radial-gradient(ellipse 60% 50% at 50% 50%, rgba(20, 184, 166, 0.03), transparent 70%);
+          linear-gradient(rgba(160, 160, 205, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 160, 205, 0.03) 1px, transparent 1px),
+          radial-gradient(circle at 1px 1px, rgba(175, 175, 210, 0.09) 1.2px, transparent 1.9px),
+          radial-gradient(ellipse 55% 48% at 6% 3%, rgba(20, 184, 166, 0.15), transparent 58%),
+          radial-gradient(ellipse 58% 50% at 96% 62%, rgba(139, 92, 246, 0.12), transparent 60%),
+          radial-gradient(ellipse 72% 55% at 50% 110%, rgba(20, 184, 166, 0.09), transparent 62%);
         background-size:
-          28px 28px,
+          64px 64px,
+          64px 64px,
+          32px 32px,
           100% 100%,
           100% 100%,
           100% 100%;
@@ -116,12 +120,14 @@
         position: relative;
         overflow: hidden;
         background-color: var(--bg-raised);
-        background-image: radial-gradient(
-          circle at 1px 1px,
-          rgba(160, 160, 190, 0.04) 1px,
-          transparent 1.6px
-        );
-        background-size: 28px 28px;
+        background-image:
+          linear-gradient(rgba(160, 160, 205, 0.028) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 160, 205, 0.028) 1px, transparent 1px),
+          radial-gradient(circle at 1px 1px, rgba(170, 170, 205, 0.07) 1.2px, transparent 1.8px);
+        background-size:
+          64px 64px,
+          64px 64px,
+          32px 32px;
         border-top: 1px solid var(--border);
         border-bottom: 1px solid var(--border);
       }
@@ -174,9 +180,9 @@
         z-index: 0;
         pointer-events: none;
         background: radial-gradient(
-          ellipse 45% 55% at 86% 10%,
-          rgba(20, 184, 166, 0.055),
-          transparent 60%
+          ellipse 48% 58% at 88% 6%,
+          rgba(20, 184, 166, 0.1),
+          transparent 58%
         );
       }
 
@@ -187,9 +193,9 @@
         z-index: 0;
         pointer-events: none;
         background: radial-gradient(
-          ellipse 50% 55% at 14% 18%,
-          rgba(139, 92, 246, 0.05),
-          transparent 60%
+          ellipse 52% 58% at 12% 12%,
+          rgba(139, 92, 246, 0.09),
+          transparent 58%
         );
       }
 
@@ -751,7 +757,7 @@
         background-color: var(--card);
         background-image: radial-gradient(
           circle at 1px 1px,
-          rgba(255, 255, 255, 0.02) 1px,
+          rgba(255, 255, 255, 0.035) 1px,
           transparent 0
         );
         background-size: 15px 15px;
@@ -911,7 +917,7 @@
         background-color: var(--card);
         background-image: radial-gradient(
           circle at 1px 1px,
-          rgba(255, 255, 255, 0.02) 1px,
+          rgba(255, 255, 255, 0.035) 1px,
           transparent 0
         );
         background-size: 15px 15px;
