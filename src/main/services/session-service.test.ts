@@ -45,7 +45,11 @@ const mockParseFile = vi.fn()
 
 vi.mock('../parsers', () => ({
   discoverSessionFiles: (...args: unknown[]) => mockDiscoverFiles(...(args as [])),
-  parseSessionFile: (...args: unknown[]) => mockParseFile(...(args as []))
+  parseSessionFile: (...args: unknown[]) => mockParseFile(...(args as [])),
+  parseAnySessionFile: (...args: unknown[]) => mockParseFile(...(args as [])),
+  discoverCodexSessionFiles: async () => [],
+  readCodexSessionMeta: async () => null,
+  getCodexSessionsDir: () => 'C:\\fake\\.codex\\sessions'
 }))
 
 // Mock fs/promises stat

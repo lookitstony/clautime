@@ -48,10 +48,11 @@ export function SessionsPage(): React.JSX.Element {
   const endDate = useFilterStore((s) => s.endDate)
   const filterClientId = useFilterStore((s) => s.clientId)
   const filterProjectId = useFilterStore((s) => s.projectId)
+  const filterTool = useFilterStore((s) => s.tool)
   const storeWeekStartDay = useFilterStore((s) => s.weekStartDay)
   const filters = useMemo(
     () => useFilterStore.getState().toSessionFilters(),
-    [datePreset, startDate, endDate, filterClientId, filterProjectId, storeWeekStartDay]
+    [datePreset, startDate, endDate, filterClientId, filterProjectId, filterTool, storeWeekStartDay]
   )
   const { data: rawSessions, isLoading, error } = useSessions(filters)
   const { data: clients } = useClients()
@@ -301,7 +302,7 @@ export function SessionsPage(): React.JSX.Element {
           <EmptyState
             icon={LayoutList}
             title="No Sessions Found"
-            description="Scan for your Claude Code projects and import session history"
+            description="Scan for your Claude Code and Codex projects and import session history"
             action={<Button onClick={() => showWizard.mutate()}>Scan for Projects</Button>}
           />
         )}

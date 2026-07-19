@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `tool` text DEFAULT 'claude' NOT NULL;

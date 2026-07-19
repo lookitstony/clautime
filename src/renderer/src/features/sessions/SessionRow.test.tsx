@@ -12,6 +12,7 @@ const mockSession: Session = {
   source: 'auto',
   description: null,
   status: 'completed',
+  tool: 'claude',
   claudeSessionId: 'abc-123',
   promptCount: 12,
   inputTokens: 0,

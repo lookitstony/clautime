@@ -17,6 +17,14 @@ export function getProjectName(projectPath: string): string {
 }
 
 /**
+ * Which coding agent wrote a session file, derived from its path.
+ * Codex CLI stores rollouts under ~/.codex/sessions/; everything else is Claude.
+ */
+export function toolForSourceFile(sourceFile: string): 'claude' | 'codex' {
+  return /[\\/]\.codex[\\/]/i.test(sourceFile) ? 'codex' : 'claude'
+}
+
+/**
  * Piped-swarm creates throwaway git worktrees under a `pipes/` folder
  * (e.g. C:\apps\Foo\pipes\ticket-1). Claude encodes those dir names with a
  * `-pipes-` segment. They are transient and noisy, not real projects, so we

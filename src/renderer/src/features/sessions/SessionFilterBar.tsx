@@ -34,10 +34,12 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
     endDate,
     clientId,
     projectId,
+    tool,
     setDatePreset,
     setCustomRange,
     setClientId,
     setProjectId,
+    setTool,
     clearFilters,
     hasActiveFilters
   } = useFilterStore()
@@ -170,6 +172,21 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
           </SelectContent>
         </Select>
       )}
+
+      {/* Tool dropdown */}
+      <Select
+        value={tool ?? '__all__'}
+        onValueChange={(val) => setTool(val === '__all__' ? null : (val as 'claude' | 'codex'))}
+      >
+        <SelectTrigger size="sm" className="h-8 min-w-[110px]" aria-label="Filter by tool">
+          <SelectValue placeholder="All Tools" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">All Tools</SelectItem>
+          <SelectItem value="claude">Claude</SelectItem>
+          <SelectItem value="codex">Codex</SelectItem>
+        </SelectContent>
+      </Select>
 
       {/* Clear filters */}
       {hasActiveFilters() && (

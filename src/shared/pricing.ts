@@ -31,7 +31,18 @@ const PRICING_TABLE: { prefix: string; pricing: ModelPricing }[] = [
   { prefix: 'claude-3-haiku', pricing: { displayName: 'Haiku', inputPerMTok: 1, outputPerMTok: 5 } },
   { prefix: 'claude-3-5-sonnet', pricing: { displayName: 'Sonnet', inputPerMTok: 3, outputPerMTok: 15 } },
   { prefix: 'claude-3-sonnet', pricing: { displayName: 'Sonnet', inputPerMTok: 3, outputPerMTok: 15 } },
-  { prefix: 'claude-3-opus', pricing: { displayName: 'Opus', inputPerMTok: 5, outputPerMTok: 25 } }
+  { prefix: 'claude-3-opus', pricing: { displayName: 'Opus', inputPerMTok: 5, outputPerMTok: 25 } },
+  // OpenAI models (Codex CLI sessions). Cached input bills at 0.1x, matching
+  // CACHE_READ_MULTIPLIER; OpenAI has no cache-write charge and Codex logs never
+  // report cacheCreation tokens, so the write multiplier is moot for these.
+  { prefix: 'gpt-5.1-codex', pricing: { displayName: 'GPT-5.1 Codex', inputPerMTok: 1.25, outputPerMTok: 10 } },
+  { prefix: 'gpt-5-codex', pricing: { displayName: 'GPT-5 Codex', inputPerMTok: 1.25, outputPerMTok: 10 } },
+  { prefix: 'gpt-5.1-mini', pricing: { displayName: 'GPT-5.1 mini', inputPerMTok: 0.25, outputPerMTok: 2 } },
+  { prefix: 'gpt-5-mini', pricing: { displayName: 'GPT-5 mini', inputPerMTok: 0.25, outputPerMTok: 2 } },
+  { prefix: 'gpt-5-nano', pricing: { displayName: 'GPT-5 nano', inputPerMTok: 0.05, outputPerMTok: 0.4 } },
+  { prefix: 'gpt-5.5', pricing: { displayName: 'GPT-5.5', inputPerMTok: 1.25, outputPerMTok: 10 } },
+  { prefix: 'gpt-5.1', pricing: { displayName: 'GPT-5.1', inputPerMTok: 1.25, outputPerMTok: 10 } },
+  { prefix: 'gpt-5', pricing: { displayName: 'GPT-5', inputPerMTok: 1.25, outputPerMTok: 10 } }
 ]
 
 /** Fallback for unknown or missing model strings — Opus rates, since this app's usage is mostly Opus. */

@@ -60,6 +60,14 @@ export function SessionRow({
       >
         {session.source === 'auto' ? 'Auto' : 'Manual'}
       </Badge>
+      {session.tool === 'codex' && (
+        <Badge
+          variant="secondary"
+          className="shrink-0 bg-[rgba(74,222,128,0.1)] text-[10px] font-semibold uppercase text-[#4ade80]"
+        >
+          Codex
+        </Badge>
+      )}
       {hasCommits && (
         <GitCommitHorizontal
           size={14}

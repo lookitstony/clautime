@@ -627,6 +627,25 @@ export function SettingsPage(): React.JSX.Element {
   // ============= After Hours Mode =============
   const afterHoursMode = settings?.['after_hours_mode'] === 'true'
 
+  // ============= Codex Tracking =============
+  // Default on: absent means enabled (scan skips gracefully when ~/.codex doesn't exist).
+  const trackCodex = settings?.['track_codex'] !== 'false'
+  const toggleTrackCodex = useCallback(
+    async (checked: boolean) => {
+      try {
+        await window.api.settings.set('track_codex', checked ? 'true' : 'false')
+        queryClient.invalidateQueries({ queryKey: ['settings'] })
+        await window.api.sessions.scanAndRebuild()
+        queryClient.invalidateQueries({ queryKey: ['sessions'] })
+        queryClient.invalidateQueries({ queryKey: ['live'] })
+        toast.success(checked ? 'Codex tracking enabled — sessions rebuilt' : 'Codex tracking disabled — sessions rebuilt')
+      } catch {
+        toast.error('Failed to update Codex tracking')
+      }
+    },
+    [queryClient]
+  )
+
   // ============= Theme =============
   const currentAccent = settings?.['accent_theme'] ?? 'teal'
 
@@ -1172,6 +1191,22 @@ export function SettingsPage(): React.JSX.Element {
                       value: checked ? 'true' : 'false'
                     })
                   }
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--text-primary)]">
+                    Track Codex Sessions
+                  </label>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Also scan OpenAI Codex CLI logs (~/.codex/sessions) and fold them into sessions,
+                    hours, and invoicing.
+                  </p>
+                </div>
+                <Switch
+                  checked={trackCodex}
+                  onCheckedChange={(checked) => toggleTrackCodex(checked)}
                 />
               </div>
 

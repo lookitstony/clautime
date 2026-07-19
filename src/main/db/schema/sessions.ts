@@ -13,6 +13,7 @@ export const sessions = sqliteTable(
     source: text('source').notNull().$type<'auto' | 'manual'>().default('auto'),
     description: text('description'),
     status: text('status').notNull().$type<'active' | 'completed'>().default('completed'),
+    tool: text('tool').notNull().$type<'claude' | 'codex'>().default('claude'),
     claudeSessionId: text('claude_session_id'),
     promptCount: integer('prompt_count').notNull().default(0),
     inputTokens: integer('input_tokens').notNull().default(0),

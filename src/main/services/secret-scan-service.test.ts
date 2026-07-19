@@ -31,6 +31,11 @@ vi.mock('./settings-service', () => ({
   }
 }))
 
+// Keep tests off the real ~/.codex tree
+vi.mock('../parsers/codex-parser', () => ({
+  discoverCodexSessionFiles: vi.fn(async () => [])
+}))
+
 // Mock DB
 const mockInsertValues: unknown[] = []
 const mockUpdateSets: unknown[] = []
