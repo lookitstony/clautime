@@ -733,24 +733,47 @@ export const secretScanService = {
   _isRedacting: false, // F06: guard against concurrent redaction
   _activeScanPromise: null as Promise<SecretScanResult> | null,
 
-  /** Start hourly scanning: scan 30s after startup, then every hour */
+  /**
+   * Start hourly scanning. The initial scan is deferred ~90s after startup AND
+   * held until no session scan is in progress, so its I/O-heavy redaction pass
+   * runs *after* the startup session-ingestion burst rather than contending with
+   * it for the disk (which otherwise stalls scans and lags the UI).
+   */
   startDailyScanning(): void {
     log.info('secret-scan: Starting hourly scanning')
 
-    // Initial scan 30s after startup
-    setTimeout(() => {
-      this.runScan().catch((err: unknown) => {
-        log.error('secret-scan: Auto scan failed:', err)
-      })
-    }, 30000)
+    // Initial scan ~90s after startup, once session scanning has settled
+    setTimeout(() => void this._runWhenIdle(), 90000)
 
-    // Repeat every hour
+    // Repeat every hour (also yields to any in-progress session scan)
     this._scanInterval = setInterval(() => {
       log.info('secret-scan: Hourly scan triggered')
-      this.runScan().catch((err: unknown) => {
-        log.error('secret-scan: Hourly scan failed:', err)
-      })
+      void this._runWhenIdle()
     }, 3600000)
+  },
+
+  // How many times _runWhenIdle re-checks (every 5s) for a session scan to finish
+  // before giving up and scanning anyway. ~2 min cap so we never wait forever.
+  _MAX_IDLE_WAITS: 24,
+
+  /**
+   * Run the scan once session scanning is idle. If a session scan is in progress,
+   * re-check every 5s (up to the cap) rather than competing with it. A lazy import
+   * avoids a static dependency on session-service (keeps this module test-isolable).
+   */
+  async _runWhenIdle(attempt = 0): Promise<void> {
+    try {
+      const { sessionService } = await import('./session-service')
+      if (sessionService._scanInProgress && attempt < this._MAX_IDLE_WAITS) {
+        setTimeout(() => void this._runWhenIdle(attempt + 1), 5000)
+        return
+      }
+    } catch {
+      // Can't reach the session service — just proceed with the scan.
+    }
+    this.runScan().catch((err: unknown) => {
+      log.error('secret-scan: Auto scan failed:', err)
+    })
   },
 
   /** Stop hourly scanning */
