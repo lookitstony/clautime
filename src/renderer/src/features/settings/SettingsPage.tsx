@@ -20,7 +20,10 @@ import {
   CreditCard,
   Radar,
   Bell,
-  Info
+  Info,
+  RefreshCw,
+  ShieldAlert,
+  CheckCircle2
 } from 'lucide-react'
 import { useGitIdentity, useDetectGitIdentity, useUnconfiguredGitEmails } from '../git/use-git'
 import type { CustomSecretPattern, PatternTestResult } from '../../../../shared/types/secret-scan'
@@ -33,7 +36,21 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { DangerConfirmDialog } from '@/components/shared/DangerConfirmDialog'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
+import { useRescanStore } from '@/stores/use-rescan-store'
 import { cn } from '@/lib/utils'
+
+/** Exact phrase the user must type to trigger a factory reset. */
+const FACTORY_RESET_PHRASE = 'delete all my data'
 
 const ACCENT_THEMES = [
   { id: 'teal', color: '#14b8a6', label: 'Teal' },
@@ -68,6 +85,57 @@ export function SettingsPage(): React.JSX.Element {
   const queryClient = useQueryClient()
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState<string>('general')
+
+  // ============= Rescan coordination =============
+  // Detection settings persist immediately, but re-deriving sessions to match
+  // them is a single shared "rescan" step. `rescanPending` says the saved
+  // settings haven't been applied yet.
+  const rescanPending = useRescanStore((s) => s.pending)
+  const markRescanPending = useRescanStore((s) => s.markPending)
+  const beginRescan = useRescanStore((s) => s.beginRescan)
+  const completeRescan = useRescanStore((s) => s.completeRescan)
+  const clearRescanPending = useRescanStore((s) => s.clear)
+  const [isRescanning, setIsRescanning] = useState(false)
+  // When the user tries to leave the Detection tab with a rescan still pending,
+  // stash where they wanted to go and ask first.
+  const [pendingLeaveCategory, setPendingLeaveCategory] = useState<string | null>(null)
+
+  // Re-derive sessions (and git commit matches) to match the saved settings.
+  // Guards against concurrent runs and against clearing `pending` if a setting
+  // changed mid-rescan (that change wasn't seen by the scan we just ran).
+  const runRescan = useCallback(async (): Promise<boolean> => {
+    if (isRescanning) return false
+    const token = beginRescan()
+    setIsRescanning(true)
+    try {
+      await window.api.sessions.scanAndRebuild()
+      await window.api.git.scan().catch(() => undefined)
+      completeRescan(token)
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['live'] })
+      queryClient.invalidateQueries({ queryKey: ['git'] })
+      toast.success('Sessions rescanned to match your settings')
+      return true
+    } catch {
+      toast.error('Rescan failed')
+      return false
+    } finally {
+      setIsRescanning(false)
+    }
+  }, [isRescanning, beginRescan, completeRescan, queryClient])
+
+  // Guard tab switches: if a rescan is pending, intercept and ask instead of
+  // silently navigating away.
+  const requestCategory = useCallback(
+    (next: string) => {
+      if (next !== activeCategory && activeCategory === 'detection' && rescanPending) {
+        setPendingLeaveCategory(next)
+        return
+      }
+      setActiveCategory(next)
+    },
+    [activeCategory, rescanPending]
+  )
 
   useEffect(() => {
     window.api.updater.getVersion().then((r) => {
@@ -262,12 +330,20 @@ export function SettingsPage(): React.JSX.Element {
   const [alertMode, setAlertMode] = useState<'percent' | 'minutes'>('percent')
   const [alertMinutes, setAlertMinutes] = useState(5)
   const [isSavingIdle, setIsSavingIdle] = useState(false)
+  // The working slider value hydrates once; later `['settings']` invalidations
+  // (e.g. from toggling a provider on the same tab) must not clobber an unsaved
+  // edit. `savedIdleTimeout` still tracks the persisted value for the disable
+  // logic.
+  const idleHydratedRef = useRef(false)
 
   useEffect(() => {
     if (settings) {
       const timeout = settings['idle_timeout_minutes']
       const val = timeout ? parseInt(timeout, 10) || 15 : 15
-      setIdleTimeout(val)
+      if (!idleHydratedRef.current) {
+        setIdleTimeout(val)
+        idleHydratedRef.current = true
+      }
       setSavedIdleTimeout(val)
       setClaudeDir(settings['claude_dir'] ?? '')
       setAlertMode((settings['alert_threshold_mode'] as 'percent' | 'minutes') ?? 'percent')
@@ -279,22 +355,22 @@ export function SettingsPage(): React.JSX.Element {
 
   const idleTimeoutChanged = idleTimeout !== savedIdleTimeout
 
-  const saveIdleTimeoutAndRebuild = useCallback(async () => {
+  // Persist the idle timeout immediately; applying it to sessions is deferred to
+  // the shared rescan (marked pending here).
+  const saveIdleTimeout = useCallback(async () => {
     setIsSavingIdle(true)
     try {
       await window.api.settings.set('idle_timeout_minutes', String(idleTimeout))
-      await window.api.sessions.scanAndRebuild()
       setSavedIdleTimeout(idleTimeout)
       queryClient.invalidateQueries({ queryKey: ['settings'] })
-      queryClient.invalidateQueries({ queryKey: ['sessions'] })
-      queryClient.invalidateQueries({ queryKey: ['live'] })
-      toast.success('Idle timeout saved — sessions rebuilt')
+      markRescanPending()
+      toast.success('Idle timeout saved — rescan to apply')
     } catch {
-      toast.error('Failed to save and rebuild')
+      toast.error('Failed to save idle timeout')
     } finally {
       setIsSavingIdle(false)
     }
-  }, [idleTimeout, queryClient])
+  }, [idleTimeout, queryClient, markRescanPending])
 
   const saveSetting = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
@@ -326,24 +402,25 @@ export function SettingsPage(): React.JSX.Element {
 
   const gitAuthorName = gitIdentity?.name || detectedGitIdentity?.name || 'You'
 
+  // Persist the git author emails immediately; re-matching commits to sessions
+  // is deferred to the shared rescan (marked pending here).
   const saveGitIdentity = useCallback(
     async (emails: string) => {
       setIsSavingGit(true)
       try {
         const r = await window.api.git.setIdentity(gitAuthorName, emails.trim())
         if (!r.success) throw new Error(r.error.message)
-        await window.api.git.scan()
         setGitEmailsDirty(false)
         queryClient.invalidateQueries({ queryKey: ['git'] })
-        queryClient.invalidateQueries({ queryKey: ['sessions'] })
-        toast.success('Git identity saved — commits rescanned')
+        markRescanPending()
+        toast.success('Git identity saved — rescan to apply')
       } catch {
         toast.error('Failed to save git identity')
       } finally {
         setIsSavingGit(false)
       }
     },
-    [gitAuthorName, queryClient]
+    [gitAuthorName, queryClient, markRescanPending]
   )
 
   // Drop an email from the cached warning list immediately, so Add/Ignore feel
@@ -394,9 +471,13 @@ export function SettingsPage(): React.JSX.Element {
     const r = await window.api.dialog.openFolder()
     if (r.success && r.data) {
       setClaudeDir(r.data)
-      saveSetting.mutate({ key: 'claude_dir', value: r.data })
+      // Only mark a rescan pending once the value is actually persisted.
+      saveSetting.mutate(
+        { key: 'claude_dir', value: r.data },
+        { onSuccess: () => markRescanPending() }
+      )
     }
-  }, [saveSetting])
+  }, [saveSetting, markRescanPending])
 
   // ============= Secret Scanner =============
   const [scanMode, setScanMode] = useState<'monitor' | 'monitor-alert' | 'auto-clean'>('monitor')
@@ -634,6 +715,8 @@ export function SettingsPage(): React.JSX.Element {
   // provider must stay tracked so the app is never left with no data source.
   const isProviderOn = (settingKey: string): boolean => settings?.[settingKey] !== 'false'
   const enabledProviderCount = PROVIDERS.filter((p) => isProviderOn(p.settingKey)).length
+  // Toggling a provider persists immediately and marks a rescan pending — the
+  // shared rescan is what actually adds/purges that provider's sessions.
   const toggleProvider = useCallback(
     async (provider: ProviderInfo, checked: boolean) => {
       if (!checked && enabledProviderCount <= 1) {
@@ -643,17 +726,15 @@ export function SettingsPage(): React.JSX.Element {
       try {
         await window.api.settings.set(provider.settingKey, checked ? 'true' : 'false')
         queryClient.invalidateQueries({ queryKey: ['settings'] })
-        await window.api.sessions.scanAndRebuild()
-        queryClient.invalidateQueries({ queryKey: ['sessions'] })
-        queryClient.invalidateQueries({ queryKey: ['live'] })
+        markRescanPending()
         toast.success(
-          `${provider.label} tracking ${checked ? 'enabled' : 'disabled'} — sessions rebuilt`
+          `${provider.label} tracking ${checked ? 'enabled' : 'disabled'} — rescan to apply`
         )
       } catch {
         toast.error(`Failed to update ${provider.label} tracking`)
       }
     },
-    [queryClient, enabledProviderCount]
+    [queryClient, enabledProviderCount, markRescanPending]
   )
 
   // ============= Theme =============
@@ -687,7 +768,7 @@ export function SettingsPage(): React.JSX.Element {
               <li key={c.id}>
                 <button
                   type="button"
-                  onClick={() => setActiveCategory(c.id)}
+                  onClick={() => requestCategory(c.id)}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors',
                     active
@@ -1160,12 +1241,12 @@ export function SettingsPage(): React.JSX.Element {
                   </span>
                   <Button
                     size="sm"
-                    disabled={!idleTimeoutChanged && !isSavingIdle}
+                    disabled={!idleTimeoutChanged || isSavingIdle}
                     className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-                    onClick={saveIdleTimeoutAndRebuild}
+                    onClick={saveIdleTimeout}
                   >
                     {isSavingIdle && <LoaderCircle size={14} className="mr-1 animate-spin" />}
-                    {isSavingIdle ? 'Rebuilding...' : 'Save & Rebuild'}
+                    Save
                   </Button>
                 </div>
               </div>
@@ -1227,27 +1308,44 @@ export function SettingsPage(): React.JSX.Element {
                 )
               })}
 
-              <div className="flex items-center justify-between border-t border-[var(--surface-border)] pt-3 mt-3">
+            </SectionCard>
+          </section>
+        )}
+
+        {/* Factory Reset — irreversible; visually cordoned off as a danger zone */}
+        {activeCategory === 'detection' && (
+          <section>
+            <SectionHeader title="Danger Zone" />
+            <div className="rounded-lg border border-red-500/40 bg-red-500/[0.06] p-4">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <label className="block text-[12px] font-semibold text-[var(--text-primary)]">
-                    Reset Sessions
+                  <label className="flex items-center gap-1.5 text-[12px] font-semibold text-red-400">
+                    <ShieldAlert size={14} />
+                    Factory Reset
                   </label>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Clear all session data and re-scan from JSONL files.
+                  <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                    Wipes <strong className="text-[var(--text-secondary)]">all</strong> session
+                    data — including manual sessions and your project, client, and description
+                    edits — then rebuilds from the logs still on disk.{' '}
+                    <strong className="text-red-400/90">
+                      Compacted Claude sessions and pruned Gemini sessions are no longer on disk, so
+                      their hours are lost permanently.
+                    </strong>{' '}
+                    Only use this to start fresh when things are broken.
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="ghost"
                   disabled={isResetting}
-                  className="text-[11px] text-red-400 hover:text-red-400 hover:bg-red-500/15"
+                  className="shrink-0 text-[11px] text-red-400 hover:bg-red-500/15 hover:text-red-400"
                   onClick={() => setConfirmReset(true)}
                 >
                   {isResetting && <LoaderCircle size={14} className="mr-1 animate-spin" />}
-                  {isResetting ? 'Rescanning...' : 'Reset & Rescan'}
+                  {isResetting ? 'Resetting...' : 'Factory Reset'}
                 </Button>
               </div>
-            </SectionCard>
+            </div>
           </section>
         )}
 
@@ -1296,7 +1394,7 @@ export function SettingsPage(): React.JSX.Element {
                     onClick={() => saveGitIdentity(gitEmailsInput)}
                   >
                     {isSavingGit && <LoaderCircle size={14} className="mr-1 animate-spin" />}
-                    {isSavingGit ? 'Rescanning...' : 'Save & Rescan'}
+                    Save
                   </Button>
                 </div>
               </div>
@@ -1352,6 +1450,57 @@ export function SettingsPage(): React.JSX.Element {
                 </div>
               )}
             </SectionCard>
+          </section>
+        )}
+
+        {/* Shared rescan bar — one place to apply every detection setting */}
+        {activeCategory === 'detection' && (
+          <section>
+            <div
+              className={cn(
+                'sticky bottom-4 z-10 flex items-center justify-between gap-4 rounded-lg border p-3 shadow-lg backdrop-blur',
+                rescanPending
+                  ? 'border-[var(--accent)]/50 bg-[var(--accent)]/[0.08]'
+                  : 'border-[var(--surface-border)] bg-[var(--background-elevated)]/90'
+              )}
+            >
+              <div className="flex items-start gap-2">
+                {rescanPending ? (
+                  <RefreshCw size={15} className="mt-0.5 shrink-0 text-[var(--accent)]" />
+                ) : (
+                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                )}
+                <div>
+                  <p className="text-[12px] font-semibold text-[var(--text-primary)]">
+                    {rescanPending ? 'Settings changed — rescan to apply' : 'Sessions are up to date'}
+                  </p>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {rescanPending
+                      ? 'Your data is safe. Sessions just won’t reflect the new settings until you rescan.'
+                      : 'Rescan any time to re-read your logs and rebuild sessions.'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                disabled={isRescanning}
+                variant={rescanPending ? 'default' : 'ghost'}
+                className={cn(
+                  'shrink-0',
+                  rescanPending
+                    ? 'bg-[var(--accent)] text-white hover:brightness-[1.15]'
+                    : 'text-[var(--text-secondary)]'
+                )}
+                onClick={() => runRescan()}
+              >
+                {isRescanning ? (
+                  <LoaderCircle size={14} className="mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw size={14} className="mr-1" />
+                )}
+                {isRescanning ? 'Rescanning...' : 'Rescan now'}
+              </Button>
+            </div>
           </section>
         )}
 
@@ -2281,31 +2430,108 @@ export function SettingsPage(): React.JSX.Element {
           onCancel={() => setConfirmDeletePattern(null)}
         />
 
-        <ConfirmDialog
+        <DangerConfirmDialog
           open={confirmReset}
-          title="Reset Sessions"
-          description="This will delete ALL data including raw message history and re-import from scratch. Any history from compacted conversations will be permanently lost. This cannot be undone."
-          confirmLabel="Reset & Rescan"
-          cancelLabel="Cancel"
-          variant="destructive"
+          title="Factory Reset"
+          phrase={FACTORY_RESET_PHRASE}
+          confirmLabel="Factory Reset"
+          loading={isResetting}
+          warning={
+            <>
+              <p>
+                This permanently deletes <strong>every session</strong> — including manual sessions
+                and all your project, client, and description edits — plus raw message history, then
+                re-imports from the logs still on disk.
+              </p>
+              <p className="rounded border border-red-500/40 bg-red-500/10 p-2 text-red-300">
+                Compacted Claude sessions and pruned Gemini sessions are no longer on disk. Their
+                hours <strong>cannot be recovered</strong> and will be lost. This cannot be undone.
+              </p>
+              <p className="text-[var(--text-muted)]">
+                Only do this to start over when something has gone wrong.
+              </p>
+            </>
+          }
           onConfirm={async () => {
-            setConfirmReset(false)
             setIsResetting(true)
             try {
               await window.api.sessions.reset()
               await window.api.sessions.scan()
+              clearRescanPending()
               queryClient.invalidateQueries({ queryKey: ['sessions'] })
               queryClient.invalidateQueries({ queryKey: ['live'] })
               queryClient.invalidateQueries({ queryKey: ['git'] })
-              toast.success('Sessions reset and re-scanned')
+              toast.success('Factory reset complete — sessions re-imported')
             } catch {
               toast.error('Reset failed')
             } finally {
               setIsResetting(false)
+              setConfirmReset(false)
             }
           }}
           onCancel={() => setConfirmReset(false)}
         />
+
+        <AlertDialog
+          open={pendingLeaveCategory !== null}
+          onOpenChange={(v) => {
+            // Escape / overlay = stay on the tab. Ignore while a rescan is in
+            // flight so the dialog can't be dismissed mid-run.
+            if (!v && !isRescanning) setPendingLeaveCategory(null)
+          }}
+        >
+          <AlertDialogContent
+            size="sm"
+            className="border-[var(--surface-border)] bg-[var(--background-elevated)]"
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-[var(--text-primary)]">
+                Rescan to apply your changes?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-[var(--text-muted)]">
+                You changed settings that affect how sessions are detected. Your data is safe —
+                sessions just won’t reflect the new settings until you rescan.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                disabled={isRescanning}
+                className="border-[var(--surface-border)] bg-transparent text-[var(--text-secondary)] hover:bg-[var(--surface-border)]/50"
+              >
+                Stay on this tab
+              </AlertDialogCancel>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={isRescanning}
+                className="text-[var(--text-secondary)]"
+                onClick={() => {
+                  const dest = pendingLeaveCategory
+                  setPendingLeaveCategory(null)
+                  if (dest) setActiveCategory(dest)
+                }}
+              >
+                Leave without rescanning
+              </Button>
+              <Button
+                size="sm"
+                disabled={isRescanning}
+                className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                onClick={async () => {
+                  const dest = pendingLeaveCategory
+                  // Keep the (modal) dialog open during the rescan so the tab
+                  // can't be switched underneath us; navigate only on success.
+                  const ok = await runRescan()
+                  setPendingLeaveCategory(null)
+                  if (ok && dest) setActiveCategory(dest)
+                }}
+              >
+                {isRescanning && <LoaderCircle size={14} className="mr-1 animate-spin" />}
+                {isRescanning ? 'Rescanning...' : 'Rescan & leave'}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   )
