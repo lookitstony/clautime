@@ -41,7 +41,7 @@ npm run rebuild:electron # Rebuild better-sqlite3 for Electron (dev)
 ## Database
 
 - SQLite at `~/.electron/userData/clautime.db` (auto-migrates from old `clawdtime` folder)
-- 11 migrations (0000–0010), next migration is **0011**
+- Migrations live in `src/main/db/migrations/` (NOT the stale top-level `drizzle/` copy) — check the highest number there before generating; sessions have a `tool` column ('claude' | 'codex')
 - Schema files: `src/main/db/schema/*.ts` — snake_case SQL, camelCase TypeScript
 - Migrations: `drizzle-kit generate` → sequential numbering → auto-run on app startup
 - Tables: sessions, clients, projects, ai_summaries, git_commits, raw_messages, progress_events, app_settings, scan_state, project_alert_config, secret_findings
@@ -62,6 +62,7 @@ All IPC uses `IpcResult<T>` wrapper — never throw raw exceptions across IPC bo
 
 - **session-detector**: Gap-based session detection (tool-type-aware: 5/10/30 min gaps)
 - **session-service**: CRUD + scan/rebuild logic, auto-triggers git scan
+- **Data sources**: Claude Code (`~/.claude*/projects/`) + Codex CLI (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`); parser adapters in `src/main/parsers/` (session-parser.ts, codex-parser.ts) both emit `ParsedSessionData`; `track_codex` setting toggles Codex (default on)
 - **ai-service**: 3-tier fallback (cached AI → git commits → empty), Claude API
 - **live-monitor-service**: Real-time JSONL file watching, 5s interval, midnight-aware
 - **secret-scan-service**: 40+ regex patterns, custom patterns, JSONL redaction

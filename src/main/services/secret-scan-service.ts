@@ -8,6 +8,7 @@ import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { secretFindings, secretScanState } from '../db/schema/secret-findings'
 import { settingsService } from './settings-service'
+import { discoverCodexSessionFiles } from '../parsers/codex-parser'
 import type {
   SecretScanResult,
   SecretFinding,
@@ -789,6 +790,14 @@ export const secretScanService = {
     const todayMidnight = getTodayMidnight()
 
     const allFiles = await discoverJsonlFiles(claudeDir)
+    // Codex rollouts hold the same kind of transcript text — scan them with the
+    // same raw-line patterns unless Codex tracking is off. Scanning and redaction
+    // are line-based and format-agnostic, so no Codex-specific handling is needed.
+    if (settingsService.getSetting('track_codex') !== 'false') {
+      const codexFiles = await discoverCodexSessionFiles()
+      allFiles.push(...codexFiles)
+      log.info(`secret-scan: Including ${codexFiles.length} Codex JSONL files`)
+    }
     log.info(`secret-scan: Discovered ${allFiles.length} JSONL files`)
 
     // Filter: only files with mtime before today's midnight

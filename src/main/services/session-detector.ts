@@ -202,7 +202,11 @@ const FAST_TOOLS = new Set([
   'AskUserQuestion',
   'TodoWrite',
   'EnterPlanMode',
-  'ExitPlanMode'
+  'ExitPlanMode',
+  // Codex CLI tool names ('shell' intentionally omitted — medium, like Bash)
+  'apply_patch',
+  'update_plan',
+  'view_image'
 ])
 
 function getMaxToolGap(toolNames: string[]): number {
@@ -273,6 +277,7 @@ function buildDetectedSession(
     endedAt,
     durationMinutes: Math.max(1, durationMinutes), // intentional: minimum 1 minute per session
     projectPath,
+    tool: parsed.tool ?? 'claude',
     claudeSessionId: parsed.sessionId,
     sourceFile: parsed.sourceFile,
     promptCount: humanPrompts,

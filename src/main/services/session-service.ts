@@ -12,10 +12,20 @@ import { progressEvents } from '../db/schema/raw-messages'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
-import { discoverSessionFiles, parseSessionFile } from '../parsers'
-import { detectSessionsFromMultiple } from './session-detector'
+import {
+  discoverSessionFiles,
+  discoverCodexSessionFiles,
+  readCodexSessionMeta,
+  parseAnySessionFile
+} from '../parsers'
+import { detectSessionsFromMultiple, encodeProjectPath } from './session-detector'
 import { getClaudeConfigDirs } from './discovery-service'
-import { isExcludedProjectDir } from '../../shared/paths'
+import {
+  isExcludedProjectDir,
+  isExcludedProjectPath,
+  normalizePath,
+  toolForSourceFile
+} from '../../shared/paths'
 import type {
   SessionFilters,
   ScanResult,
@@ -48,6 +58,57 @@ async function discoverSessionFilesAcross(
 ): Promise<string[]> {
   const perDir = await Promise.all(dirs.map((d) => discoverSessionFiles(d, projectFilter)))
   return perDir.flat()
+}
+
+/** True unless the user has turned Codex tracking off. */
+function isCodexTrackingEnabled(): boolean {
+  return settingsService.getSetting('track_codex') !== 'false'
+}
+
+/**
+ * Codex rollout files to include in a scan. Codex has no per-project folders, so
+ * a project filter (Claude-encoded dir names) is matched against each file's
+ * session_meta cwd — a cheap head-of-file read, not a full parse.
+ */
+async function discoverCodexFiles(projectFilter?: string[]): Promise<string[]> {
+  if (!isCodexTrackingEnabled()) return []
+  const files = await discoverCodexSessionFiles()
+  if (!projectFilter || projectFilter.length === 0) return files
+
+  const filterSet = new Set(projectFilter)
+  const matched: string[] = []
+  for (const f of files) {
+    const meta = await readCodexSessionMeta(f)
+    if (meta?.cwd && filterSet.has(encodeProjectPath(normalizePath(meta.cwd)))) {
+      matched.push(f)
+    }
+  }
+  return matched
+}
+
+/**
+ * Remove all Codex-derived auto sessions (used when the track_codex toggle is
+ * turned off, so already-imported Codex history disappears too).
+ */
+function purgeCodexSessions(db: ReturnType<typeof getDb>): void {
+  const codexIds = db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(and(eq(sessions.source, 'auto'), eq(sessions.tool, 'codex')))
+    .all()
+    .map((r) => r.id)
+  if (codexIds.length === 0) return
+
+  db.transaction((tx) => {
+    tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, codexIds)).run()
+    tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, codexIds)).run()
+    tx.update(gitCommits)
+      .set({ sessionId: null })
+      .where(inArray(gitCommits.sessionId, codexIds))
+      .run()
+    tx.delete(sessions).where(inArray(sessions.id, codexIds)).run()
+  })
+  log.info(`Purged ${codexIds.length} Codex sessions (tracking disabled)`)
 }
 
 function safeParseJsonArray(str: string): string[] {
@@ -100,8 +161,13 @@ export const sessionService = {
     )
 
     // 1. Discover session files across every config dir (optionally project-filtered)
-    const allFiles = await discoverSessionFilesAcross(dirs, projectFilter)
-    log.info(`Discovered ${allFiles.length} total session files`)
+    const claudeFiles = await discoverSessionFilesAcross(dirs, projectFilter)
+    const codexFiles = await discoverCodexFiles(projectFilter)
+    if (!isCodexTrackingEnabled()) purgeCodexSessions(getDb())
+    const allFiles = [...claudeFiles, ...codexFiles]
+    log.info(
+      `Discovered ${allFiles.length} total session files (${claudeFiles.length} Claude, ${codexFiles.length} Codex)`
+    )
 
     // Backfill raw_messages on first scan if table is empty
     await this._backfillIfNeeded(claudeDir, projectFilter)
@@ -125,10 +191,11 @@ export const sessionService = {
     // 3. Parse changed files
     const parsedSessions: ParsedSessionData[] = []
     for (const filePath of filesToProcess) {
-      const p = await parseSessionFile(filePath)
-      if (p) {
-        parsedSessions.push(p)
-      }
+      const p = await parseAnySessionFile(filePath)
+      if (!p) continue
+      // Codex has no excluded-dir convention — filter piped-swarm worktrees by cwd
+      if (p.projectDirectory && isExcludedProjectPath(p.projectDirectory)) continue
+      parsedSessions.push(p)
     }
 
     // 4. Store raw messages in DB (with dedup)
@@ -181,6 +248,7 @@ export const sessionService = {
               durationMinutes: d.durationMinutes,
               source: 'auto' as const,
               status: 'completed' as const,
+              tool: d.tool,
               claudeSessionId: d.claudeSessionId,
               promptCount: d.promptCount,
               inputTokens: d.inputTokens,
@@ -317,7 +385,10 @@ export const sessionService = {
       const projectPathEncoded = first.projectPathEncoded || basename(dirname(sourceFile))
       // Skip piped-swarm worktree dirs so a rebuild also purges any already-stored pipe sessions
       if (isExcludedProjectDir(projectPathEncoded)) continue
+      // Honor the track_codex toggle on rebuild too — raw messages stay, sessions don't
+      if (toolForSourceFile(sourceFile) === 'codex' && !isCodexTrackingEnabled()) continue
       const projectDirectory = msgs.find((m) => m.cwd)?.cwd || null
+      if (projectDirectory && isExcludedProjectPath(projectDirectory)) continue
 
       // Reconstruct messages
       const parsedMessages: ParsedMessage[] = msgs.map((rm) => ({
@@ -418,6 +489,7 @@ export const sessionService = {
       reconstructed.push({
         sessionId,
         sourceFile,
+        tool: toolForSourceFile(sourceFile),
         projectPathEncoded,
         projectDirectory,
         messages: parsedMessages,
@@ -484,6 +556,7 @@ export const sessionService = {
               durationMinutes: d.durationMinutes,
               source: 'auto' as const,
               status: 'completed' as const,
+              tool: d.tool,
               claudeSessionId: d.claudeSessionId,
               promptCount: d.promptCount,
               inputTokens: d.inputTokens,
@@ -548,14 +621,16 @@ export const sessionService = {
     log.info('Raw messages table empty — running backfill...')
     const dirs = await resolveScanDirs(claudeDir)
 
-    const allFiles = await discoverSessionFilesAcross(dirs, projectFilter)
-    log.info(`Backfill: parsing ${allFiles.length} JSONL files`)
+    const claudeFiles = await discoverSessionFilesAcross(dirs, projectFilter)
+    const codexFiles = await discoverCodexFiles(projectFilter)
+    const allFiles = [...claudeFiles, ...codexFiles]
+    log.info(`Backfill: parsing ${allFiles.length} JSONL files (${codexFiles.length} Codex)`)
 
     for (const filePath of allFiles) {
-      const p = await parseSessionFile(filePath)
-      if (p) {
-        await storeRawMessages([p])
-      }
+      const p = await parseAnySessionFile(filePath)
+      if (!p) continue
+      if (p.projectDirectory && isExcludedProjectPath(p.projectDirectory)) continue
+      await storeRawMessages([p])
     }
 
     // Synthesize records for compacted files (existing DB sessions with no raw_messages)
@@ -680,6 +755,9 @@ export const sessionService = {
     }
     if (filters?.source) {
       conditions.push(eq(sessions.source, filters.source))
+    }
+    if (filters?.tool) {
+      conditions.push(eq(sessions.tool, filters.tool))
     }
     if (filters?.clientId != null) {
       conditions.push(eq(sessions.clientId, filters.clientId))
@@ -951,7 +1029,7 @@ export const sessionService = {
     }
 
     // Fall back to JSONL file parsing
-    const parsed = await parseSessionFile(session.sourceFile)
+    const parsed = await parseAnySessionFile(session.sourceFile)
     if (!parsed) return []
 
     const startMs = new Date(session.startedAt).getTime()

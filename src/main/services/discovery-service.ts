@@ -2,30 +2,74 @@ import { readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import log from 'electron-log/main.js'
-import { isExcludedProjectDir } from '../../shared/paths'
+import {
+  isExcludedProjectDir,
+  isExcludedProjectPath,
+  normalizePath,
+  getProjectName
+} from '../../shared/paths'
+import { discoverCodexSessionFiles, readCodexSessionMeta } from '../parsers/codex-parser'
+import { encodeProjectPath } from './session-detector'
+import { settingsService } from './settings-service'
 import type { DiscoveredProject } from '../../shared/types/session'
 
 /**
- * DiscoveryService reads ~/.claude/projects/ to find all Claude Code projects.
- * Claude CLI stores all project data centrally at ~/.claude/projects/{encoded-path}/
+ * DiscoveryService finds all tracked coding-agent projects:
+ * - Claude Code stores project data centrally at ~/.claude/projects/{encoded-path}/
+ * - Codex CLI stores per-session rollouts at ~/.codex/sessions/YYYY/MM/DD/ with
+ *   the project path (cwd) inside each file's session_meta header.
  */
 export const discoveryService = {
   /**
-   * Discover all projects from ~/.claude/projects/.
+   * Discover all projects from every ~/.claude* profile and ~/.codex/sessions.
    */
   async discoverDefaultProjects(): Promise<DiscoveredProject[]> {
-    return readClaudeProjects()
+    const projects = await readClaudeProjects()
+    return mergeCodexProjects(projects)
   },
 
   /**
-   * Discover projects from ~/.claude/projects/ filtered to only those
-   * whose decoded path starts with the given folder.
+   * Discover projects filtered to only those whose decoded path starts with
+   * the given folder.
    */
   async discoverProjectsUnderFolder(folder: string): Promise<DiscoveredProject[]> {
-    const all = await readClaudeProjects()
+    const all = await mergeCodexProjects(await readClaudeProjects())
     const normalized = folder.replace(/\\/g, '/').toLowerCase()
     return all.filter((p) => p.projectPath.replace(/\\/g, '/').toLowerCase().startsWith(normalized))
   }
+}
+
+/** Add Codex-only projects (grouped by session_meta cwd) to a discovery result. */
+async function mergeCodexProjects(projects: DiscoveredProject[]): Promise<DiscoveredProject[]> {
+  if (settingsService.getSetting('track_codex') === 'false') return projects
+
+  const byEncodedName = new Map(projects.map((p) => [p.encodedName, p]))
+  let codexFiles: string[]
+  try {
+    codexFiles = await discoverCodexSessionFiles()
+  } catch {
+    return projects
+  }
+  if (codexFiles.length === 0) return projects
+
+  let added = 0
+  for (const file of codexFiles) {
+    const meta = await readCodexSessionMeta(file)
+    if (!meta?.cwd) continue
+    const projectPath = normalizePath(meta.cwd)
+    if (isExcludedProjectPath(projectPath)) continue
+    const encodedName = encodeProjectPath(projectPath)
+    if (byEncodedName.has(encodedName)) continue
+    byEncodedName.set(encodedName, {
+      projectPath,
+      projectName: getProjectName(projectPath),
+      encodedName,
+      hasClaudeDir: false
+    })
+    added++
+  }
+  if (added > 0) log.info(`Discovery: found ${added} Codex-only project(s)`)
+  return [...byEncodedName.values()]
 }
 
 /**

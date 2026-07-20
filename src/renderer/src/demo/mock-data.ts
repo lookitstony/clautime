@@ -195,6 +195,7 @@ function addSession(start: Date, durationMinutes: number, projectId: number, sou
     source,
     description: source === 'manual' ? pick(manualDescriptions) : null,
     status: 'completed',
+    tool: 'claude',
     claudeSessionId: source === 'auto' ? `demo-${s36(sessionId)}-${s36(Math.floor(rand() * 1e9))}` : null,
     promptCount,
     inputTokens,

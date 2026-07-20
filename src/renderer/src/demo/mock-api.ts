@@ -657,6 +657,7 @@ export const mockApi = {
         source: 'manual',
         description: data.description ?? null,
         status: 'completed',
+        tool: 'claude',
         claudeSessionId: null,
         promptCount: 0,
         inputTokens: 0,

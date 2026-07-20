@@ -356,6 +356,7 @@ export function SessionDetailPanel({
           />
         )}
         <StatCard label="Source" value={isAuto ? 'Auto-detected' : 'Manual'} />
+        {isAuto && <StatCard label="Tool" value={session.tool === 'codex' ? 'Codex' : 'Claude Code'} />}
       </div>
 
       {/* Project / Client attribution */}

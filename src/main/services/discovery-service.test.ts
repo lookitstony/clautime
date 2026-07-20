@@ -16,6 +16,19 @@ vi.mock('node:fs/promises', () => ({
   readdir: (...args: unknown[]) => mockReaddir(...args)
 }))
 
+// Settings pulls in the DB/electron — stub it (track_codex unset ⇒ enabled)
+vi.mock('./settings-service', () => ({
+  settingsService: { getSetting: vi.fn(() => null) }
+}))
+
+// Codex discovery has its own fs walk — keep these tests focused on Claude dirs
+const mockCodexFiles = vi.fn(async (): Promise<string[]> => [])
+const mockCodexMeta = vi.fn(async (): Promise<{ sessionId: string; cwd: string | null } | null> => null)
+vi.mock('../parsers/codex-parser', () => ({
+  discoverCodexSessionFiles: (...args: unknown[]) => mockCodexFiles(...(args as [])),
+  readCodexSessionMeta: (...args: unknown[]) => mockCodexMeta(...(args as []))
+}))
+
 import { discoveryService } from './discovery-service'
 
 function dirent(name: string, isDir: boolean): import('node:fs').Dirent {
@@ -115,5 +128,25 @@ describe('discoveryService.discoverProjectsUnderFolder', () => {
 
     const result = await discoveryService.discoverProjectsUnderFolder('c:\\apps')
     expect(result).toHaveLength(1)
+  })
+})
+
+describe('discoveryService codex merge', () => {
+  itWin('adds Codex-only projects grouped by session_meta cwd', async () => {
+    mockReaddir.mockResolvedValue([dirent('C--apps-ClauTime', true)])
+    mockCodexFiles.mockResolvedValue([
+      'C:\\Users\\t\\.codex\\sessions\\2026\\07\\19\\rollout-a.jsonl',
+      'C:\\Users\\t\\.codex\\sessions\\2026\\07\\19\\rollout-b.jsonl'
+    ])
+    mockCodexMeta
+      .mockResolvedValueOnce({ sessionId: 'a', cwd: 'C:\\apps\\CodexOnly' })
+      .mockResolvedValueOnce({ sessionId: 'b', cwd: 'C:\\apps\\ClauTime' }) // dupes with Claude project
+
+    const result = await discoveryService.discoverDefaultProjects()
+    expect(result).toHaveLength(2)
+    const codexOnly = result.find((p) => p.projectName === 'CodexOnly')
+    expect(codexOnly).toBeDefined()
+    expect(codexOnly!.projectPath).toBe('C:\\apps\\CodexOnly')
+    expect(codexOnly!.hasClaudeDir).toBe(false)
   })
 })

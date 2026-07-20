@@ -51,6 +51,7 @@ const baseSession: Session = {
   source: 'auto',
   description: null,
   status: 'completed',
+  tool: 'claude',
   claudeSessionId: 'abc123',
   promptCount: 24,
   inputTokens: 50000,

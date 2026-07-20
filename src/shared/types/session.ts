@@ -1,3 +1,6 @@
+/** Which coding agent produced a session's data. */
+export type SessionTool = 'claude' | 'codex'
+
 /** Session row shape matching the sessions table schema. */
 export interface Session {
   id: number
@@ -8,6 +11,7 @@ export interface Session {
   source: 'auto' | 'manual'
   description: string | null
   status: 'active' | 'completed'
+  tool: SessionTool
   claudeSessionId: string | null
   promptCount: number
   inputTokens: number
@@ -26,6 +30,7 @@ export interface SessionFilters {
   startDate?: string
   endDate?: string
   source?: 'auto' | 'manual'
+  tool?: SessionTool
   clientId?: number
   projectId?: number
 }
@@ -124,6 +129,7 @@ export interface DetectedSession {
   endedAt: string
   durationMinutes: number
   projectPath: string
+  tool: SessionTool
   claudeSessionId: string
   sourceFile: string
   promptCount: number

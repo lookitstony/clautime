@@ -14,6 +14,12 @@ import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { getClaudeConfigDirs } from './discovery-service'
 import { encodeProjectPath } from './session-detector'
+import {
+  getCodexSessionsDir,
+  readCodexSessionMeta,
+  tailReadCodexState
+} from '../parsers/codex-parser'
+import { normalizePath } from '../../shared/paths'
 import { widgetService } from './widget-service'
 import { computeEarnings } from '../../shared/earnings'
 import { clientAlias, projectAlias } from '../../shared/presentation-alias'
@@ -355,21 +361,25 @@ export const liveMonitorService = {
     const configDirs = override ? [override] : await getClaudeConfigDirs()
     const result = new Map<string, { lastPromptAt: string; isProcessing: boolean }>()
 
-    // The same encoded project dir can exist under multiple config profiles
-    // (e.g. one account per client). Keep whichever entry is more recent/active
-    // so switching accounts still reflects live activity.
+    // The same encoded project dir can surface from multiple sources — several
+    // config profiles (one account per client), or Claude and Codex running in
+    // the same directory. Merge rather than overwrite: keep the most recent
+    // prompt time, but mark the project processing if ANY source is active, so a
+    // more-recent idle session never masks another source that's still working.
     const setResult = (
       name: string,
       value: { lastPromptAt: string; isProcessing: boolean }
     ): void => {
       const existing = result.get(name)
-      if (
-        !existing ||
-        value.lastPromptAt > existing.lastPromptAt ||
-        (value.isProcessing && !existing.isProcessing)
-      ) {
+      if (!existing) {
         result.set(name, value)
+        return
       }
+      result.set(name, {
+        lastPromptAt:
+          value.lastPromptAt > existing.lastPromptAt ? value.lastPromptAt : existing.lastPromptAt,
+        isProcessing: existing.isProcessing || value.isProcessing
+      })
     }
 
     const now = new Date()
@@ -383,6 +393,7 @@ export const liveMonitorService = {
       this._idleSince.clear()
       this._wasProcessing.clear()
       this._lastActiveAt.clear()
+      this._codexCwdCache.clear()
       this._lastEvictionDate = todayDate
     }
 
@@ -545,7 +556,102 @@ export const liveMonitorService = {
       }
     }
 
+    // ---- Codex live activity ----
+    if (settingsService.getSetting('track_codex') !== 'false') {
+      try {
+        await this._collectCodexTimestamps(setResult, todayStart, now)
+      } catch (err) {
+        log.debug('getLatestPromptTimestamps: codex pass failed:', err)
+      }
+    }
+
     return result
+  },
+
+  // cwd never changes within a rollout file — cache the head-of-file read
+  _codexCwdCache: new Map<string, string | null>(),
+
+  /**
+   * Scan today's (and, for sessions spanning midnight, yesterday's) Codex
+   * rollout folders and fold their activity into the live timestamp map.
+   * Codex folders are keyed by session START date, so a session that began
+   * yesterday keeps writing to yesterday's folder after midnight.
+   */
+  async _collectCodexTimestamps(
+    setResult: (name: string, value: { lastPromptAt: string; isProcessing: boolean }) => void,
+    todayStart: number,
+    now: Date
+  ): Promise<void> {
+    const sessionsRoot = getCodexSessionsDir()
+    const dayDirs: string[] = []
+    for (const daysAgo of [0, 1]) {
+      const d = new Date(todayStart)
+      d.setDate(d.getDate() - daysAgo)
+      const yyyy = String(d.getFullYear())
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      dayDirs.push(join(sessionsRoot, yyyy, mm, dd))
+    }
+
+    for (const dayDir of dayDirs) {
+      let entries: import('node:fs').Dirent<string>[]
+      try {
+        entries = await readdir(dayDir, { withFileTypes: true, encoding: 'utf8' })
+      } catch {
+        continue // folder for that day doesn't exist
+      }
+
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+        const fp = join(dayDir, entry.name)
+        try {
+          const s = await stat(fp)
+          const mtime = s.mtime.getTime()
+          if (mtime < todayStart) continue // idle since before today
+
+          // Track mtime changes to detect active writing (same window as Claude)
+          const prev = this._lastMtimeChange.get(fp)
+          if (!prev || prev.prevMtime !== mtime) {
+            this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
+          }
+          const recentlyWritten = now.getTime() - this._lastMtimeChange.get(fp)!.changedAt < 30_000
+          const recentlyModified = now.getTime() - mtime < 3 * 60_000
+
+          let cwd = this._codexCwdCache.get(fp)
+          if (cwd === undefined) {
+            const meta = await readCodexSessionMeta(fp)
+            cwd = meta?.cwd ?? null
+            this._codexCwdCache.set(fp, cwd)
+          }
+          if (!cwd) continue
+          const encoded = encodeProjectPath(normalizePath(cwd))
+
+          // Reuse the shared per-file cache when the file hasn't changed
+          const cached = this._promptTimestampCache.get(fp)
+          if (cached && cached.mtime === mtime) {
+            const awaitingWindow = cached.state === 'tool-pending' ? recentlyWritten : recentlyModified
+            const isActive = recentlyWritten || (cached.awaitingResponse && awaitingWindow)
+            setResult(encoded, { lastPromptAt: cached.lastPromptAt, isProcessing: isActive })
+            continue
+          }
+
+          const { lastPromptAt, awaitingResponse, state } = await tailReadCodexState(fp)
+          const effectivePromptAt = lastPromptAt ?? new Date(mtime).toISOString()
+          this._promptTimestampCache.set(fp, {
+            mtime,
+            lastPromptAt: effectivePromptAt,
+            awaitingResponse,
+            state
+          })
+          const awaitingWindow = state === 'tool-pending' ? recentlyWritten : recentlyModified
+          const isActive = recentlyWritten || (awaitingResponse && awaitingWindow)
+          setResult(encoded, { lastPromptAt: effectivePromptAt, isProcessing: isActive })
+        } catch (err) {
+          log.debug(`_collectCodexTimestamps: error for ${entry.name}:`, err)
+          continue
+        }
+      }
+    }
   },
 
   startMonitoring(intervalMs: number): void {
