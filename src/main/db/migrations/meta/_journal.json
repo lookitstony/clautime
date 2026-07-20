@@ -155,6 +155,13 @@
       "when": 1784490495396,
       "tag": "0021_codex_tool_column",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1784574587122,
+      "tag": "0022_sessions_tool_index",
+      "breakpoints": true
     }
   ]
 }

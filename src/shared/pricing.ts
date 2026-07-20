@@ -42,7 +42,30 @@ const PRICING_TABLE: { prefix: string; pricing: ModelPricing }[] = [
   { prefix: 'gpt-5-nano', pricing: { displayName: 'GPT-5 nano', inputPerMTok: 0.05, outputPerMTok: 0.4 } },
   { prefix: 'gpt-5.5', pricing: { displayName: 'GPT-5.5', inputPerMTok: 1.25, outputPerMTok: 10 } },
   { prefix: 'gpt-5.1', pricing: { displayName: 'GPT-5.1', inputPerMTok: 1.25, outputPerMTok: 10 } },
-  { prefix: 'gpt-5', pricing: { displayName: 'GPT-5', inputPerMTok: 1.25, outputPerMTok: 10 } }
+  { prefix: 'gpt-5', pricing: { displayName: 'GPT-5', inputPerMTok: 1.25, outputPerMTok: 10 } },
+  // Older OpenAI models (OpenCode can route to any provider/model). More
+  // specific variants first — 'gpt-4o' and 'gpt-4-turbo' before the bare 'gpt-4'
+  // catch-all, and the nano/mini variants before their base model.
+  { prefix: 'gpt-4.1-nano', pricing: { displayName: 'GPT-4.1 nano', inputPerMTok: 0.1, outputPerMTok: 0.4 } },
+  { prefix: 'gpt-4.1-mini', pricing: { displayName: 'GPT-4.1 mini', inputPerMTok: 0.4, outputPerMTok: 1.6 } },
+  { prefix: 'gpt-4.1', pricing: { displayName: 'GPT-4.1', inputPerMTok: 2, outputPerMTok: 8 } },
+  { prefix: 'gpt-4o-mini', pricing: { displayName: 'GPT-4o mini', inputPerMTok: 0.15, outputPerMTok: 0.6 } },
+  { prefix: 'gpt-4o', pricing: { displayName: 'GPT-4o', inputPerMTok: 2.5, outputPerMTok: 10 } },
+  { prefix: 'gpt-4-turbo', pricing: { displayName: 'GPT-4 Turbo', inputPerMTok: 10, outputPerMTok: 30 } },
+  { prefix: 'gpt-4', pricing: { displayName: 'GPT-4', inputPerMTok: 30, outputPerMTok: 60 } },
+  // Google Gemini models (Gemini CLI sessions). Cached input bills at 0.1x via
+  // CACHE_READ_MULTIPLIER. More specific variants first: flash-lite before
+  // flash, and the bare 'gemini' catch-all last so it never shadows them.
+  { prefix: 'gemini-2.5-flash-lite', pricing: { displayName: 'Gemini 2.5 Flash-Lite', inputPerMTok: 0.1, outputPerMTok: 0.4 } },
+  { prefix: 'gemini-2.5-flash', pricing: { displayName: 'Gemini 2.5 Flash', inputPerMTok: 0.3, outputPerMTok: 2.5 } },
+  { prefix: 'gemini-2.5-pro', pricing: { displayName: 'Gemini 2.5 Pro', inputPerMTok: 1.25, outputPerMTok: 10 } },
+  { prefix: 'gemini-2.0-flash-lite', pricing: { displayName: 'Gemini 2.0 Flash-Lite', inputPerMTok: 0.075, outputPerMTok: 0.3 } },
+  { prefix: 'gemini-2.0-flash', pricing: { displayName: 'Gemini 2.0 Flash', inputPerMTok: 0.1, outputPerMTok: 0.4 } },
+  { prefix: 'gemini-1.5-flash', pricing: { displayName: 'Gemini 1.5 Flash', inputPerMTok: 0.075, outputPerMTok: 0.3 } },
+  { prefix: 'gemini-1.5-pro', pricing: { displayName: 'Gemini 1.5 Pro', inputPerMTok: 1.25, outputPerMTok: 5 } },
+  { prefix: 'gemini-3-pro', pricing: { displayName: 'Gemini 3 Pro', inputPerMTok: 2, outputPerMTok: 12 } },
+  { prefix: 'gemini-3', pricing: { displayName: 'Gemini 3', inputPerMTok: 2, outputPerMTok: 12 } },
+  { prefix: 'gemini', pricing: { displayName: 'Gemini', inputPerMTok: 1.25, outputPerMTok: 10 } }
 ]
 
 /** Fallback for unknown or missing model strings — Opus rates, since this app's usage is mostly Opus. */

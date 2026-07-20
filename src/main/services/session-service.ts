@@ -13,9 +13,8 @@ import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { detectSessionsFromMultiple } from './session-detector'
-import { enabledProviders, providerForFile } from '../providers'
+import { enabledProviders, providerForFile, providerRegistry } from '../providers'
 import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
-import { PROVIDERS } from '../../shared/providers'
 import { isProviderEnabled } from './provider-tracking'
 import type {
   SessionFilters,
@@ -45,14 +44,21 @@ const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
 async function discoverFilesByProvider(
   claudeDirOverride?: string,
   projectFilter?: string[]
-): Promise<{ id: string; files: string[] }[]> {
+): Promise<{ id: SessionTool; files: string[] }[]> {
   return Promise.all(
     enabledProviders().map(async (p) => ({
       id: p.id,
-      files: await p.discoverFiles({
-        rootOverride: p.id === 'claude' ? claudeDirOverride : undefined,
-        projectFilter
-      })
+      // Isolate each provider: one provider's discovery throwing must not fail
+      // the whole multi-provider scan (the others still have work to do).
+      files: await p
+        .discoverFiles({
+          rootOverride: p.id === 'claude' ? claudeDirOverride : undefined,
+          projectFilter
+        })
+        .catch((err) => {
+          log.warn(`Discovery failed for provider ${p.id}:`, err)
+          return [] as string[]
+        })
     }))
   )
 }
@@ -63,6 +69,21 @@ async function discoverFilesByProvider(
  * so re-enabling and rescanning rebuilds the sessions.
  */
 function purgeSessionsForTool(db: ReturnType<typeof getDb>, tool: SessionTool): void {
+  // Drop this tool's scan_state too, so re-enabling the provider re-scans its
+  // files from disk. Without this a plain background scan sees no size/mtime
+  // change on the (unchanged) files and never re-detects — restoration would
+  // depend entirely on a rebuild happening to run. Raw messages stay, so a
+  // rebuild still recovers any files the CLI has since pruned.
+  const staleScan = db
+    .select({ filePath: scanState.filePath })
+    .from(scanState)
+    .all()
+    .filter((r) => providerForFile(r.filePath).id === tool)
+    .map((r) => r.filePath)
+  if (staleScan.length > 0) {
+    db.delete(scanState).where(inArray(scanState.filePath, staleScan)).run()
+  }
+
   const ids = db
     .select({ id: sessions.id })
     .from(sessions)
@@ -80,9 +101,14 @@ function purgeSessionsForTool(db: ReturnType<typeof getDb>, tool: SessionTool): 
   log.info(`Purged ${ids.length} ${tool} sessions (tracking disabled)`)
 }
 
-/** Purge auto sessions for every provider whose tracking is currently off. */
+/**
+ * Purge auto sessions for every provider whose tracking is currently off.
+ * Iterates the provider registry (the single source of truth for which
+ * providers exist) so a newly-added provider is purged and discovered from the
+ * same list — no parallel hand-synced array to drift out of sync.
+ */
 function purgeDisabledProviders(db: ReturnType<typeof getDb>): void {
-  for (const p of PROVIDERS) {
+  for (const p of providerRegistry) {
     if (!isProviderEnabled(p.id)) purgeSessionsForTool(db, p.id)
   }
 }

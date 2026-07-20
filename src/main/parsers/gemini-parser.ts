@@ -185,13 +185,28 @@ function usageFromTokens(tokens: GeminiTokens): TokenUsage | null {
 }
 
 /**
+ * Read and parse the whole Gemini session document. The CLI rewrites this file
+ * in place as the session grows, so a read that lands mid-rewrite yields
+ * truncated JSON; retry once after a short delay before giving up, so an
+ * always-active session isn't repeatedly dropped from scans.
+ */
+async function readGeminiChatFile(filePath: string): Promise<GeminiChatFile> {
+  try {
+    return JSON.parse(await readFile(filePath, 'utf-8'))
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    return JSON.parse(await readFile(filePath, 'utf-8'))
+  }
+}
+
+/**
  * Parse a Gemini CLI session recording into ParsedSessionData.
  * Returns null for unreadable/empty files.
  */
 export async function parseGeminiSessionFile(filePath: string): Promise<ParsedSessionData | null> {
   let data: GeminiChatFile
   try {
-    data = JSON.parse(await readFile(filePath, 'utf-8'))
+    data = await readGeminiChatFile(filePath)
   } catch (err) {
     log.warn(`Failed to read Gemini session file: ${filePath}`, err)
     return null

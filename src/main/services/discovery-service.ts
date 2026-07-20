@@ -62,9 +62,13 @@ async function mergeProviderProjects(projects: DiscoveredProject[]): Promise<Dis
       continue
     }
 
+    // Read every file's meta concurrently — each is an independent cheap head
+    // read, so a serial await per file makes project-list refresh O(N) on the
+    // main process. Results are folded in deterministically afterward.
+    const metas = await Promise.all(files.map((file) => provider.readMeta(file).catch(() => null)))
+
     let added = 0
-    for (const file of files) {
-      const meta = await provider.readMeta(file).catch(() => null)
+    for (const meta of metas) {
       if (!meta?.cwd) continue
       const projectPath = normalizePath(meta.cwd)
       if (isExcludedProjectPath(projectPath)) continue

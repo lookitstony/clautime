@@ -300,12 +300,28 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
         const info = payload.info as Record<string, unknown> | undefined
         const totals = readUsageTotals(info)
         if (totals) {
+          // Codex reports cumulative session totals; per-turn deltas come from
+          // diffing consecutive token_count events. Context compaction, cache
+          // eviction, or a session reset can make a cumulative field DROP, and a
+          // naive diff mishandles that two ways: a shrinking `cached` makes
+          // `-Δcached` positive and inflates input with phantom tokens, while a
+          // reset that lowers `input` below the stale baseline drives Δinput
+          // negative and silently undercounts (max(0,·) → 0) for many turns.
+          // Guard both: if input/output fall below the prior baseline a reset
+          // happened, so re-baseline from zero; and clamp Δcached into
+          // [0, Δinput] so a shrinking cache never subtracts more than the input
+          // that actually grew this turn.
+          const reset = totals.input < prevTotals.input || totals.output < prevTotals.output
+          const base = reset ? { input: 0, cached: 0, output: 0 } : prevTotals
+          const dInput = Math.max(0, totals.input - base.input)
+          const dOutput = Math.max(0, totals.output - base.output)
+          // Codex input_tokens INCLUDES cached tokens — split them out
+          const dCached = Math.min(Math.max(0, totals.cached - base.cached), dInput)
           const delta: TokenUsage = {
-            // Codex input_tokens INCLUDES cached tokens — split them out
-            inputTokens: Math.max(0, totals.input - prevTotals.input - (totals.cached - prevTotals.cached)),
-            outputTokens: Math.max(0, totals.output - prevTotals.output),
+            inputTokens: dInput - dCached,
+            outputTokens: dOutput,
             cacheCreationInputTokens: 0,
-            cacheReadInputTokens: Math.max(0, totals.cached - prevTotals.cached)
+            cacheReadInputTokens: dCached
           }
           prevTotals = totals
           if (delta.inputTokens || delta.outputTokens || delta.cacheReadInputTokens) {

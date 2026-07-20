@@ -358,9 +358,14 @@ export const liveMonitorService = {
   async _computeLatestPromptTimestamps(): Promise<
     Map<string, { lastPromptAt: string; isProcessing: boolean }>
   > {
+    const result = new Map<string, { lastPromptAt: string; isProcessing: boolean }>()
+
+    // Claude tracking off — skip its live scan (and the readdir of home that
+    // getClaudeConfigDirs does) entirely rather than resolving dirs first.
+    if (!isProviderEnabled('claude')) return result
+
     const override = settingsService.getSetting('claude_dir')
     const configDirs = override ? [override] : await getClaudeConfigDirs()
-    const result = new Map<string, { lastPromptAt: string; isProcessing: boolean }>()
 
     // The same encoded project dir can surface from multiple sources — several
     // config profiles (one account per client), or Claude and Codex running in
@@ -399,7 +404,6 @@ export const liveMonitorService = {
     }
 
     for (const configDir of configDirs) {
-      if (!isProviderEnabled('claude')) break // Claude tracking off — skip its live scan
       const projectsDir = join(configDir, 'projects')
       log.debug(`getLatestPromptTimestamps: scanning ${projectsDir}`)
 

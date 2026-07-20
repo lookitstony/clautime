@@ -1,0 +1,1 @@
+CREATE INDEX `idx_sessions_tool` ON `sessions` (`tool`);
