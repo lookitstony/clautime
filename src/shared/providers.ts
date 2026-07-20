@@ -38,6 +38,24 @@ export const PROVIDERS: ProviderInfo[] = [
       'Scan OpenAI Codex CLI logs (~/.codex/sessions) and fold them into sessions, hours, and invoicing.',
     settingKey: 'track_codex',
     badgeClass: 'bg-[rgba(74,222,128,0.1)] text-[#4ade80]'
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    shortLabel: 'Gemini',
+    description:
+      'Scan Gemini CLI chat logs (~/.gemini/tmp) and fold them into sessions, hours, and invoicing.',
+    settingKey: 'track_gemini',
+    badgeClass: 'bg-[rgba(66,133,244,0.12)] text-[#669df6]'
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    shortLabel: 'OpenCode',
+    description:
+      'Scan OpenCode session storage (~/.local/share/opencode) and fold it into sessions, hours, and invoicing.',
+    settingKey: 'track_opencode',
+    badgeClass: 'bg-[rgba(161,161,170,0.12)] text-[#b8b8c0]'
   }
 ]
 

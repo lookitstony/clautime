@@ -9,23 +9,32 @@ import {
   getProjectName
 } from '../../shared/paths'
 import { codexProvider } from '../providers/codex-provider'
+import { geminiProvider } from '../providers/gemini-provider'
+import { opencodeProvider } from '../providers/opencode-provider'
 import { encodeProjectPath } from './session-detector'
 import { isProviderEnabled } from './provider-tracking'
+import type { SessionProvider } from '../providers/types'
 import type { DiscoveredProject } from '../../shared/types/session'
 
 /**
  * DiscoveryService finds all tracked coding-agent projects:
  * - Claude Code stores project data centrally at ~/.claude/projects/{encoded-path}/
- * - Codex CLI stores per-session rollouts at ~/.codex/sessions/YYYY/MM/DD/ with
- *   the project path (cwd) inside each file's session_meta header.
+ * - Codex, Gemini CLI, and OpenCode have no such central per-project tree; their
+ *   projects come from each session's cwd via the provider's cheap meta read.
+ *
+ * Imported individually (not via the registry) to avoid a module cycle:
+ * providers/index → claude-provider → this file.
  */
+const CWD_PROVIDERS: SessionProvider[] = [codexProvider, geminiProvider, opencodeProvider]
+
 export const discoveryService = {
   /**
-   * Discover all projects from every ~/.claude* profile and ~/.codex/sessions.
+   * Discover all projects from every ~/.claude* profile plus every cwd-based
+   * provider's session store.
    */
   async discoverDefaultProjects(): Promise<DiscoveredProject[]> {
     const projects = await readClaudeProjects()
-    return mergeCodexProjects(projects)
+    return mergeProviderProjects(projects)
   },
 
   /**
@@ -33,42 +42,45 @@ export const discoveryService = {
    * the given folder.
    */
   async discoverProjectsUnderFolder(folder: string): Promise<DiscoveredProject[]> {
-    const all = await mergeCodexProjects(await readClaudeProjects())
+    const all = await mergeProviderProjects(await readClaudeProjects())
     const normalized = folder.replace(/\\/g, '/').toLowerCase()
     return all.filter((p) => p.projectPath.replace(/\\/g, '/').toLowerCase().startsWith(normalized))
   }
 }
 
-/** Add Codex-only projects (grouped by session_meta cwd) to a discovery result. */
-async function mergeCodexProjects(projects: DiscoveredProject[]): Promise<DiscoveredProject[]> {
-  if (!isProviderEnabled('codex')) return projects
-
+/** Add non-Claude projects (grouped by each session's cwd) to a discovery result. */
+async function mergeProviderProjects(projects: DiscoveredProject[]): Promise<DiscoveredProject[]> {
   const byEncodedName = new Map(projects.map((p) => [p.encodedName, p]))
-  let codexFiles: string[]
-  try {
-    codexFiles = await codexProvider.discoverFiles()
-  } catch {
-    return projects
-  }
-  if (codexFiles.length === 0) return projects
 
-  let added = 0
-  for (const file of codexFiles) {
-    const meta = await codexProvider.readMeta(file)
-    if (!meta?.cwd) continue
-    const projectPath = normalizePath(meta.cwd)
-    if (isExcludedProjectPath(projectPath)) continue
-    const encodedName = encodeProjectPath(projectPath)
-    if (byEncodedName.has(encodedName)) continue
-    byEncodedName.set(encodedName, {
-      projectPath,
-      projectName: getProjectName(projectPath),
-      encodedName,
-      hasClaudeDir: false
-    })
-    added++
+  for (const provider of CWD_PROVIDERS) {
+    if (!isProviderEnabled(provider.id)) continue
+
+    let files: string[]
+    try {
+      files = await provider.discoverFiles()
+    } catch {
+      continue
+    }
+
+    let added = 0
+    for (const file of files) {
+      const meta = await provider.readMeta(file).catch(() => null)
+      if (!meta?.cwd) continue
+      const projectPath = normalizePath(meta.cwd)
+      if (isExcludedProjectPath(projectPath)) continue
+      const encodedName = encodeProjectPath(projectPath)
+      if (byEncodedName.has(encodedName)) continue
+      byEncodedName.set(encodedName, {
+        projectPath,
+        projectName: getProjectName(projectPath),
+        encodedName,
+        hasClaudeDir: false
+      })
+      added++
+    }
+    if (added > 0) log.info(`Discovery: found ${added} ${provider.id}-only project(s)`)
   }
-  if (added > 0) log.info(`Discovery: found ${added} Codex-only project(s)`)
+
   return [...byEncodedName.values()]
 }
 

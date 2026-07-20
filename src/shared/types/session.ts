@@ -1,5 +1,5 @@
 /** Which coding agent produced a session's data. */
-export type SessionTool = 'claude' | 'codex'
+export type SessionTool = 'claude' | 'codex' | 'gemini' | 'opencode'
 
 /** Session row shape matching the sessions table schema. */
 export interface Session {

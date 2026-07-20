@@ -1,3 +1,5 @@
+import type { SessionTool } from './types/session'
+
 /**
  * Normalize a directory path for consistent comparison.
  * Windows: uppercase drive letter + backslashes.
@@ -18,10 +20,14 @@ export function getProjectName(projectPath: string): string {
 
 /**
  * Which coding agent wrote a session file, derived from its path.
- * Codex CLI stores rollouts under ~/.codex/sessions/; everything else is Claude.
+ * Codex rollouts live under ~/.codex/, Gemini CLI chats under ~/.gemini/,
+ * OpenCode sessions under <data-dir>/opencode/storage/; everything else is Claude.
  */
-export function toolForSourceFile(sourceFile: string): 'claude' | 'codex' {
-  return /[\\/]\.codex[\\/]/i.test(sourceFile) ? 'codex' : 'claude'
+export function toolForSourceFile(sourceFile: string): SessionTool {
+  if (/[\\/]\.codex[\\/]/i.test(sourceFile)) return 'codex'
+  if (/[\\/]\.gemini[\\/]/i.test(sourceFile)) return 'gemini'
+  if (/[\\/]opencode[\\/]storage[\\/]/i.test(sourceFile)) return 'opencode'
+  return 'claude'
 }
 
 /**

@@ -11,9 +11,16 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { useFilterStore } from '@/stores/use-filter-store'
-import { formatShortDate, resolveClientName, resolveProjectName, type DatePreset } from '@/lib/format'
+import {
+  formatShortDate,
+  resolveClientName,
+  resolveProjectName,
+  type DatePreset
+} from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
+import { PROVIDERS } from '../../../../shared/providers'
 import type { Client, Project } from '../../../../shared/types/client-project'
+import type { SessionTool } from '../../../../shared/types/session'
 
 interface SessionFilterBarProps {
   clients: Client[]
@@ -176,15 +183,18 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
       {/* Tool dropdown */}
       <Select
         value={tool ?? '__all__'}
-        onValueChange={(val) => setTool(val === '__all__' ? null : (val as 'claude' | 'codex'))}
+        onValueChange={(val) => setTool(val === '__all__' ? null : (val as SessionTool))}
       >
         <SelectTrigger size="sm" className="h-8 min-w-[110px]" aria-label="Filter by tool">
           <SelectValue placeholder="All Tools" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__all__">All Tools</SelectItem>
-          <SelectItem value="claude">Claude</SelectItem>
-          <SelectItem value="codex">Codex</SelectItem>
+          {PROVIDERS.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.shortLabel}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 

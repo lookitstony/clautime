@@ -9,7 +9,11 @@ import { getDb } from '../db'
 import { secretFindings, secretScanState } from '../db/schema/secret-findings'
 import { settingsService } from './settings-service'
 import { codexProvider } from '../providers/codex-provider'
+import { geminiProvider } from '../providers/gemini-provider'
+import { opencodeProvider } from '../providers/opencode-provider'
+import { discoverOpencodeTranscriptFiles } from '../parsers/opencode-parser'
 import { isProviderEnabled } from './provider-tracking'
+import type { SessionTool } from '../../shared/types/session'
 import type {
   SecretScanResult,
   SecretFinding,
@@ -813,16 +817,29 @@ export const secretScanService = {
     const claudeDir = settingsService.getSetting('claude_dir') || join(homedir(), '.claude')
     const todayMidnight = getTodayMidnight()
 
-    // Scan each provider's transcripts unless its tracking is off. Codex rollouts
-    // hold the same kind of text as Claude JSONL — scanning and redaction are
-    // line-based and format-agnostic, so no provider-specific handling is needed.
+    // Scan each provider's transcripts unless its tracking is off. Codex JSONL,
+    // Gemini's pretty-printed JSON, and OpenCode's per-message JSON all keep any
+    // secret inside a single line — scanning and redaction are line-based and
+    // format-agnostic, so no provider-specific handling is needed.
     const allFiles = isProviderEnabled('claude') ? await discoverJsonlFiles(claudeDir) : []
-    if (isProviderEnabled('codex')) {
-      const codexFiles = await codexProvider.discoverFiles()
-      allFiles.push(...codexFiles)
-      log.info(`secret-scan: Including ${codexFiles.length} Codex JSONL files`)
+    // OpenCode's conversation text lives in message/part files, not the session
+    // metadata files its provider discovers — enumerate those directly.
+    const providerSources: Array<{ id: SessionTool; discover: () => Promise<string[]> }> = [
+      { id: codexProvider.id, discover: () => codexProvider.discoverFiles() },
+      { id: geminiProvider.id, discover: () => geminiProvider.discoverFiles() },
+      { id: opencodeProvider.id, discover: () => discoverOpencodeTranscriptFiles() }
+    ]
+    for (const source of providerSources) {
+      if (!isProviderEnabled(source.id)) continue
+      try {
+        const files = await source.discover()
+        allFiles.push(...files)
+        log.info(`secret-scan: Including ${files.length} ${source.id} transcript files`)
+      } catch (err) {
+        log.warn(`secret-scan: ${source.id} discovery failed:`, err)
+      }
     }
-    log.info(`secret-scan: Discovered ${allFiles.length} JSONL files`)
+    log.info(`secret-scan: Discovered ${allFiles.length} transcript files`)
 
     // Filter: only files with mtime before today's midnight
     const eligibleFiles: Array<{ path: string; mtime: Date; size: number }> = []

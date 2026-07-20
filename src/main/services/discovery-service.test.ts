@@ -23,13 +23,22 @@ vi.mock('./settings-service', () => ({
 
 // Codex discovery has its own fs walk — keep these tests focused on Claude dirs
 const mockCodexFiles = vi.fn(async (): Promise<string[]> => [])
-const mockCodexMeta = vi.fn(async (): Promise<{ sessionId: string; cwd: string | null } | null> => null)
+const mockCodexMeta = vi.fn(
+  async (): Promise<{ sessionId: string; cwd: string | null } | null> => null
+)
 vi.mock('../providers/codex-provider', () => ({
   codexProvider: {
     id: 'codex',
     discoverFiles: (...args: unknown[]) => mockCodexFiles(...(args as [])),
     readMeta: (...args: unknown[]) => mockCodexMeta(...(args as []))
   }
+}))
+// Gemini/OpenCode discovery walk their own trees too — stub them to empty
+vi.mock('../providers/gemini-provider', () => ({
+  geminiProvider: { id: 'gemini', discoverFiles: vi.fn(async () => []), readMeta: vi.fn() }
+}))
+vi.mock('../providers/opencode-provider', () => ({
+  opencodeProvider: { id: 'opencode', discoverFiles: vi.fn(async () => []), readMeta: vi.fn() }
 }))
 
 import { discoveryService } from './discovery-service'
