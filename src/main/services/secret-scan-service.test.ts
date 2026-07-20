@@ -36,6 +36,11 @@ vi.mock('../providers/codex-provider', () => ({
   codexProvider: { id: 'codex', discoverFiles: vi.fn(async () => []) }
 }))
 
+// Controllable session-scan state for the startup-deferral tests. secret-scan
+// only reaches this via a lazy import inside _runWhenIdle.
+const mockSessionService = { _scanInProgress: false }
+vi.mock('./session-service', () => ({ sessionService: mockSessionService }))
+
 // Mock DB
 const mockInsertValues: unknown[] = []
 const mockUpdateSets: unknown[] = []
@@ -448,6 +453,35 @@ describe('secret-scan-service', () => {
       expect(findingInsert).toBeTruthy()
       // Context is intentionally empty for privacy — no surrounding text is stored
       expect(findingInsert.context).toBe('')
+    })
+  })
+
+  describe('startup deferral (_runWhenIdle)', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+      mockSessionService._scanInProgress = false
+    })
+
+    it('scans immediately when no session scan is in progress', async () => {
+      mockSessionService._scanInProgress = false
+      const runScan = vi.spyOn(secretScanService, 'runScan').mockResolvedValue({} as never)
+      await secretScanService._runWhenIdle()
+      expect(runScan).toHaveBeenCalledTimes(1)
+      runScan.mockRestore()
+    })
+
+    it('defers while a session scan runs, then scans once it finishes', async () => {
+      vi.useFakeTimers()
+      const runScan = vi.spyOn(secretScanService, 'runScan').mockResolvedValue({} as never)
+      mockSessionService._scanInProgress = true
+
+      await secretScanService._runWhenIdle()
+      expect(runScan).not.toHaveBeenCalled() // deferred; retry scheduled
+
+      mockSessionService._scanInProgress = false
+      await vi.advanceTimersByTimeAsync(5000) // retry fires, now idle
+      expect(runScan).toHaveBeenCalledTimes(1)
+      runScan.mockRestore()
     })
   })
 })

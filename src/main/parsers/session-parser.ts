@@ -1,4 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises'
+import { readJsonlLines } from './line-reader'
 import { join, basename, dirname } from 'node:path'
 import log from 'electron-log/main.js'
 import { isExcludedProjectDir } from '../../shared/paths'
@@ -113,20 +114,6 @@ export async function discoverSessionFiles(
  * Skips malformed lines with a warning (NFR14). Returns null for unreadable files.
  */
 export async function parseSessionFile(filePath: string): Promise<ParsedSessionData | null> {
-  let content: string
-  try {
-    content = await readFile(filePath, 'utf-8')
-  } catch (err) {
-    log.warn(`Failed to read session file: ${filePath}`, err)
-    return null
-  }
-
-  const lines = content.split('\n').filter((line) => line.trim())
-  if (lines.length === 0) {
-    log.warn(`Empty session file: ${filePath}`)
-    return null
-  }
-
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
   const totalUsage = emptyTokenUsage()
@@ -135,8 +122,19 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
   let projectDirectory: string | null = null
   let summary: string | null = null
 
+  // Stream lines so a large session file never loads whole into memory.
   let lineIdx = 0
-  for (const line of lines) {
+  const lineIter = readJsonlLines(filePath)
+  while (true) {
+    let next: IteratorResult<string, void>
+    try {
+      next = await lineIter.next()
+    } catch (err) {
+      log.warn(`Failed to read session file: ${filePath}`, err)
+      return null
+    }
+    if (next.done) break
+    const line = next.value
     // Yield to the event loop periodically so parsing a large (actively-growing)
     // session file doesn't block the main process and freeze the UI.
     if (++lineIdx % 2000 === 0) await new Promise((resolve) => setImmediate(resolve))
@@ -186,6 +184,11 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
       totalUsage.cacheCreationInputTokens += msg.usage.cacheCreationInputTokens
       totalUsage.cacheReadInputTokens += msg.usage.cacheReadInputTokens
     }
+  }
+
+  if (lineIdx === 0) {
+    log.warn(`Empty session file: ${filePath}`)
+    return null
   }
 
   // Sort by timestamp

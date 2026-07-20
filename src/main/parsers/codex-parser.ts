@@ -1,7 +1,8 @@
-import { open, readdir, readFile } from 'node:fs/promises'
+import { open, readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import log from 'electron-log/main.js'
+import { readJsonlLines } from './line-reader'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from './types'
 
 /**
@@ -217,17 +218,6 @@ function readUsageTotals(info: Record<string, unknown> | undefined): CodexUsageT
  * Returns null for unreadable files; skips malformed/unknown lines with a log.
  */
 export async function parseCodexSessionFile(filePath: string): Promise<ParsedSessionData | null> {
-  let content: string
-  try {
-    content = await readFile(filePath, 'utf-8')
-  } catch (err) {
-    log.warn(`Failed to read Codex session file: ${filePath}`, err)
-    return null
-  }
-
-  const lines = content.split('\n').filter((line) => line.trim())
-  if (lines.length === 0) return null
-
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
   const totalUsage = emptyTokenUsage()
@@ -256,8 +246,19 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
     }
   }
 
+  // Stream lines so a large rollout (tens of MB) never loads whole into memory.
   let lineIdx = 0
-  for (const line of lines) {
+  const lineIter = readJsonlLines(filePath)
+  while (true) {
+    let next: IteratorResult<string, void>
+    try {
+      next = await lineIter.next()
+    } catch (err) {
+      log.warn(`Failed to read Codex session file: ${filePath}`, err)
+      return null
+    }
+    if (next.done) break
+    const line = next.value
     const idx = lineIdx++
     // Yield periodically so parsing large rollouts doesn't block the main process
     if (lineIdx % 2000 === 0) await new Promise((resolve) => setImmediate(resolve))
@@ -428,6 +429,8 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
 
     // compacted / unknown envelope types — ignore
   }
+
+  if (lineIdx === 0) return null // empty (or unreadable) file — nothing to parse
 
   if (!sessionId) sessionId = fallbackSessionId(filePath)
   // A still-pending usage delta (no assistant message ever appeared) is already
