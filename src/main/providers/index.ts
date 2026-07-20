@@ -28,7 +28,16 @@ export function enabledProviders(): SessionProvider[] {
   return providerRegistry.filter((p) => isProviderEnabled(p.id))
 }
 
-/** The provider that owns a given file path (falls back to Claude). */
+/**
+ * The provider that owns a given file path. Claude is the catch-all (its
+ * ownsFile is true for anything the specific providers don't claim), so give the
+ * specific providers first refusal — otherwise a path a specific provider claims
+ * via a resolved root (e.g. a custom OPENCODE_DATA_DIR) would be swallowed by
+ * Claude, which sits first in the registry.
+ */
 export function providerForFile(filePath: string): SessionProvider {
-  return providerRegistry.find((p) => p.ownsFile(filePath)) ?? claudeProvider
+  for (const p of providerRegistry) {
+    if (p.id !== 'claude' && p.ownsFile(filePath)) return p
+  }
+  return claudeProvider
 }

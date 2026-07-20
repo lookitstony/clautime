@@ -10,6 +10,19 @@ export {
   readCodexSessionMeta,
   getCodexSessionsDir
 } from './codex-parser'
+export {
+  discoverGeminiSessionFiles,
+  parseGeminiSessionFile,
+  readGeminiSessionMeta,
+  getGeminiTmpDir
+} from './gemini-parser'
+export {
+  discoverOpencodeSessionFiles,
+  discoverOpencodeTranscriptFiles,
+  parseOpencodeSessionFile,
+  readOpencodeSessionMeta,
+  getOpencodeStorageDir
+} from './opencode-parser'
 export type {
   ParsedSessionData,
   ParsedMessage,

@@ -20,6 +20,7 @@ import {
   geminiProvider,
   opencodeProvider
 } from './index'
+import { PROVIDERS } from '../../shared/providers'
 
 const CODEX_PATH = 'C:\\Users\\t\\.codex\\sessions\\2026\\07\\19\\rollout-abc.jsonl'
 const CLAUDE_PATH = 'C:\\Users\\t\\.claude\\projects\\C--apps-Foo\\session.jsonl'
@@ -61,5 +62,26 @@ describe('provider registry', () => {
 
   it('enabledProviders returns every provider when tracking is unset', () => {
     expect(enabledProviders().map((p) => p.id)).toEqual(['claude', 'codex', 'gemini', 'opencode'])
+  })
+
+  it('stays in sync with the shared PROVIDERS metadata list', () => {
+    // purge (PROVIDERS) and discovery (providerRegistry) must cover the same set
+    // of providers, or a provider gets discovered-but-never-purged or vice versa.
+    expect(new Set(providerRegistry.map((p) => p.id))).toEqual(new Set(PROVIDERS.map((p) => p.id)))
+  })
+
+  it('routes files under a custom OPENCODE_DATA_DIR to the opencode provider', () => {
+    const prev = process.env.OPENCODE_DATA_DIR
+    process.env.OPENCODE_DATA_DIR = 'D:\\data\\oc'
+    try {
+      // Path has no literal "opencode/storage" segment, so the substring
+      // heuristic alone would misroute it to Claude.
+      const customPath = 'D:\\data\\oc\\storage\\session\\global\\ses_xyz.json'
+      expect(opencodeProvider.ownsFile(customPath)).toBe(true)
+      expect(providerForFile(customPath).id).toBe('opencode')
+    } finally {
+      if (prev === undefined) delete process.env.OPENCODE_DATA_DIR
+      else process.env.OPENCODE_DATA_DIR = prev
+    }
   })
 })

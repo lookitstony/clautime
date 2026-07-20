@@ -1,11 +1,18 @@
 import {
   discoverOpencodeSessionFiles,
   readOpencodeSessionMeta,
-  parseOpencodeSessionFile
+  parseOpencodeSessionFile,
+  getOpencodeStorageDir
 } from '../parsers/opencode-parser'
 import { encodeProjectPath } from '../services/session-detector'
 import { normalizePath, toolForSourceFile } from '../../shared/paths'
 import type { SessionProvider, ProviderDiscoverOptions, ProviderSessionMeta } from './types'
+
+/** Case/separator-insensitive "is `filePath` under `root`" test. */
+function isUnder(filePath: string, root: string): boolean {
+  const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
+  return norm(filePath).startsWith(norm(root))
+}
 
 /**
  * OpenCode: one session per ses_*.json metadata file under
@@ -17,7 +24,10 @@ export const opencodeProvider: SessionProvider = {
   id: 'opencode',
 
   ownsFile(filePath) {
-    return toolForSourceFile(filePath) === 'opencode'
+    // The path-substring heuristic covers the default ~/.local/share/opencode
+    // layout; also claim files under a custom OPENCODE_DATA_DIR, whose path need
+    // not contain the literal "opencode/storage" the heuristic looks for.
+    return toolForSourceFile(filePath) === 'opencode' || isUnder(filePath, getOpencodeStorageDir())
   },
 
   async discoverFiles(opts?: ProviderDiscoverOptions) {

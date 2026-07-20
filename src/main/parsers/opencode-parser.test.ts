@@ -166,14 +166,17 @@ describe('opencode-parser', () => {
       expect(parsed!.models).toEqual(['claude-sonnet-5'])
     })
 
-    it('bills reasoning as output and keeps cache read/write separate', async () => {
+    it('bills reasoning as output and excludes cache reads from input', async () => {
       const fp = await writeSession()
       await writeMessage(userMsg('msg_1', T0))
       await writeMessage(assistantMsg('msg_2', T0 + 10_000))
 
       const parsed = await parseOpencodeSessionFile(fp)
       expect(parsed!.totalTokenUsage).toEqual({
-        inputTokens: 1000,
+        // input (1000) is inclusive of the 400 cache reads upstream, so the
+        // billable non-cached input is 600 — cache reads are counted once, at
+        // the cache-read rate, not double-billed at the full input rate.
+        inputTokens: 600,
         outputTokens: 80,
         cacheCreationInputTokens: 20,
         cacheReadInputTokens: 400

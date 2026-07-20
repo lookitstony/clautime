@@ -195,16 +195,20 @@ function toIso(epochMs: number | undefined): string | null {
 
 /**
  * Map an assistant message's token block to the shared TokenUsage shape.
- * `reasoning` tokens are billed as output; cache read/write are reported
- * separately from `input` (whether `input` already includes cache reads varies
- * by upstream provider — values are taken as reported, matching ccusage).
+ * `reasoning` tokens are billed as output. Upstream providers (notably OpenAI,
+ * whose `prompt_tokens` is inclusive of cached tokens) fold cache reads into
+ * `input`, so subtract them out — otherwise the cached portion is billed once
+ * at the full input rate here and again at the cache-read rate in
+ * estimateCostUsd. Mirrors the Gemini parser's `input - cached` handling.
  */
 function usageFromTokens(tokens: NonNullable<OpencodeMessage['tokens']>): TokenUsage | null {
+  const input = tokens.input || 0
+  const cacheRead = tokens.cache?.read || 0
   const usage: TokenUsage = {
-    inputTokens: tokens.input || 0,
+    inputTokens: Math.max(0, input - cacheRead),
     outputTokens: (tokens.output || 0) + (tokens.reasoning || 0),
     cacheCreationInputTokens: tokens.cache?.write || 0,
-    cacheReadInputTokens: tokens.cache?.read || 0
+    cacheReadInputTokens: cacheRead
   }
   return usage.inputTokens ||
     usage.outputTokens ||
@@ -350,7 +354,13 @@ export async function parseOpencodeSessionFile(
 
   if (messages.length === 0) return null
 
-  messages.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  // Sort by timestamp, breaking ties on the sortable msg_ ULID id so a user
+  // prompt and its assistant reply created in the same millisecond keep a
+  // deterministic order (readdir order is not stable and could swap them,
+  // skewing gap detection and prompt attribution).
+  messages.sort(
+    (a, b) => a.timestamp.localeCompare(b.timestamp) || (a.uuid ?? '').localeCompare(b.uuid ?? '')
+  )
   progressTimestamps.sort()
 
   const timestamps = messages.map((m) => m.timestamp)

@@ -37,7 +37,8 @@ export const sessions = sqliteTable(
     index('idx_sessions_started_at').on(table.startedAt),
     index('idx_sessions_claude_session_id').on(table.claudeSessionId),
     index('idx_sessions_project_id').on(table.projectId),
-    index('idx_sessions_client_id').on(table.clientId)
+    index('idx_sessions_client_id').on(table.clientId),
+    index('idx_sessions_tool').on(table.tool)
   ]
 )
 

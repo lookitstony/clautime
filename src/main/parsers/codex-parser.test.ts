@@ -264,6 +264,54 @@ describe('codex-parser', () => {
       expect(withUsage[0].model).toBe('gpt-5-codex')
     })
 
+    it('re-baselines when cumulative totals reset (compaction) instead of undercounting', async () => {
+      const fp = await writeRollout(
+        jsonl(
+          sessionMeta(),
+          turnContext(),
+          userMessage('2026-07-19T18:07:00.000Z', 'hello'),
+          assistantMessage('2026-07-19T18:07:10.000Z'),
+          tokenCount('2026-07-19T18:07:11.000Z', { input: 5000, cached: 2000, output: 800 }),
+          userMessage('2026-07-19T18:20:00.000Z', 'after a compaction'),
+          assistantMessage('2026-07-19T18:20:10.000Z'),
+          // Context compaction restarted the running totals well below the prior
+          // baseline. A naive diff would clamp Δinput to 0 and lose this turn.
+          tokenCount('2026-07-19T18:20:11.000Z', { input: 900, cached: 300, output: 120 })
+        )
+      )
+
+      const parsed = await parseCodexSessionFile(fp)
+      // Turn 1: input = 5000-2000 = 3000, cached 2000, output 800
+      // Turn 2 (reset): input = 900-300 = 600, cached 300, output 120
+      expect(parsed!.totalTokenUsage.inputTokens).toBe(3600)
+      expect(parsed!.totalTokenUsage.cacheReadInputTokens).toBe(2300)
+      expect(parsed!.totalTokenUsage.outputTokens).toBe(920)
+    })
+
+    it('does not inflate input when the cache shrinks but input grows (eviction)', async () => {
+      const fp = await writeRollout(
+        jsonl(
+          sessionMeta(),
+          turnContext(),
+          userMessage('2026-07-19T18:07:00.000Z', 'hello'),
+          assistantMessage('2026-07-19T18:07:10.000Z'),
+          tokenCount('2026-07-19T18:07:11.000Z', { input: 2000, cached: 1000, output: 200 }),
+          userMessage('2026-07-19T18:08:00.000Z', 'continue'),
+          assistantMessage('2026-07-19T18:08:10.000Z'),
+          // input grows by 100, cache evicted from 1000 → 200. A naive
+          // `Δinput - Δcached` = 100 - (-800) = 900 phantom input tokens.
+          tokenCount('2026-07-19T18:08:11.000Z', { input: 2100, cached: 200, output: 260 })
+        )
+      )
+
+      const parsed = await parseCodexSessionFile(fp)
+      // Turn 1: input 1000, cached 1000, output 200
+      // Turn 2: Δinput 100, Δcached clamped to [0,100] → 0, so input 100, output 60
+      expect(parsed!.totalTokenUsage.inputTokens).toBe(1100)
+      expect(parsed!.totalTokenUsage.cacheReadInputTokens).toBe(1000)
+      expect(parsed!.totalTokenUsage.outputTokens).toBe(260)
+    })
+
     it('does not count injected context wrappers as human prompts', async () => {
       const fp = await writeRollout(
         jsonl(
