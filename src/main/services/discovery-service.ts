@@ -8,9 +8,9 @@ import {
   normalizePath,
   getProjectName
 } from '../../shared/paths'
-import { discoverCodexSessionFiles, readCodexSessionMeta } from '../parsers/codex-parser'
+import { codexProvider } from '../providers/codex-provider'
 import { encodeProjectPath } from './session-detector'
-import { settingsService } from './settings-service'
+import { isProviderEnabled } from './provider-tracking'
 import type { DiscoveredProject } from '../../shared/types/session'
 
 /**
@@ -41,12 +41,12 @@ export const discoveryService = {
 
 /** Add Codex-only projects (grouped by session_meta cwd) to a discovery result. */
 async function mergeCodexProjects(projects: DiscoveredProject[]): Promise<DiscoveredProject[]> {
-  if (settingsService.getSetting('track_codex') === 'false') return projects
+  if (!isProviderEnabled('codex')) return projects
 
   const byEncodedName = new Map(projects.map((p) => [p.encodedName, p]))
   let codexFiles: string[]
   try {
-    codexFiles = await discoverCodexSessionFiles()
+    codexFiles = await codexProvider.discoverFiles()
   } catch {
     return projects
   }
@@ -54,7 +54,7 @@ async function mergeCodexProjects(projects: DiscoveredProject[]): Promise<Discov
 
   let added = 0
   for (const file of codexFiles) {
-    const meta = await readCodexSessionMeta(file)
+    const meta = await codexProvider.readMeta(file)
     if (!meta?.cwd) continue
     const projectPath = normalizePath(meta.cwd)
     if (isExcludedProjectPath(projectPath)) continue

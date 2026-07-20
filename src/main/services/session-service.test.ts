@@ -42,15 +42,41 @@ vi.mock('./settings-service', () => ({
 // Mock the parser functions
 const mockDiscoverFiles = vi.fn<() => Promise<string[]>>()
 const mockParseFile = vi.fn()
+// Capture the discover options each provider receives (asserts override routing)
+const claudeDiscoverOpts: Array<{ rootOverride?: string }> = []
+const codexDiscoverOpts: Array<{ rootOverride?: string }> = []
 
-vi.mock('../parsers', () => ({
-  discoverSessionFiles: (...args: unknown[]) => mockDiscoverFiles(...(args as [])),
-  parseSessionFile: (...args: unknown[]) => mockParseFile(...(args as [])),
-  parseAnySessionFile: (...args: unknown[]) => mockParseFile(...(args as [])),
-  discoverCodexSessionFiles: async () => [],
-  readCodexSessionMeta: async () => null,
-  getCodexSessionsDir: () => 'C:\\fake\\.codex\\sessions'
-}))
+// Drive the ingestion pipeline through fake providers so these tests stay focused
+// on session-service orchestration, not real file discovery. Claude supplies the
+// files (via mockDiscoverFiles); Codex returns none, so existing scan expectations
+// are unchanged while the Codex adapter's received options can still be asserted.
+vi.mock('../providers', () => {
+  const claude = {
+    id: 'claude',
+    ownsFile: () => true,
+    discoverFiles: (opts: { rootOverride?: string }) => {
+      claudeDiscoverOpts.push(opts)
+      return mockDiscoverFiles()
+    },
+    readMeta: async () => null,
+    parseFile: (...args: unknown[]) => mockParseFile(...(args as []))
+  }
+  const codex = {
+    id: 'codex',
+    ownsFile: () => false,
+    discoverFiles: async (opts: { rootOverride?: string }) => {
+      codexDiscoverOpts.push(opts)
+      return [] as string[]
+    },
+    readMeta: async () => null,
+    parseFile: (...args: unknown[]) => mockParseFile(...(args as []))
+  }
+  return {
+    providerRegistry: [claude, codex],
+    enabledProviders: () => [claude, codex],
+    providerForFile: () => claude
+  }
+})
 
 // Mock fs/promises stat
 const mockStat = vi.fn()
@@ -159,6 +185,8 @@ describe('sessionService', () => {
   beforeEach(() => {
     setupTestDb()
     vi.clearAllMocks()
+    claudeDiscoverOpts.length = 0
+    codexDiscoverOpts.length = 0
     Object.keys(mockSettings).forEach((key) => delete mockSettings[key])
   })
 
@@ -167,6 +195,13 @@ describe('sessionService', () => {
   })
 
   describe('scanSessions', () => {
+    it('passes the Claude dir override only to the Claude provider, not others', async () => {
+      mockDiscoverFiles.mockResolvedValue([])
+      await sessionService.scanSessions('/home/user/.claude')
+      expect(claudeDiscoverOpts.at(-1)?.rootOverride).toBe('/home/user/.claude')
+      expect(codexDiscoverOpts.at(-1)?.rootOverride).toBeUndefined()
+    })
+
     it('should detect and store sessions from discovered files', async () => {
       const file1 = '/home/user/.claude/projects/test/session1.jsonl'
 

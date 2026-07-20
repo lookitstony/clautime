@@ -20,6 +20,7 @@ import {
   tailReadCodexState
 } from '../parsers/codex-parser'
 import { normalizePath } from '../../shared/paths'
+import { isProviderEnabled } from './provider-tracking'
 import { widgetService } from './widget-service'
 import { computeEarnings } from '../../shared/earnings'
 import { clientAlias, projectAlias } from '../../shared/presentation-alias'
@@ -398,6 +399,7 @@ export const liveMonitorService = {
     }
 
     for (const configDir of configDirs) {
+      if (!isProviderEnabled('claude')) break // Claude tracking off — skip its live scan
       const projectsDir = join(configDir, 'projects')
       log.debug(`getLatestPromptTimestamps: scanning ${projectsDir}`)
 
@@ -557,7 +559,7 @@ export const liveMonitorService = {
     }
 
     // ---- Codex live activity ----
-    if (settingsService.getSetting('track_codex') !== 'false') {
+    if (isProviderEnabled('codex')) {
       try {
         await this._collectCodexTimestamps(setResult, todayStart, now)
       } catch (err) {

@@ -3,6 +3,7 @@ import { GitCommitHorizontal } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatTimeRange, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { providerInfo } from '../../../../shared/providers'
 import type { Session } from '../../../../shared/types/session'
 
 interface SessionRowProps {
@@ -60,14 +61,15 @@ export function SessionRow({
       >
         {session.source === 'auto' ? 'Auto' : 'Manual'}
       </Badge>
-      {session.tool === 'codex' && (
-        <Badge
-          variant="secondary"
-          className="shrink-0 bg-[rgba(74,222,128,0.1)] text-[10px] font-semibold uppercase text-[#4ade80]"
-        >
-          Codex
-        </Badge>
-      )}
+      <Badge
+        variant="secondary"
+        className={cn(
+          'shrink-0 text-[10px] font-semibold uppercase',
+          providerInfo(session.tool).badgeClass
+        )}
+      >
+        {providerInfo(session.tool).shortLabel}
+      </Badge>
       {hasCommits && (
         <GitCommitHorizontal
           size={14}

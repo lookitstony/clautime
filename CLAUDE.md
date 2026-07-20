@@ -62,7 +62,7 @@ All IPC uses `IpcResult<T>` wrapper — never throw raw exceptions across IPC bo
 
 - **session-detector**: Gap-based session detection (tool-type-aware: 5/10/30 min gaps)
 - **session-service**: CRUD + scan/rebuild logic, auto-triggers git scan
-- **Data sources**: Claude Code (`~/.claude*/projects/`) + Codex CLI (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`); parser adapters in `src/main/parsers/` (session-parser.ts, codex-parser.ts) both emit `ParsedSessionData`; `track_codex` setting toggles Codex (default on)
+- **Data sources / providers**: Claude Code (`~/.claude*/projects/`) + Codex CLI (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`). Parsers in `src/main/parsers/` (session-parser.ts, codex-parser.ts) emit the shared `ParsedSessionData`; each is wrapped by a `SessionProvider` adapter in `src/main/providers/` (claude-provider.ts, codex-provider.ts) registered in `providers/index.ts` (`providerRegistry`, `enabledProviders()`, `providerForFile()`). Scan/backfill/rebuild iterate the registry — adding a provider = parser + adapter + registry entry. UI metadata (labels/badges/setting keys) lives in `src/shared/providers.ts` (`PROVIDERS`). Per-provider `track_<tool>` toggles (default on) gated by `isProviderEnabled` (`src/main/services/provider-tracking.ts`); Settings keeps ≥1 provider on
 - **ai-service**: 3-tier fallback (cached AI → git commits → empty), Claude API
 - **live-monitor-service**: Real-time JSONL file watching, 5s interval, midnight-aware
 - **secret-scan-service**: 40+ regex patterns, custom patterns, JSONL redaction

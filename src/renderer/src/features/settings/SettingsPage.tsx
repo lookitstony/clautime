@@ -25,6 +25,7 @@ import {
 import { useGitIdentity, useDetectGitIdentity, useUnconfiguredGitEmails } from '../git/use-git'
 import type { CustomSecretPattern, PatternTestResult } from '../../../../shared/types/secret-scan'
 import type { UnconfiguredAuthor } from '../../../../shared/types/git'
+import { PROVIDERS, type ProviderInfo } from '../../../../shared/providers'
 import {
   DEFAULT_AI_SUMMARY_INSTRUCTIONS,
   DEFAULT_AI_BRIEF_INSTRUCTIONS
@@ -627,23 +628,32 @@ export function SettingsPage(): React.JSX.Element {
   // ============= After Hours Mode =============
   const afterHoursMode = settings?.['after_hours_mode'] === 'true'
 
-  // ============= Codex Tracking =============
-  // Default on: absent means enabled (scan skips gracefully when ~/.codex doesn't exist).
-  const trackCodex = settings?.['track_codex'] !== 'false'
-  const toggleTrackCodex = useCallback(
-    async (checked: boolean) => {
+  // ============= Provider Tracking =============
+  // One toggle per coding-agent provider. Default on: absent means enabled (a
+  // scan skips gracefully when a provider's log dir doesn't exist). At least one
+  // provider must stay tracked so the app is never left with no data source.
+  const isProviderOn = (settingKey: string): boolean => settings?.[settingKey] !== 'false'
+  const enabledProviderCount = PROVIDERS.filter((p) => isProviderOn(p.settingKey)).length
+  const toggleProvider = useCallback(
+    async (provider: ProviderInfo, checked: boolean) => {
+      if (!checked && enabledProviderCount <= 1) {
+        toast.error('At least one provider must stay tracked')
+        return
+      }
       try {
-        await window.api.settings.set('track_codex', checked ? 'true' : 'false')
+        await window.api.settings.set(provider.settingKey, checked ? 'true' : 'false')
         queryClient.invalidateQueries({ queryKey: ['settings'] })
         await window.api.sessions.scanAndRebuild()
         queryClient.invalidateQueries({ queryKey: ['sessions'] })
         queryClient.invalidateQueries({ queryKey: ['live'] })
-        toast.success(checked ? 'Codex tracking enabled — sessions rebuilt' : 'Codex tracking disabled — sessions rebuilt')
+        toast.success(
+          `${provider.label} tracking ${checked ? 'enabled' : 'disabled'} — sessions rebuilt`
+        )
       } catch {
-        toast.error('Failed to update Codex tracking')
+        toast.error(`Failed to update ${provider.label} tracking`)
       }
     },
-    [queryClient]
+    [queryClient, enabledProviderCount]
   )
 
   // ============= Theme =============
@@ -1194,21 +1204,28 @@ export function SettingsPage(): React.JSX.Element {
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <label className="block text-[12px] font-semibold text-[var(--text-primary)]">
-                    Track Codex Sessions
-                  </label>
-                  <p className="text-[11px] text-[var(--text-muted)]">
-                    Also scan OpenAI Codex CLI logs (~/.codex/sessions) and fold them into sessions,
-                    hours, and invoicing.
-                  </p>
-                </div>
-                <Switch
-                  checked={trackCodex}
-                  onCheckedChange={(checked) => toggleTrackCodex(checked)}
-                />
-              </div>
+              {PROVIDERS.map((provider) => {
+                const enabled = isProviderOn(provider.settingKey)
+                const isLastOn = enabled && enabledProviderCount <= 1
+                return (
+                  <div
+                    key={provider.id}
+                    className="flex items-center justify-between pt-2"
+                  >
+                    <div>
+                      <label className="block text-[12px] font-semibold text-[var(--text-primary)]">
+                        Track {provider.label} Sessions
+                      </label>
+                      <p className="text-[11px] text-[var(--text-muted)]">{provider.description}</p>
+                    </div>
+                    <Switch
+                      checked={enabled}
+                      disabled={isLastOn}
+                      onCheckedChange={(checked) => toggleProvider(provider, checked)}
+                    />
+                  </div>
+                )
+              })}
 
               <div className="flex items-center justify-between border-t border-[var(--surface-border)] pt-3 mt-3">
                 <div>

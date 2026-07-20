@@ -12,20 +12,11 @@ import { progressEvents } from '../db/schema/raw-messages'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
-import {
-  discoverSessionFiles,
-  discoverCodexSessionFiles,
-  readCodexSessionMeta,
-  parseAnySessionFile
-} from '../parsers'
-import { detectSessionsFromMultiple, encodeProjectPath } from './session-detector'
-import { getClaudeConfigDirs } from './discovery-service'
-import {
-  isExcludedProjectDir,
-  isExcludedProjectPath,
-  normalizePath,
-  toolForSourceFile
-} from '../../shared/paths'
+import { detectSessionsFromMultiple } from './session-detector'
+import { enabledProviders, providerForFile } from '../providers'
+import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
+import { PROVIDERS } from '../../shared/providers'
+import { isProviderEnabled } from './provider-tracking'
 import type {
   SessionFilters,
   ScanResult,
@@ -35,80 +26,65 @@ import type {
   TimeBreakdownDay,
   DetectedSession,
   ModelUsageAggregate,
-  ModelUsageFilters
+  ModelUsageFilters,
+  SessionTool
 } from '../../shared/types/session'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
 
 /**
- * Resolve which Claude config dirs a scan should cover. An explicit dir (test
- * fixture or a user-set claude_dir override) wins and is used alone; otherwise
- * we auto-discover every ~/.claude* profile so switching accounts keeps tracking.
+ * Discover session files from every enabled provider, tagged by provider id so
+ * the caller can log the per-provider split. Each provider owns how it finds and
+ * filters its own files (see src/main/providers/).
+ *
+ * `claudeDirOverride` is Claude-specific (a test fixture or user claude_dir), so
+ * it is handed ONLY to the Claude provider — never to Codex, whose root is a
+ * different tree. Other providers resolve their own roots.
  */
-async function resolveScanDirs(explicit?: string): Promise<string[]> {
-  const override = explicit ?? settingsService.getSetting('claude_dir') ?? undefined
-  return override ? [override] : getClaudeConfigDirs()
-}
-
-/** Discover session files across every resolved config dir. */
-async function discoverSessionFilesAcross(
-  dirs: string[],
+async function discoverFilesByProvider(
+  claudeDirOverride?: string,
   projectFilter?: string[]
-): Promise<string[]> {
-  const perDir = await Promise.all(dirs.map((d) => discoverSessionFiles(d, projectFilter)))
-  return perDir.flat()
-}
-
-/** True unless the user has turned Codex tracking off. */
-function isCodexTrackingEnabled(): boolean {
-  return settingsService.getSetting('track_codex') !== 'false'
-}
-
-/**
- * Codex rollout files to include in a scan. Codex has no per-project folders, so
- * a project filter (Claude-encoded dir names) is matched against each file's
- * session_meta cwd — a cheap head-of-file read, not a full parse.
- */
-async function discoverCodexFiles(projectFilter?: string[]): Promise<string[]> {
-  if (!isCodexTrackingEnabled()) return []
-  const files = await discoverCodexSessionFiles()
-  if (!projectFilter || projectFilter.length === 0) return files
-
-  const filterSet = new Set(projectFilter)
-  const matched: string[] = []
-  for (const f of files) {
-    const meta = await readCodexSessionMeta(f)
-    if (meta?.cwd && filterSet.has(encodeProjectPath(normalizePath(meta.cwd)))) {
-      matched.push(f)
-    }
-  }
-  return matched
+): Promise<{ id: string; files: string[] }[]> {
+  return Promise.all(
+    enabledProviders().map(async (p) => ({
+      id: p.id,
+      files: await p.discoverFiles({
+        rootOverride: p.id === 'claude' ? claudeDirOverride : undefined,
+        projectFilter
+      })
+    }))
+  )
 }
 
 /**
- * Remove all Codex-derived auto sessions (used when the track_codex toggle is
- * turned off, so already-imported Codex history disappears too).
+ * Remove a provider's auto-detected sessions (used when its tracking toggle is
+ * turned off, so already-imported history disappears too). Raw messages stay,
+ * so re-enabling and rescanning rebuilds the sessions.
  */
-function purgeCodexSessions(db: ReturnType<typeof getDb>): void {
-  const codexIds = db
+function purgeSessionsForTool(db: ReturnType<typeof getDb>, tool: SessionTool): void {
+  const ids = db
     .select({ id: sessions.id })
     .from(sessions)
-    .where(and(eq(sessions.source, 'auto'), eq(sessions.tool, 'codex')))
+    .where(and(eq(sessions.source, 'auto'), eq(sessions.tool, tool)))
     .all()
     .map((r) => r.id)
-  if (codexIds.length === 0) return
+  if (ids.length === 0) return
 
   db.transaction((tx) => {
-    tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, codexIds)).run()
-    tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, codexIds)).run()
-    tx.update(gitCommits)
-      .set({ sessionId: null })
-      .where(inArray(gitCommits.sessionId, codexIds))
-      .run()
-    tx.delete(sessions).where(inArray(sessions.id, codexIds)).run()
+    tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, ids)).run()
+    tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, ids)).run()
+    tx.update(gitCommits).set({ sessionId: null }).where(inArray(gitCommits.sessionId, ids)).run()
+    tx.delete(sessions).where(inArray(sessions.id, ids)).run()
   })
-  log.info(`Purged ${codexIds.length} Codex sessions (tracking disabled)`)
+  log.info(`Purged ${ids.length} ${tool} sessions (tracking disabled)`)
+}
+
+/** Purge auto sessions for every provider whose tracking is currently off. */
+function purgeDisabledProviders(db: ReturnType<typeof getDb>): void {
+  for (const p of PROVIDERS) {
+    if (!isProviderEnabled(p.id)) purgeSessionsForTool(db, p.id)
+  }
 }
 
 function safeParseJsonArray(str: string): string[] {
@@ -150,23 +126,21 @@ export const sessionService = {
 
   async _doScan(claudeDir?: string, projectFilter?: string[]): Promise<ScanResult> {
     const startTime = Date.now()
-    const dirs = await resolveScanDirs(claudeDir)
 
     const idleTimeoutStr = settingsService.getSetting('idle_timeout_minutes')
     const parsed = idleTimeoutStr ? parseInt(idleTimeoutStr, 10) : NaN
     const idleTimeoutMinutes = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
 
-    log.info(
-      `Starting session scan in: ${dirs.join(', ')} (idle timeout: ${idleTimeoutMinutes}min)`
-    )
+    log.info(`Starting session scan (idle timeout: ${idleTimeoutMinutes}min)`)
 
-    // 1. Discover session files across every config dir (optionally project-filtered)
-    const claudeFiles = await discoverSessionFilesAcross(dirs, projectFilter)
-    const codexFiles = await discoverCodexFiles(projectFilter)
-    if (!isCodexTrackingEnabled()) purgeCodexSessions(getDb())
-    const allFiles = [...claudeFiles, ...codexFiles]
+    // 1. Discover session files from every enabled provider (optionally filtered)
+    const perProvider = await discoverFilesByProvider(claudeDir, projectFilter)
+    purgeDisabledProviders(getDb())
+    const allFiles = perProvider.flatMap((r) => r.files)
     log.info(
-      `Discovered ${allFiles.length} total session files (${claudeFiles.length} Claude, ${codexFiles.length} Codex)`
+      `Discovered ${allFiles.length} total session files (${perProvider
+        .map((r) => `${r.files.length} ${r.id}`)
+        .join(', ')})`
     )
 
     // Backfill raw_messages on first scan if table is empty
@@ -191,7 +165,7 @@ export const sessionService = {
     // 3. Parse changed files
     const parsedSessions: ParsedSessionData[] = []
     for (const filePath of filesToProcess) {
-      const p = await parseAnySessionFile(filePath)
+      const p = await providerForFile(filePath).parseFile(filePath)
       if (!p) continue
       // Codex has no excluded-dir convention — filter piped-swarm worktrees by cwd
       if (p.projectDirectory && isExcludedProjectPath(p.projectDirectory)) continue
@@ -385,8 +359,8 @@ export const sessionService = {
       const projectPathEncoded = first.projectPathEncoded || basename(dirname(sourceFile))
       // Skip piped-swarm worktree dirs so a rebuild also purges any already-stored pipe sessions
       if (isExcludedProjectDir(projectPathEncoded)) continue
-      // Honor the track_codex toggle on rebuild too — raw messages stay, sessions don't
-      if (toolForSourceFile(sourceFile) === 'codex' && !isCodexTrackingEnabled()) continue
+      // Honor the per-provider tracking toggle on rebuild too — raw messages stay, sessions don't
+      if (!isProviderEnabled(providerForFile(sourceFile).id)) continue
       const projectDirectory = msgs.find((m) => m.cwd)?.cwd || null
       if (projectDirectory && isExcludedProjectPath(projectDirectory)) continue
 
@@ -489,7 +463,7 @@ export const sessionService = {
       reconstructed.push({
         sessionId,
         sourceFile,
-        tool: toolForSourceFile(sourceFile),
+        tool: providerForFile(sourceFile).id,
         projectPathEncoded,
         projectDirectory,
         messages: parsedMessages,
@@ -619,15 +593,17 @@ export const sessionService = {
     if (count && count.count > 0) return
 
     log.info('Raw messages table empty — running backfill...')
-    const dirs = await resolveScanDirs(claudeDir)
 
-    const claudeFiles = await discoverSessionFilesAcross(dirs, projectFilter)
-    const codexFiles = await discoverCodexFiles(projectFilter)
-    const allFiles = [...claudeFiles, ...codexFiles]
-    log.info(`Backfill: parsing ${allFiles.length} JSONL files (${codexFiles.length} Codex)`)
+    const perProvider = await discoverFilesByProvider(claudeDir, projectFilter)
+    const allFiles = perProvider.flatMap((r) => r.files)
+    log.info(
+      `Backfill: parsing ${allFiles.length} JSONL files (${perProvider
+        .map((r) => `${r.files.length} ${r.id}`)
+        .join(', ')})`
+    )
 
     for (const filePath of allFiles) {
-      const p = await parseAnySessionFile(filePath)
+      const p = await providerForFile(filePath).parseFile(filePath)
       if (!p) continue
       if (p.projectDirectory && isExcludedProjectPath(p.projectDirectory)) continue
       await storeRawMessages([p])
@@ -1029,7 +1005,7 @@ export const sessionService = {
     }
 
     // Fall back to JSONL file parsing
-    const parsed = await parseAnySessionFile(session.sourceFile)
+    const parsed = await providerForFile(session.sourceFile).parseFile(session.sourceFile)
     if (!parsed) return []
 
     const startMs = new Date(session.startedAt).getTime()
