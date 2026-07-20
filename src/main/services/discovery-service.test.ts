@@ -24,9 +24,12 @@ vi.mock('./settings-service', () => ({
 // Codex discovery has its own fs walk — keep these tests focused on Claude dirs
 const mockCodexFiles = vi.fn(async (): Promise<string[]> => [])
 const mockCodexMeta = vi.fn(async (): Promise<{ sessionId: string; cwd: string | null } | null> => null)
-vi.mock('../parsers/codex-parser', () => ({
-  discoverCodexSessionFiles: (...args: unknown[]) => mockCodexFiles(...(args as [])),
-  readCodexSessionMeta: (...args: unknown[]) => mockCodexMeta(...(args as []))
+vi.mock('../providers/codex-provider', () => ({
+  codexProvider: {
+    id: 'codex',
+    discoverFiles: (...args: unknown[]) => mockCodexFiles(...(args as [])),
+    readMeta: (...args: unknown[]) => mockCodexMeta(...(args as []))
+  }
 }))
 
 import { discoveryService } from './discovery-service'

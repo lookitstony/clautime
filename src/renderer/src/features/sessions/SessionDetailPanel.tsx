@@ -13,6 +13,7 @@ import { formatDuration, formatTimeRange, formatCompactNumber } from '@/lib/form
 import { cn } from '@/lib/utils'
 import { usePromptTimings, useUpdateSession, useDeleteSession } from './use-sessions'
 import { useGitCommitsForSession, useGitRemoteUrl } from '../git/use-git'
+import { providerInfo } from '../../../../shared/providers'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
 
 interface SessionDetailPanelProps {
@@ -356,7 +357,7 @@ export function SessionDetailPanel({
           />
         )}
         <StatCard label="Source" value={isAuto ? 'Auto-detected' : 'Manual'} />
-        {isAuto && <StatCard label="Tool" value={session.tool === 'codex' ? 'Codex' : 'Claude Code'} />}
+        {isAuto && <StatCard label="Tool" value={providerInfo(session.tool).label} />}
       </div>
 
       {/* Project / Client attribution */}

@@ -32,8 +32,8 @@ vi.mock('./settings-service', () => ({
 }))
 
 // Keep tests off the real ~/.codex tree
-vi.mock('../parsers/codex-parser', () => ({
-  discoverCodexSessionFiles: vi.fn(async () => [])
+vi.mock('../providers/codex-provider', () => ({
+  codexProvider: { id: 'codex', discoverFiles: vi.fn(async () => []) }
 }))
 
 // Mock DB

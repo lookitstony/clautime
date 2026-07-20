@@ -49,6 +49,16 @@ describe('SessionRow', () => {
     expect(screen.getByText('Manual')).toBeInTheDocument()
   })
 
+  it('renders Claude tool badge for claude sessions', () => {
+    render(<SessionRow {...defaultProps} />)
+    expect(screen.getByText('Claude')).toBeInTheDocument()
+  })
+
+  it('renders Codex tool badge for codex sessions', () => {
+    render(<SessionRow {...defaultProps} session={{ ...mockSession, tool: 'codex' }} />)
+    expect(screen.getByText('Codex')).toBeInTheDocument()
+  })
+
   it('calls onSelect when clicked', () => {
     const onSelect = vi.fn()
     render(<SessionRow {...defaultProps} onSelect={onSelect} />)

@@ -8,7 +8,8 @@ import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { secretFindings, secretScanState } from '../db/schema/secret-findings'
 import { settingsService } from './settings-service'
-import { discoverCodexSessionFiles } from '../parsers/codex-parser'
+import { codexProvider } from '../providers/codex-provider'
+import { isProviderEnabled } from './provider-tracking'
 import type {
   SecretScanResult,
   SecretFinding,
@@ -789,12 +790,12 @@ export const secretScanService = {
     const claudeDir = settingsService.getSetting('claude_dir') || join(homedir(), '.claude')
     const todayMidnight = getTodayMidnight()
 
-    const allFiles = await discoverJsonlFiles(claudeDir)
-    // Codex rollouts hold the same kind of transcript text — scan them with the
-    // same raw-line patterns unless Codex tracking is off. Scanning and redaction
-    // are line-based and format-agnostic, so no Codex-specific handling is needed.
-    if (settingsService.getSetting('track_codex') !== 'false') {
-      const codexFiles = await discoverCodexSessionFiles()
+    // Scan each provider's transcripts unless its tracking is off. Codex rollouts
+    // hold the same kind of text as Claude JSONL — scanning and redaction are
+    // line-based and format-agnostic, so no provider-specific handling is needed.
+    const allFiles = isProviderEnabled('claude') ? await discoverJsonlFiles(claudeDir) : []
+    if (isProviderEnabled('codex')) {
+      const codexFiles = await codexProvider.discoverFiles()
       allFiles.push(...codexFiles)
       log.info(`secret-scan: Including ${codexFiles.length} Codex JSONL files`)
     }
