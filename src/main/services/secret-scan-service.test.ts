@@ -31,9 +31,18 @@ vi.mock('./settings-service', () => ({
   }
 }))
 
-// Keep tests off the real ~/.codex tree
+// Keep tests off the real ~/.codex / ~/.gemini / opencode trees
 vi.mock('../providers/codex-provider', () => ({
   codexProvider: { id: 'codex', discoverFiles: vi.fn(async () => []) }
+}))
+vi.mock('../providers/gemini-provider', () => ({
+  geminiProvider: { id: 'gemini', discoverFiles: vi.fn(async () => []) }
+}))
+vi.mock('../providers/opencode-provider', () => ({
+  opencodeProvider: { id: 'opencode', discoverFiles: vi.fn(async () => []) }
+}))
+vi.mock('../parsers/opencode-parser', () => ({
+  discoverOpencodeTranscriptFiles: vi.fn(async () => [])
 }))
 
 // Controllable session-scan state for the startup-deferral tests. secret-scan

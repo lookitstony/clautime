@@ -190,7 +190,14 @@ const TOOL_GAP_SLOW = 30 // Agent subagents, complex MCP tools
 const TOOL_GAP_MEDIUM = 10 // Bash (builds/tests can take a few minutes)
 const TOOL_GAP_FAST = 5 // Read, Write, Edit, Glob, Grep, etc.
 
-const SLOW_TOOLS = new Set(['Agent', 'TaskCreate', 'TaskUpdate', 'TaskGet'])
+const SLOW_TOOLS = new Set([
+  'Agent',
+  'TaskCreate',
+  'TaskUpdate',
+  'TaskGet',
+  // OpenCode's subagent tool
+  'task'
+])
 const FAST_TOOLS = new Set([
   'Read',
   'Write',
@@ -206,7 +213,24 @@ const FAST_TOOLS = new Set([
   // Codex CLI tool names ('shell' intentionally omitted — medium, like Bash)
   'apply_patch',
   'update_plan',
-  'view_image'
+  'view_image',
+  // Gemini CLI tool names ('run_shell_command' etc. omitted — medium)
+  'read_file',
+  'read_many_files',
+  'write_file',
+  'replace',
+  'list_directory',
+  'glob',
+  'search_file_content',
+  // OpenCode tool names ('bash', 'webfetch' omitted — medium)
+  'read',
+  'write',
+  'edit',
+  'grep',
+  'list',
+  'patch',
+  'todowrite',
+  'todoread'
 ])
 
 function getMaxToolGap(toolNames: string[]): number {

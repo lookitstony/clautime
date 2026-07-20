@@ -31,7 +31,7 @@ export interface ParsedSessionData {
   sessionId: string
   sourceFile: string
   /** Which coding agent wrote this file. Defaults to 'claude' when absent. */
-  tool?: 'claude' | 'codex'
+  tool?: 'claude' | 'codex' | 'gemini' | 'opencode'
   projectPathEncoded: string
   projectDirectory: string | null
   messages: ParsedMessage[]
