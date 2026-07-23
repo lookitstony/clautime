@@ -10,6 +10,7 @@ import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages } from '../db/schema/raw-messages'
 import { progressEvents } from '../db/schema/raw-messages'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
+import { invoiceLineItems } from '../db/schema/invoices'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { detectSessionsFromMultiple } from './session-detector'
@@ -113,6 +114,66 @@ function purgeDisabledProviders(db: ReturnType<typeof getDb>): void {
   }
 }
 
+/**
+ * Delete lingering auto sessions from excluded directories (rows created
+ * before an exclusion rule existed — e.g. piped scratch dirs, worktrees).
+ * Spared: manual sessions, sessions the user described, and sessions already
+ * on an invoice line item (the audit trail behind billed amounts).
+ * Exported for tests; production callers go through scanSessions.
+ */
+export function purgeExcludedSessions(db: ReturnType<typeof getDb>): void {
+  // invoice-service stores session_ids comma-separated (item.sessionIds.join(',')).
+  // A malformed value fails CLOSED — better to leave stale rows than purge a
+  // session that may be backing a billed invoice amount.
+  const invoicedIds = new Set<number>()
+  for (const r of db
+    .select({ sessionIds: invoiceLineItems.sessionIds })
+    .from(invoiceLineItems)
+    .all()) {
+    if (!r.sessionIds) continue
+    const parsed = r.sessionIds.split(',').map(Number)
+    if (parsed.some((n) => !Number.isFinite(n))) {
+      log.error(`Skipping excluded-session purge: malformed invoice session_ids "${r.sessionIds}"`)
+      return
+    }
+    parsed.forEach((n) => invoicedIds.add(n))
+  }
+
+  const stale = db
+    .select({ id: sessions.id, projectPath: sessions.projectPath, sourceFile: sessions.sourceFile })
+    .from(sessions)
+    .where(and(eq(sessions.source, 'auto'), isNull(sessions.description)))
+    .all()
+    .filter((r) => isExcludedProjectPath(r.projectPath) && !invoicedIds.has(r.id))
+  if (stale.length === 0) return
+
+  const ids = stale.map((r) => r.id)
+  const sourceFiles = [...new Set(stale.map((r) => r.sourceFile).filter((f): f is string => !!f))]
+
+  db.transaction((tx) => {
+    tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, ids)).run()
+    tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, ids)).run()
+    tx.update(gitCommits).set({ sessionId: null }).where(inArray(gitCommits.sessionId, ids)).run()
+    tx.delete(sessions).where(inArray(sessions.id, ids)).run()
+
+    // Excluded files are never rescanned, so their scan_state / raw content
+    // would otherwise linger forever. Only drop file-level rows once no
+    // session (spared or otherwise) references the file anymore.
+    for (const sf of sourceFiles) {
+      const remaining = tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(eq(sessions.sourceFile, sf))
+        .all()
+      if (remaining.length > 0) continue
+      tx.delete(scanState).where(eq(scanState.filePath, sf)).run()
+      tx.delete(rawMessages).where(eq(rawMessages.sourceFile, sf)).run()
+      tx.delete(progressEvents).where(eq(progressEvents.sourceFile, sf)).run()
+    }
+  })
+  log.info(`Purged ${ids.length} sessions from excluded directories`)
+}
+
 function safeParseJsonArray(str: string): string[] {
   try {
     const parsed = JSON.parse(str)
@@ -162,6 +223,9 @@ export const sessionService = {
     // 1. Discover session files from every enabled provider (optionally filtered)
     const perProvider = await discoverFilesByProvider(claudeDir, projectFilter)
     purgeDisabledProviders(getDb())
+    purgeExcludedSessions(getDb())
+    const purgedProjects = clientProjectService.purgeExcludedProjects()
+    if (purgedProjects > 0) log.info(`Purged ${purgedProjects} excluded auto-created project(s)`)
     const allFiles = perProvider.flatMap((r) => r.files)
     log.info(
       `Discovered ${allFiles.length} total session files (${perProvider

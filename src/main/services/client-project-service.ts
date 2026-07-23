@@ -371,6 +371,55 @@ export const clientProjectService = {
   },
 
   /**
+   * Delete lingering projects whose directory is now excluded (rows
+   * auto-created before an exclusion rule existed). The exclusion is a path
+   * heuristic, so anything showing signs of deliberate user setup is spared:
+   * projects with user-set fields (invoice/stage name, hourly rate, billable),
+   * a client other than Unassigned, or ANY sessions still attached — the
+   * session purge runs first, so whatever remains was spared on purpose and
+   * must not lose its attribution via deleteProject.
+   * Returns count deleted.
+   */
+  purgeExcludedProjects(): number {
+    const db = getDb()
+    const stale = db
+      .select()
+      .from(projects)
+      .all()
+      .filter((p) => isExcludedProjectPath(p.directoryPath))
+    if (stale.length === 0) return 0
+
+    const unassigned = this.getOrCreateUnassignedClient()
+    let deleted = 0
+    for (const p of stale) {
+      const userConfigured =
+        p.invoiceName !== null ||
+        p.stageName !== null ||
+        p.hourlyRate !== null ||
+        p.isBillable ||
+        p.clientId !== unassigned.id
+      const hasSessions =
+        db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(eq(sessions.projectId, p.id))
+          .limit(1)
+          .get() !== undefined
+      if (userConfigured || hasSessions) {
+        log.warn(
+          `Skipping purge of excluded-path project "${p.name}" (${p.directoryPath}): ` +
+            `${userConfigured ? 'user-configured' : 'has surviving sessions'}`
+        )
+        continue
+      }
+      this.deleteProject(p.id)
+      log.info(`Purged excluded-path project "${p.name}" (${p.directoryPath})`)
+      deleted++
+    }
+    return deleted
+  },
+
+  /**
    * Return IDs of all excluded (inactive) projects for query filtering.
    */
   getExcludedProjectIds(): number[] {
