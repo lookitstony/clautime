@@ -38,17 +38,28 @@ export function toolForSourceFile(sourceFile: string): SessionTool {
  * .claude/projects/ folder name (path separators replaced with `-`).
  */
 export function isExcludedProjectDir(encodedName: string): boolean {
-  return /-pipes-/i.test(encodedName)
+  return /-pipes(-|$)|-piped-scratch(-|$)|-claude-worktrees(-|$)/i.test(encodedName)
 }
 
 /**
  * Decoded-path equivalent of {@link isExcludedProjectDir}: true when any path
- * segment is a `pipes` folder (e.g. C:\apps\Foo\pipes\ticket\1). Used to keep
- * piped-swarm worktrees out of the auto-created projects list.
+ * segment is a `pipes` folder (e.g. C:\apps\Foo\pipes\ticket\1), a piped-swarm
+ * scratch workspace (…\piped\scratch\…), or a Claude Code worktree
+ * (…\.claude\worktrees\… — decoded folder names drop the leading dot). Used to
+ * keep transient agent workspaces out of discovery, scanning, and the
+ * auto-created projects list.
  */
 export function isExcludedProjectPath(projectPath: string): boolean {
-  return projectPath
+  const segments = projectPath
     .replace(/\\/g, '/')
     .split('/')
-    .some((segment) => segment.toLowerCase() === 'pipes')
+    .filter(Boolean)
+    .map((s) => s.toLowerCase())
+  return segments.some((seg, i) => {
+    if (seg === 'pipes') return true
+    if (seg === 'scratch' && segments[i - 1] === 'piped') return true
+    if (seg === 'worktrees' && (segments[i - 1] === '.claude' || segments[i - 1] === 'claude'))
+      return true
+    return false
+  })
 }

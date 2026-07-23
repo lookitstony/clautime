@@ -524,3 +524,98 @@ describe('ClientProjectService — Cascade Behavior', () => {
     expect(clientProjectService.getClientById(client.id)).not.toBeNull()
   })
 })
+
+describe('ClientProjectService — purgeExcludedProjects', () => {
+  function insertSession(projectId: number, clientId: number, source: 'auto' | 'manual'): void {
+    const now = new Date().toISOString()
+    db.insert(sessionsSchema.sessions)
+      .values({
+        projectPath: 'C:\\piped\\scratch\\scratch\\abc123',
+        startedAt: now,
+        endedAt: now,
+        durationMinutes: 10,
+        source,
+        status: 'completed',
+        projectId,
+        clientId,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run()
+  }
+
+  it('deletes untouched auto-created projects on excluded paths', () => {
+    const keeper = clientProjectService.autoCreateProject('C:\\apps\\Keeper')!
+    // Simulate a pre-exclusion auto-created row by inserting directly
+    const unassigned = clientProjectService.getOrCreateUnassignedClient()
+    const now = new Date().toISOString()
+    const row = db
+      .insert(projectsSchema.projects)
+      .values({
+        clientId: unassigned.id,
+        name: 'abc123',
+        directoryPath: 'C:\\piped\\scratch\\scratch\\abc123',
+        isBillable: false,
+        createdAt: now,
+        updatedAt: now
+      })
+      .returning()
+      .get()
+
+    const deleted = clientProjectService.purgeExcludedProjects()
+    expect(deleted).toBe(1)
+    expect(clientProjectService.getProjectById(row.id)).toBeNull()
+    // Non-excluded auto project untouched
+    expect(clientProjectService.getProjectById(keeper.id)).not.toBeNull()
+  })
+
+  it('spares user-configured projects and projects with manual sessions', () => {
+    const unassigned = clientProjectService.getOrCreateUnassignedClient()
+    const now = new Date().toISOString()
+    const configured = db
+      .insert(projectsSchema.projects)
+      .values({
+        clientId: unassigned.id,
+        name: 'configured',
+        directoryPath: 'C:\\apps\\Foo\\pipes\\ticket\\1',
+        isBillable: false,
+        hourlyRate: 150,
+        createdAt: now,
+        updatedAt: now
+      })
+      .returning()
+      .get()
+    const withManual = db
+      .insert(projectsSchema.projects)
+      .values({
+        clientId: unassigned.id,
+        name: 'with-manual',
+        directoryPath: 'C:\\piped\\scratch\\scratch\\abc123',
+        isBillable: false,
+        createdAt: now,
+        updatedAt: now
+      })
+      .returning()
+      .get()
+    insertSession(withManual.id, unassigned.id, 'manual')
+
+    const deleted = clientProjectService.purgeExcludedProjects()
+    expect(deleted).toBe(0)
+    expect(clientProjectService.getProjectById(configured.id)).not.toBeNull()
+    expect(clientProjectService.getProjectById(withManual.id)).not.toBeNull()
+  })
+
+  it('treats billable or non-Unassigned client as user-configured', () => {
+    const client = clientProjectService.createClient({ name: 'RealClient' })
+    // createProject defaults isBillable true and has a real client — both guards
+    const project = clientProjectService.createProject({
+      clientId: client.id,
+      name: 'real-on-excluded-path',
+      directoryPath: 'C:\\apps\\Foo\\pipes\\ticket\\2'
+    })
+
+    const deleted = clientProjectService.purgeExcludedProjects()
+    expect(deleted).toBe(0)
+    expect(clientProjectService.getProjectById(project.id)).not.toBeNull()
+  })
+})

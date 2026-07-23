@@ -1312,43 +1312,6 @@ export function SettingsPage(): React.JSX.Element {
           </section>
         )}
 
-        {/* Factory Reset — irreversible; visually cordoned off as a danger zone */}
-        {activeCategory === 'detection' && (
-          <section>
-            <SectionHeader title="Danger Zone" />
-            <div className="rounded-lg border border-red-500/40 bg-red-500/[0.06] p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <label className="flex items-center gap-1.5 text-[12px] font-semibold text-red-400">
-                    <ShieldAlert size={14} />
-                    Factory Reset
-                  </label>
-                  <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
-                    Wipes <strong className="text-[var(--text-secondary)]">all</strong> session
-                    data — including manual sessions and your project, client, and description
-                    edits — then rebuilds from the logs still on disk.{' '}
-                    <strong className="text-red-400/90">
-                      Compacted Claude sessions and pruned Gemini sessions are no longer on disk, so
-                      their hours are lost permanently.
-                    </strong>{' '}
-                    Only use this to start fresh when things are broken.
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={isResetting}
-                  className="shrink-0 text-[11px] text-red-400 hover:bg-red-500/15 hover:text-red-400"
-                  onClick={() => setConfirmReset(true)}
-                >
-                  {isResetting && <LoaderCircle size={14} className="mr-1 animate-spin" />}
-                  {isResetting ? 'Resetting...' : 'Factory Reset'}
-                </Button>
-              </div>
-            </div>
-          </section>
-        )}
-
         {/* Git Identity */}
         {activeCategory === 'detection' && (
           <section>
@@ -1499,6 +1462,34 @@ export function SettingsPage(): React.JSX.Element {
                   <RefreshCw size={14} className="mr-1" />
                 )}
                 {isRescanning ? 'Rescanning...' : 'Rescan now'}
+              </Button>
+            </div>
+          </section>
+        )}
+
+        {/* Factory Reset — last thing on the tab, deliberately understated */}
+        {activeCategory === 'detection' && (
+          <section className="pt-2">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-red-500/25 bg-red-500/[0.04] px-4 py-3">
+              <div>
+                <label className="flex items-center gap-1.5 text-[12px] font-semibold text-red-400">
+                  <ShieldAlert size={14} />
+                  Factory Reset
+                </label>
+                <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                  Erases manual sessions and all edits — unretrievable. Hours from compacted
+                  sessions can’t be rebuilt.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={isResetting}
+                className="shrink-0 text-[11px] text-red-400 hover:bg-red-500/15 hover:text-red-400"
+                onClick={() => setConfirmReset(true)}
+              >
+                {isResetting && <LoaderCircle size={14} className="mr-1 animate-spin" />}
+                {isResetting ? 'Resetting...' : 'Factory Reset'}
               </Button>
             </div>
           </section>
@@ -2439,16 +2430,13 @@ export function SettingsPage(): React.JSX.Element {
           warning={
             <>
               <p>
-                This permanently deletes <strong>every session</strong> — including manual sessions
-                and all your project, client, and description edits — plus raw message history, then
-                re-imports from the logs still on disk.
+                Manual sessions and all client, project, and description edits will be erased and{' '}
+                <strong>can’t be recovered</strong>. Auto-detected sessions are rebuilt from logs
+                still on disk.
               </p>
-              <p className="rounded border border-red-500/40 bg-red-500/10 p-2 text-red-300">
-                Compacted Claude sessions and pruned Gemini sessions are no longer on disk. Their
-                hours <strong>cannot be recovered</strong> and will be lost. This cannot be undone.
-              </p>
-              <p className="text-[var(--text-muted)]">
-                Only do this to start over when something has gone wrong.
+              <p>
+                Hours whose logs are gone from disk — compacted Claude sessions, pruned Gemini
+                chats, cleaned OpenCode storage — can’t be rebuilt either.
               </p>
             </>
           }

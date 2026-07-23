@@ -99,8 +99,9 @@ import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { scanState } from '../db/schema/scan-state'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
-import { rawMessages } from '../db/schema/raw-messages'
-import { sessionService } from './session-service'
+import { rawMessages, progressEvents } from '../db/schema/raw-messages'
+import { invoices, invoiceLineItems } from '../db/schema/invoices'
+import { sessionService, purgeExcludedSessions } from './session-service'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
 const schema = {
@@ -867,5 +868,143 @@ describe('sessionService', () => {
       expect(remaining).toHaveLength(1)
       expect(remaining[0].sessionId).toBe(keep.id)
     })
+  })
+})
+
+describe('purgeExcludedSessions', () => {
+  beforeEach(() => {
+    setupTestDb()
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    if (testSqlite) testSqlite.close()
+  })
+
+  const EXCLUDED_PATH = 'C:\\piped\\scratch\\scratch\\abc123'
+  const EXCLUDED_FILE = 'C:\\Users\\t\\.claude\\projects\\C--piped-scratch-scratch-abc123\\s1.jsonl'
+
+  function insertSession(overrides: Partial<typeof sessions.$inferInsert> = {}): number {
+    const now = new Date().toISOString()
+    return testDb
+      .insert(sessions)
+      .values({
+        projectPath: EXCLUDED_PATH,
+        startedAt: now,
+        endedAt: now,
+        durationMinutes: 10,
+        source: 'auto',
+        status: 'completed',
+        sourceFile: EXCLUDED_FILE,
+        createdAt: now,
+        updatedAt: now,
+        ...overrides
+      })
+      .returning({ id: sessions.id })
+      .get().id
+  }
+
+  it('purges auto sessions in excluded dirs and cleans orphaned file rows', () => {
+    insertSession()
+    const keptId = insertSession({ projectPath: 'C:\\apps\\RealProject', sourceFile: 'real.jsonl' })
+    testDb
+      .insert(scanState)
+      .values({ filePath: EXCLUDED_FILE, lastModifiedAt: '1', lastScannedAt: '1' })
+      .run()
+    testDb
+      .insert(rawMessages)
+      .values({ sourceFile: EXCLUDED_FILE, type: 'user', timestamp: '2026-01-01T00:00:00Z' })
+      .run()
+    testDb
+      .insert(progressEvents)
+      .values({ sourceFile: EXCLUDED_FILE, timestamp: '2026-01-01T00:00:00Z' })
+      .run()
+
+    purgeExcludedSessions(testDb as Parameters<typeof purgeExcludedSessions>[0])
+
+    const remaining = testDb.select().from(sessions).all()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(keptId)
+    expect(testDb.select().from(scanState).all()).toHaveLength(0)
+    expect(
+      testDb
+        .select()
+        .from(rawMessages)
+        .all()
+        .filter((r) => r.sourceFile === EXCLUDED_FILE)
+    ).toHaveLength(0)
+    expect(testDb.select().from(progressEvents).all()).toHaveLength(0)
+  })
+
+  it('spares manual, described, and invoiced sessions — and their file rows', () => {
+    const manualId = insertSession({ source: 'manual' })
+    const describedId = insertSession({ description: 'user note' })
+    const invoicedId = insertSession()
+    insertSession() // purgeable
+
+    const client = testDb
+      .insert(clients)
+      .values({ name: 'C', color: '#fff' })
+      .returning({ id: clients.id })
+      .get()
+    const invoice = testDb
+      .insert(invoices)
+      .values({ clientId: client.id, stripeInvoiceId: 'in_test' })
+      .returning({ id: invoices.id })
+      .get()
+    testDb
+      .insert(invoiceLineItems)
+      .values({
+        invoiceId: invoice.id,
+        description: 'work',
+        amountCents: 100,
+        // invoice-service stores this comma-separated — mirror the real format
+        sessionIds: [invoicedId].join(',')
+      })
+      .run()
+    testDb
+      .insert(scanState)
+      .values({ filePath: EXCLUDED_FILE, lastModifiedAt: '1', lastScannedAt: '1' })
+      .run()
+
+    purgeExcludedSessions(testDb as Parameters<typeof purgeExcludedSessions>[0])
+
+    const remainingIds = testDb
+      .select({ id: sessions.id })
+      .from(sessions)
+      .all()
+      .map((r) => r.id)
+      .sort()
+    expect(remainingIds).toEqual([manualId, describedId, invoicedId].sort())
+    // Spared sessions still reference the file — file-level rows must survive
+    expect(testDb.select().from(scanState).all()).toHaveLength(1)
+  })
+
+  it('aborts the purge entirely when invoice session_ids is malformed (fail closed)', () => {
+    insertSession()
+
+    const client = testDb
+      .insert(clients)
+      .values({ name: 'C', color: '#fff' })
+      .returning({ id: clients.id })
+      .get()
+    const invoice = testDb
+      .insert(invoices)
+      .values({ clientId: client.id, stripeInvoiceId: 'in_bad' })
+      .returning({ id: invoices.id })
+      .get()
+    testDb
+      .insert(invoiceLineItems)
+      .values({
+        invoiceId: invoice.id,
+        description: 'work',
+        amountCents: 100,
+        sessionIds: 'not,valid,ids'
+      })
+      .run()
+
+    purgeExcludedSessions(testDb as Parameters<typeof purgeExcludedSessions>[0])
+
+    expect(testDb.select().from(sessions).all()).toHaveLength(1)
   })
 })
