@@ -3,8 +3,11 @@ import { toast } from 'sonner'
 import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send, Trash2, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { Redacted } from '@/components/shared/Redacted'
+import { maskId } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { LocalInvoiceDetail } from '../../../../shared/types/invoice'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -33,6 +36,7 @@ export function InvoiceDetailView({
   onBack
 }: InvoiceDetailViewProps): React.JSX.Element {
   const queryClient = useQueryClient()
+  const presentationMode = usePresentationMode()
   const [confirmVoid, setConfirmVoid] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -180,7 +184,7 @@ export function InvoiceDetailView({
           <div>
             <span className="text-[var(--text-muted)]">Stripe ID</span>
             <p className="font-mono text-[12px] text-[var(--text-secondary)]">
-              {invoice.stripeInvoiceId}
+              {maskId(invoice.stripeInvoiceId, presentationMode)}
             </p>
           </div>
         </div>
@@ -188,7 +192,9 @@ export function InvoiceDetailView({
         {invoice.memo && (
           <div className="mt-3 border-t border-[var(--surface-border)] pt-3">
             <span className="text-[12px] text-[var(--text-muted)]">Memo</span>
-            <p className="text-[13px] text-[var(--text-primary)]">{invoice.memo}</p>
+            <p className="text-[13px] text-[var(--text-primary)]">
+              <Redacted>{invoice.memo}</Redacted>
+            </p>
           </div>
         )}
 
@@ -300,7 +306,9 @@ export function InvoiceDetailView({
                 className="flex items-start justify-between rounded border border-[var(--surface-border)] bg-[var(--background-primary)] p-3"
               >
                 <div className="flex-1">
-                  <p className="text-[13px] text-[var(--text-primary)]">{item.description}</p>
+                  <p className="text-[13px] text-[var(--text-primary)]">
+                    <Redacted>{item.description}</Redacted>
+                  </p>
                   {(item.lineDate || item.durationMinutes) && (
                     <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
                       {item.lineDate

@@ -11,6 +11,7 @@ import {
   DialogDescription
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { cn } from '@/lib/utils'
 import { getDateRangeForPreset, resolveClientName, type DatePreset } from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
 import { projectAlias } from '../../../../shared/presentation-alias'
@@ -453,7 +454,11 @@ export function InvoiceCreateFlow({
                   value={item.description}
                   onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
                   rows={3}
-                  className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-vertical"
+                  className={cn(
+                    'flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-vertical',
+                    // Descriptions carry real project/work detail — blur on stream, reveal to edit
+                    presentationMode && 'blur-[4px] focus:blur-none'
+                  )}
                 />
                 <input
                   type="number"
@@ -490,7 +495,10 @@ export function InvoiceCreateFlow({
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
               placeholder="Invoice memo (auto-generated with line items)"
-              className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-vertical"
+              className={cn(
+                'w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] leading-relaxed text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] resize-vertical',
+                presentationMode && 'blur-[4px] focus:blur-none'
+              )}
             />
           </div>
 
