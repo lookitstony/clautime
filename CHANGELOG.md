@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-03
+
+### Added
+
+- Sessions list can be ordered by tracked hours. A toolbar toggle cycles between the default client grouping, most hours first, and fewest hours first. Ordering by hours ranks unassigned projects on time along with the rest instead of pinning them last.
+
+### Changed
+
+- Presentation mode now masks the Stripe invoice ID on the invoice detail view, and the sandbox email override in Settings, so streaming or demoing an invoice no longer exposes identifying data. Client and project names continue to resolve to stage names or aliases.
+- Presentation mode applies on the first frame after a cold start. The setting is cached locally, so the app no longer briefly renders real names and unmasked IDs while the setting loads.
+
 ## [1.1.5] - 2026-06-08
 
 ### Fixed
