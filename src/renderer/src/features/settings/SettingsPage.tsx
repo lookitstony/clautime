@@ -1111,7 +1111,7 @@ export function SettingsPage(): React.JSX.Element {
                   </p>
                   <div className="flex items-center gap-2">
                     <input
-                      type="email"
+                      type={presentationMode ? 'password' : 'email'}
                       value={testEmailInput}
                       onChange={(e: ChangeEvent<HTMLInputElement>) => {
                         setTestEmailInput(e.target.value)

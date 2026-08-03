@@ -121,6 +121,16 @@ export function resolveClientName(
   return client.name
 }
 
+/**
+ * Replaces an identifier (Stripe invoice/customer IDs) with a fixed-width run of
+ * dots while presentation mode is on. Fixed width so the mask never hints at the
+ * real value's length.
+ */
+export function maskId(value: string, presentationMode: boolean): string {
+  if (!value) return value
+  return presentationMode ? '••••••••••••••••••' : value
+}
+
 export function formatCompactNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`

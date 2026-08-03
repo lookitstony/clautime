@@ -249,11 +249,18 @@ export function useSessionStats(
   }
 }
 
+/**
+ * Ordering for the project list. 'default' keeps the client/project alphabetical
+ * grouping; the hours variants sort purely by tracked time, unassigned included.
+ */
+export type GroupSort = 'default' | 'hours-desc' | 'hours-asc'
+
 export function useGroupedSessions(
   sessions: Session[] | undefined,
   projects?: Project[],
   clients?: Client[],
-  presentationMode = false
+  presentationMode = false,
+  sort: GroupSort = 'default'
 ): ProjectGroup[] {
   if (!sessions || sessions.length === 0) return []
 
@@ -307,6 +314,13 @@ export function useGroupedSessions(
       )
     }
   })
+
+  if (sort === 'hours-desc') {
+    return result.sort((a, b) => b.totalDurationMinutes - a.totalDurationMinutes)
+  }
+  if (sort === 'hours-asc') {
+    return result.sort((a, b) => a.totalDurationMinutes - b.totalDurationMinutes)
+  }
 
   return result.sort((a, b) => {
     // Assigned groups first, unassigned last

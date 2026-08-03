@@ -7,7 +7,9 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
-  Plus
+  Plus,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -19,7 +21,7 @@ import { SessionRow } from './SessionRow'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import { SessionFilterBar } from './SessionFilterBar'
 import { ManualBlockForm } from './ManualBlockForm'
-import { useSessions, useSessionStats, useGroupedSessions } from './use-sessions'
+import { useSessions, useSessionStats, useGroupedSessions, type GroupSort } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { useSessionIdsWithCommits } from '../git/use-git'
@@ -111,7 +113,8 @@ export function SessionsPage(): React.JSX.Element {
     return total > 0 ? formatUsd(total) : null
   }, [sessions, allProjects, clients])
 
-  const groups = useGroupedSessions(sessions, allProjects, clients, presentationMode)
+  const [groupSort, setGroupSort] = useState<GroupSort>('default')
+  const groups = useGroupedSessions(sessions, allProjects, clients, presentationMode, groupSort)
   const queryClient = useQueryClient()
   const setActiveView = useUIStore((s) => s.setActiveView)
   const navigate = useNavigate()
@@ -200,6 +203,13 @@ export function SessionsPage(): React.JSX.Element {
     setExpandedDays(new Set(allDayKeys))
   }, [allDayKeys])
 
+  // Cycles project order: grouped by client → most hours first → fewest first
+  const cycleGroupSort = useCallback(() => {
+    setGroupSort((prev) =>
+      prev === 'default' ? 'hours-desc' : prev === 'hours-desc' ? 'hours-asc' : 'default'
+    )
+  }, [])
+
   const collapseAllDays = useCallback(() => {
     setExpandedDays(new Set())
     setSelectedSessionId(null)
@@ -249,6 +259,24 @@ export function SessionsPage(): React.JSX.Element {
           <span className="mr-auto text-[11px] text-[var(--text-muted)]">
             {groups.length} project{groups.length !== 1 ? 's' : ''}
           </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={cycleGroupSort}
+            title="Order projects by tracked hours"
+          >
+            {groupSort === 'hours-asc' ? (
+              <ArrowUpNarrowWide className="mr-0.5 h-3 w-3" />
+            ) : (
+              <ArrowDownWideNarrow className="mr-0.5 h-3 w-3" />
+            )}
+            {groupSort === 'default'
+              ? 'By Client'
+              : groupSort === 'hours-desc'
+                ? 'Most Hours'
+                : 'Fewest Hours'}
+          </Button>
+          <span className="mx-1 h-3 w-px bg-[var(--surface-border)]" />
           <Button size="xs" onClick={() => setShowManualForm(true)}>
             <Plus className="mr-0.5 h-3 w-3" />
             Manual Block

@@ -3,8 +3,10 @@ import { toast } from 'sonner'
 import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send, Trash2, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { maskId } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
+import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { LocalInvoiceDetail } from '../../../../shared/types/invoice'
 
 const STATUS_STYLES: Record<string, string> = {
@@ -33,6 +35,7 @@ export function InvoiceDetailView({
   onBack
 }: InvoiceDetailViewProps): React.JSX.Element {
   const queryClient = useQueryClient()
+  const presentationMode = usePresentationMode()
   const [confirmVoid, setConfirmVoid] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -180,7 +183,7 @@ export function InvoiceDetailView({
           <div>
             <span className="text-[var(--text-muted)]">Stripe ID</span>
             <p className="font-mono text-[12px] text-[var(--text-secondary)]">
-              {invoice.stripeInvoiceId}
+              {maskId(invoice.stripeInvoiceId, presentationMode)}
             </p>
           </div>
         </div>

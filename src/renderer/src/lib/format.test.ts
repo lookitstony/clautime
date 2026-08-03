@@ -6,7 +6,8 @@ import {
   getProjectColor,
   getProjectName,
   getDateRangeForPreset,
-  formatShortDate
+  formatShortDate,
+  maskId
 } from './format'
 
 describe('formatDuration', () => {
@@ -174,5 +175,25 @@ describe('formatShortDate', () => {
     // Locale-dependent but should contain "Mar" and "5"
     expect(result).toMatch(/Mar/)
     expect(result).toMatch(/5/)
+  })
+})
+
+describe('maskId', () => {
+  it('returns the real id when presentation mode is off', () => {
+    expect(maskId('in_1PqRsTuVwXyZ0123', false)).toBe('in_1PqRsTuVwXyZ0123')
+  })
+
+  it('masks the id when presentation mode is on', () => {
+    const masked = maskId('in_1PqRsTuVwXyZ0123', true)
+    expect(masked).not.toContain('in_')
+    expect(masked).toMatch(/^•+$/)
+  })
+
+  it('leaves an empty value empty rather than implying an id exists', () => {
+    expect(maskId('', true)).toBe('')
+  })
+
+  it('uses the same width regardless of the real id length', () => {
+    expect(maskId('in_short', true)).toBe(maskId('in_a_much_longer_identifier_here', true))
   })
 })
