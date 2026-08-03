@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 import { ArrowLeft, RefreshCw, ExternalLink, XCircle, Send, Trash2, FileDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { Redacted } from '@/components/shared/Redacted'
 import { maskId } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
@@ -192,9 +191,7 @@ export function InvoiceDetailView({
         {invoice.memo && (
           <div className="mt-3 border-t border-[var(--surface-border)] pt-3">
             <span className="text-[12px] text-[var(--text-muted)]">Memo</span>
-            <p className="text-[13px] text-[var(--text-primary)]">
-              <Redacted>{invoice.memo}</Redacted>
-            </p>
+            <p className="text-[13px] text-[var(--text-primary)]">{invoice.memo}</p>
           </div>
         )}
 
@@ -306,9 +303,7 @@ export function InvoiceDetailView({
                 className="flex items-start justify-between rounded border border-[var(--surface-border)] bg-[var(--background-primary)] p-3"
               >
                 <div className="flex-1">
-                  <p className="text-[13px] text-[var(--text-primary)]">
-                    <Redacted>{item.description}</Redacted>
-                  </p>
+                  <p className="text-[13px] text-[var(--text-primary)]">{item.description}</p>
                   {(item.lineDate || item.durationMinutes) && (
                     <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
                       {item.lineDate
