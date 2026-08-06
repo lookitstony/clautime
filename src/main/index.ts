@@ -21,6 +21,32 @@ import { secretScanService } from './services/secret-scan-service'
 import { settingsService } from './services/settings-service'
 import { applyExcludedPaths } from './services/excluded-paths'
 
+// [DIAG] Temporary instrumentation to hunt main-thread stalls: log event-loop
+// lag spikes and slow IPC handlers. Remove once the freeze source is found.
+{
+  let lastTick = Date.now()
+  setInterval(() => {
+    const now = Date.now()
+    const lag = now - lastTick - 1000
+    if (lag > 500) log.warn(`[DIAG] main event loop stalled ~${lag}ms`)
+    lastTick = now
+  }, 1000)
+
+  type Handler = Parameters<typeof ipcMain.handle>[1]
+  const origHandle = ipcMain.handle.bind(ipcMain)
+  ipcMain.handle = (channel: string, listener: Handler): void => {
+    origHandle(channel, async (event, ...args) => {
+      const t0 = Date.now()
+      try {
+        return await listener(event, ...args)
+      } finally {
+        const ms = Date.now() - t0
+        if (ms > 250) log.warn(`[DIAG] slow IPC ${channel}: ${ms}ms`)
+      }
+    })
+  }
+}
+
 // Single instance lock — prevent multiple instances
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {

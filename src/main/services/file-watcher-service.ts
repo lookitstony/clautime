@@ -9,6 +9,7 @@ import { clientProjectService } from './client-project-service'
 import { gitService } from './git-service'
 import { getClaudeConfigDirs } from './discovery-service'
 import { decodeProjectPath } from './session-detector'
+import { isExcludedProjectDir } from '../../shared/paths'
 
 // Per-project debounce before an incremental scan. Kept high because each scan
 // re-parses the project's (often large, actively-growing) JSONL and writes to
@@ -125,6 +126,10 @@ export const fileWatcherService = {
 
     const dirName = parts[0]
 
+    // Excluded dirs (pipes, scratch, user-configured folders) churn constantly
+    // during agent/benchmark runs — never let them trigger scan machinery
+    if (isExcludedProjectDir(dirName)) return
+
     // New project directory detection
     if (!this._knownDirs.has(dirName)) {
       this._knownDirs.add(dirName)
@@ -168,16 +173,21 @@ export const fileWatcherService = {
       await sessionService.scanSessions(undefined, [projectDirName])
       clientProjectService.attributeSessions()
 
-      // Pick up any new git commits for this project, then correlate.
-      // Without this, long-running app sessions never see commits made after startup.
-      gitService
-        .scanCommits()
-        .then(() => {
-          gitService.correlateCommitsWithSessions()
-        })
-        .catch((err) => {
-          log.warn('Incremental git scan failed (non-critical):', err)
-        })
+      // Pick up any new git commits for THIS project only, then correlate.
+      // A full scanCommits() here spawned git for every registered project on
+      // every incremental scan — hundreds of process spawns per minute during
+      // active coding, which blocked the main thread and froze the UI.
+      const project = clientProjectService.findProjectByDirectory(decodedPath)
+      if (project) {
+        gitService
+          .scanCommits([project.id])
+          .then((r) => {
+            if (r.newCommits > 0) gitService.correlateCommitsWithSessions()
+          })
+          .catch((err) => {
+            log.warn('Incremental git scan failed (non-critical):', err)
+          })
+      }
 
       // Notify renderer to refresh data
       this._notifyRenderer()
