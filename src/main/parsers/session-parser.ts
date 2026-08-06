@@ -1,5 +1,5 @@
-import { readdir, readFile } from 'node:fs/promises'
-import { readJsonlLines } from './line-reader'
+import { readdir } from 'node:fs/promises'
+import { readJsonlLinesFrom, isLineBoundary } from './line-reader'
 import { join, basename, dirname } from 'node:path'
 import log from 'electron-log/main.js'
 import { isExcludedProjectDir } from '../../shared/paths'
@@ -110,10 +110,32 @@ export async function discoverSessionFiles(
 }
 
 /**
+ * Resolve the byte offset to start parsing a file from. A persisted offset is
+ * only honored when it still lands on a line boundary (the file can have been
+ * rewritten under us); otherwise fall back to a full parse from 0.
+ */
+async function resolveStartOffset(
+  filePath: string,
+  offsets: Record<string, number> | undefined
+): Promise<number> {
+  const candidate = offsets?.[filePath] ?? 0
+  if (candidate <= 0) return 0
+  return (await isLineBoundary(filePath, candidate)) ? candidate : 0
+}
+
+/**
  * Parse a single session JSONL file into structured data.
  * Skips malformed lines with a warning (NFR14). Returns null for unreadable files.
+ *
+ * `opts.offsets` maps file paths (main and subagent) to previously-consumed byte
+ * offsets; files listed there are parsed incrementally from that offset. The
+ * result's `fileOffsets` reports the new consumed offset per physical file so
+ * the caller can persist them for the next scan.
  */
-export async function parseSessionFile(filePath: string): Promise<ParsedSessionData | null> {
+export async function parseSessionFile(
+  filePath: string,
+  opts?: { offsets?: Record<string, number> }
+): Promise<ParsedSessionData | null> {
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
   const totalUsage = emptyTokenUsage()
@@ -122,18 +144,24 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
   let projectDirectory: string | null = null
   let summary: string | null = null
 
+  const startOffset = await resolveStartOffset(filePath, opts?.offsets)
+  let consumedOffset = startOffset
+
   // Stream lines so a large session file never loads whole into memory.
   let lineIdx = 0
-  const lineIter = readJsonlLines(filePath)
+  const lineIter = readJsonlLinesFrom(filePath, startOffset)
   while (true) {
-    let next: IteratorResult<string, void>
+    let next: IteratorResult<string, number>
     try {
       next = await lineIter.next()
     } catch (err) {
       log.warn(`Failed to read session file: ${filePath}`, err)
       return null
     }
-    if (next.done) break
+    if (next.done) {
+      consumedOffset = next.value ?? consumedOffset
+      break
+    }
     const line = next.value
     // Yield to the event loop periodically so parsing a large (actively-growing)
     // session file doesn't block the main process and freeze the UI.
@@ -186,7 +214,10 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
     }
   }
 
-  if (lineIdx === 0) {
+  // Only a full parse can conclude the file is empty — an incremental tail with
+  // no new complete lines still needs to flow through (subagent files may have
+  // grown even when the main file's tail hasn't).
+  if (lineIdx === 0 && startOffset === 0) {
     log.warn(`Empty session file: ${filePath}`)
     return null
   }
@@ -202,7 +233,7 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
   }
 
   // Collect subagent data (messages, tokens, progress)
-  const subagentData = await collectSubagentData(filePath, sessionId)
+  const subagentData = await collectSubagentData(filePath, sessionId, opts?.offsets)
 
   const timestamps = messages.filter((m) => m.timestamp).map((m) => m.timestamp)
 
@@ -221,7 +252,8 @@ export async function parseSessionFile(filePath: string): Promise<ParsedSessionD
     messageCount: messages.length,
     summary,
     subagentMessages: subagentData.messages,
-    subagentProgressTimestamps: subagentData.progressTimestamps
+    subagentProgressTimestamps: subagentData.progressTimestamps,
+    fileOffsets: { [filePath]: consumedOffset, ...subagentData.fileOffsets }
   }
 }
 
@@ -229,33 +261,48 @@ interface SubagentData {
   tokenUsage: TokenUsage
   messages: ParsedMessage[]
   progressTimestamps: string[]
+  fileOffsets: Record<string, number>
 }
 
 /**
  * Collect messages, token usage, and progress timestamps from subagent JSONL files.
  * Subagents are stored in {session-id}/subagents/*.jsonl alongside the main file.
+ * Files with a known offset in `offsets` are read incrementally from there.
  */
-async function collectSubagentData(mainFilePath: string, sessionId: string): Promise<SubagentData> {
+async function collectSubagentData(
+  mainFilePath: string,
+  sessionId: string,
+  offsets?: Record<string, number>
+): Promise<SubagentData> {
   const tokenUsage = emptyTokenUsage()
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
+  const fileOffsets: Record<string, number> = {}
   const sessionDir = join(dirname(mainFilePath), sessionId, 'subagents')
 
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = await readdir(sessionDir, { withFileTypes: true, encoding: 'utf8' })
   } catch {
-    return { tokenUsage, messages, progressTimestamps }
+    return { tokenUsage, messages, progressTimestamps, fileOffsets }
   }
 
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
     const subagentFilePath = join(sessionDir, entry.name)
     try {
-      const content = await readFile(subagentFilePath, 'utf-8')
-      for (const line of content.split('\n')) {
-        if (!line.trim()) continue
-        const raw = parseJsonlLine(line)
+      const startOffset = await resolveStartOffset(subagentFilePath, offsets)
+      let lineIdx = 0
+      const lineIter = readJsonlLinesFrom(subagentFilePath, startOffset)
+      let consumed = startOffset
+      while (true) {
+        const next = await lineIter.next()
+        if (next.done) {
+          consumed = next.value ?? consumed
+          break
+        }
+        if (++lineIdx % 2000 === 0) await new Promise((resolve) => setImmediate(resolve))
+        const raw = parseJsonlLine(next.value)
         if (!raw) continue
 
         const type = raw.type as string
@@ -280,13 +327,14 @@ async function collectSubagentData(mainFilePath: string, sessionId: string): Pro
           tokenUsage.cacheReadInputTokens += msg.usage.cacheReadInputTokens
         }
       }
+      fileOffsets[subagentFilePath] = consumed
     } catch (err) {
       log.debug(`Failed to read subagent file: ${entry.name}`, err)
     }
   }
 
   progressTimestamps.sort()
-  return { tokenUsage, messages, progressTimestamps }
+  return { tokenUsage, messages, progressTimestamps, fileOffsets }
 }
 
 /**

@@ -328,6 +328,105 @@ describe('parseSessionFile', () => {
   })
 })
 
+describe('parseSessionFile incremental (offsets)', () => {
+  it('parses only appended data when given a valid offset, and reports consumed offsets', async () => {
+    const projectDir = join(tmpDir, 'projects', 'C--apps-MyProject')
+    await mkdir(projectDir, { recursive: true })
+    const filePath = join(projectDir, 'sess-001.jsonl')
+
+    const first = jsonl(makeUserMessage(), makeAssistantMessage())
+    await writeFile(filePath, first)
+
+    const full = await parseSessionFile(filePath)
+    expect(full!.messages).toHaveLength(2)
+    expect(full!.fileOffsets![filePath]).toBe(Buffer.byteLength(first))
+
+    // Append one message, re-parse from the reported offset
+    const appended = jsonl(
+      makeAssistantMessage({ uuid: 'uuid-3', timestamp: '2026-03-04T10:01:00.000Z' })
+    )
+    await writeFile(filePath, first + appended)
+
+    const tail = await parseSessionFile(filePath, {
+      offsets: { [filePath]: full!.fileOffsets![filePath] }
+    })
+    expect(tail!.messages).toHaveLength(1)
+    expect(tail!.messages[0].uuid).toBe('uuid-3')
+    expect(tail!.fileOffsets![filePath]).toBe(Buffer.byteLength(first + appended))
+  })
+
+  it('does not advance the offset past a trailing partial line, but still parses it', async () => {
+    const projectDir = join(tmpDir, 'projects', 'C--apps-MyProject')
+    await mkdir(projectDir, { recursive: true })
+    const filePath = join(projectDir, 'sess-001.jsonl')
+
+    const complete = jsonl(makeUserMessage())
+    const partial = JSON.stringify(makeAssistantMessage()).slice(0, 40)
+    await writeFile(filePath, complete + partial)
+
+    const parsed = await parseSessionFile(filePath)
+    // Partial line is malformed JSON → skipped; offset stops at the complete line
+    expect(parsed!.messages).toHaveLength(1)
+    expect(parsed!.fileOffsets![filePath]).toBe(Buffer.byteLength(complete))
+  })
+
+  it('falls back to a full parse when the offset is not on a line boundary', async () => {
+    const projectDir = join(tmpDir, 'projects', 'C--apps-MyProject')
+    await mkdir(projectDir, { recursive: true })
+    const filePath = join(projectDir, 'sess-001.jsonl')
+
+    const content = jsonl(makeUserMessage(), makeAssistantMessage())
+    await writeFile(filePath, content)
+
+    const parsed = await parseSessionFile(filePath, { offsets: { [filePath]: 10 } })
+    expect(parsed!.messages).toHaveLength(2)
+    expect(parsed!.fileOffsets![filePath]).toBe(Buffer.byteLength(content))
+  })
+
+  it('returns a result (not null) for an offset tail with no new complete lines', async () => {
+    const projectDir = join(tmpDir, 'projects', 'C--apps-MyProject')
+    await mkdir(projectDir, { recursive: true })
+    const filePath = join(projectDir, 'sess-001.jsonl')
+
+    const content = jsonl(makeUserMessage())
+    await writeFile(filePath, content)
+    const size = Buffer.byteLength(content)
+
+    const parsed = await parseSessionFile(filePath, { offsets: { [filePath]: size } })
+    expect(parsed).not.toBeNull()
+    expect(parsed!.messages).toHaveLength(0)
+    expect(parsed!.fileOffsets![filePath]).toBe(size)
+  })
+
+  it('reads subagent files incrementally via their own offsets', async () => {
+    const projectDir = join(tmpDir, 'projects', 'C--apps-MyProject')
+    const subDir = join(projectDir, 'sess-001', 'subagents')
+    await mkdir(subDir, { recursive: true })
+    const filePath = join(projectDir, 'sess-001.jsonl')
+    const subFile = join(subDir, 'agent-abc.jsonl')
+
+    await writeFile(filePath, jsonl(makeUserMessage()))
+    const subFirst = jsonl(makeAssistantMessage({ uuid: 'sub-1' }))
+    await writeFile(subFile, subFirst)
+
+    const full = await parseSessionFile(filePath)
+    expect(full!.subagentMessages).toHaveLength(1)
+    expect(full!.fileOffsets![subFile]).toBe(Buffer.byteLength(subFirst))
+
+    // Append to the subagent file only; re-parse with both offsets
+    const subAppended = jsonl(
+      makeAssistantMessage({ uuid: 'sub-2', timestamp: '2026-03-04T10:02:00.000Z' })
+    )
+    await writeFile(subFile, subFirst + subAppended)
+
+    const tail = await parseSessionFile(filePath, { offsets: full!.fileOffsets })
+    expect(tail!.messages).toHaveLength(0)
+    expect(tail!.subagentMessages).toHaveLength(1)
+    expect(tail!.subagentMessages[0].uuid).toBe('sub-2')
+    expect(tail!.fileOffsets![subFile]).toBe(Buffer.byteLength(subFirst + subAppended))
+  })
+})
+
 describe('parseAllSessions', () => {
   it('parses all session files from claude directory', async () => {
     const proj = join(tmpDir, 'projects', 'proj')

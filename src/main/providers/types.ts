@@ -34,5 +34,8 @@ export interface SessionProvider {
   /** Session id + project cwd from a head-read, without a full parse. */
   readMeta(filePath: string): Promise<ProviderSessionMeta | null>
   /** Parse a file into the shared ParsedSessionData shape. */
-  parseFile(filePath: string): Promise<ParsedSessionData | null>
+  parseFile(
+    filePath: string,
+    opts?: { offsets?: Record<string, number> }
+  ): Promise<ParsedSessionData | null>
 }
