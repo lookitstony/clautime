@@ -188,7 +188,8 @@ export const liveMonitorService = {
     // Earned today: billable human hours × effective (project-or-client) rate.
     const allProjects = db.select().from(projects).all()
     const allClients = db.select().from(clients).all()
-    const earnedToday = Math.round(computeEarnings(clampedSessions, allProjects, allClients) * 100) / 100
+    const earnedToday =
+      Math.round(computeEarnings(clampedSessions, allProjects, allClients) * 100) / 100
 
     return {
       humanHours: formatDuration(humanMinutes),
@@ -347,7 +348,10 @@ export const liveMonitorService = {
     const inflight = this._computeLatestPromptTimestamps()
     this._promptTsInflight = inflight
     try {
+      const t0 = Date.now()
       const value = await inflight
+      const ms = Date.now() - t0
+      if (ms > 200) log.warn(`[DIAG] computeLatestPromptTimestamps: ${ms}ms`)
       this._promptTsCache = { at: Date.now(), value }
       return value
     } finally {
@@ -635,7 +639,8 @@ export const liveMonitorService = {
           // Reuse the shared per-file cache when the file hasn't changed
           const cached = this._promptTimestampCache.get(fp)
           if (cached && cached.mtime === mtime) {
-            const awaitingWindow = cached.state === 'tool-pending' ? recentlyWritten : recentlyModified
+            const awaitingWindow =
+              cached.state === 'tool-pending' ? recentlyWritten : recentlyModified
             const isActive = recentlyWritten || (cached.awaitingResponse && awaitingWindow)
             setResult(encoded, { lastPromptAt: cached.lastPromptAt, isProcessing: isActive })
             continue
@@ -666,6 +671,7 @@ export const liveMonitorService = {
     log.info(`Starting live monitor (interval: ${intervalMs}ms)`)
 
     this._monitorInterval = setInterval(async () => {
+      const tickStart = Date.now()
       try {
         // Sync widgets: auto-hide inactive projects, auto-show active ones
         const syncDb = getDb()
@@ -678,7 +684,10 @@ export const liveMonitorService = {
         const activeProjectIds = new Set(
           todaySessionRows.map((s) => s.projectId).filter((id): id is number => id != null)
         )
+        const tWidget = Date.now()
         widgetService.syncWithActiveProjects(activeProjectIds)
+        const widgetMs = Date.now() - tWidget
+        if (widgetMs > 200) log.warn(`[DIAG] widget syncWithActiveProjects: ${widgetMs}ms`)
 
         const timestamps = await this.getLatestPromptTimestamps()
 
@@ -710,7 +719,14 @@ export const liveMonitorService = {
               }
             }
           }
+          const tIdle = Date.now()
           widgetService.syncIdleState(notIdleIds)
+          const idleMs = Date.now() - tIdle
+          if (idleMs > 200) log.warn(`[DIAG] widget syncIdleState: ${idleMs}ms`)
+        }
+        {
+          const tickMs = Date.now() - tickStart
+          if (tickMs > 500) log.warn(`[DIAG] monitor tick (pre-alert phase): ${tickMs}ms`)
         }
 
         // Check if desktop alerts are enabled globally

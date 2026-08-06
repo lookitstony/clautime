@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access, constants } from 'node:fs/promises'
 import { join } from 'node:path'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { gitCommits } from '../db/schema/git-commits'
@@ -27,6 +27,14 @@ interface ParsedCommit {
  * and correlates commits with sessions.
  */
 export const gitService = {
+  // isGitRepo results cached briefly. Scans hit every project repeatedly, and
+  // each non-repo directory otherwise costs a `git rev-parse` process spawn —
+  // spawn setup runs synchronously on the main thread and was profiled as the
+  // dominant cause of UI freezes when scans fired every few seconds.
+  _repoCheckCache: new Map<string, { at: number; isRepo: boolean }>(),
+  _REPO_CHECK_TTL_MS: 10 * 60_000,
+  _utcNormalized: false,
+
   /**
    * Check if git is available on the system.
    */
@@ -43,18 +51,24 @@ export const gitService = {
    * Check if a directory is a git repository.
    */
   async isGitRepo(dirPath: string): Promise<boolean> {
+    const cached = this._repoCheckCache.get(dirPath)
+    if (cached && Date.now() - cached.at < this._REPO_CHECK_TTL_MS) return cached.isRepo
+
+    let isRepo: boolean
     try {
       await access(join(dirPath, '.git'), constants.R_OK)
-      return true
+      isRepo = true
     } catch {
       // Also try git rev-parse as fallback (works in subdirs)
       try {
         await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dirPath })
-        return true
+        isRepo = true
       } catch {
-        return false
+        isRepo = false
       }
     }
+    this._repoCheckCache.set(dirPath, { at: Date.now(), isRepo })
+    return isRepo
   },
 
   /**
@@ -64,12 +78,15 @@ export const gitService = {
   async readCommits(
     dirPath: string,
     since?: string,
-    authorEmails?: string[]
+    authorEmails?: string[],
+    opts?: { assumeRepo?: boolean }
   ): Promise<ParsedCommit[]> {
-    const isRepo = await this.isGitRepo(dirPath)
-    if (!isRepo) {
-      log.warn(`Not a git repository: ${dirPath}`)
-      return []
+    if (!opts?.assumeRepo) {
+      const isRepo = await this.isGitRepo(dirPath)
+      if (!isRepo) {
+        log.warn(`Not a git repository: ${dirPath}`)
+        return []
+      }
     }
 
     const args = ['log', '--branches', '--format=%H|%s|%an|%ae|%aI', '--no-merges']
@@ -248,19 +265,22 @@ export const gitService = {
 
     const db = getDb()
 
-    // One-time: normalize any committedAt values with timezone offsets to UTC ISO
-    const nonUtcCommits = db
-      .select()
-      .from(gitCommits)
-      .all()
-      .filter((c) => c.committedAt && !c.committedAt.endsWith('Z'))
-    if (nonUtcCommits.length > 0) {
-      log.info(`Normalizing ${nonUtcCommits.length} commit timestamps to UTC`)
-      for (const c of nonUtcCommits) {
-        db.update(gitCommits)
-          .set({ committedAt: new Date(c.committedAt).toISOString() })
-          .where(eq(gitCommits.id, c.id))
-          .run()
+    // One-time per app run: normalize committedAt values with timezone offsets
+    if (!this._utcNormalized) {
+      this._utcNormalized = true
+      const nonUtcCommits = db
+        .select()
+        .from(gitCommits)
+        .all()
+        .filter((c) => c.committedAt && !c.committedAt.endsWith('Z'))
+      if (nonUtcCommits.length > 0) {
+        log.info(`Normalizing ${nonUtcCommits.length} commit timestamps to UTC`)
+        for (const c of nonUtcCommits) {
+          db.update(gitCommits)
+            .set({ committedAt: new Date(c.committedAt).toISOString() })
+            .where(eq(gitCommits.id, c.id))
+            .run()
+        }
       }
     }
 
@@ -279,7 +299,20 @@ export const gitService = {
 
         projectsScanned++
         const authorEmails = await this.getGitAuthorEmails(project.directoryPath)
-        const commits = await this.readCommits(project.directoryPath, undefined, authorEmails)
+        // Incremental: read only history since just before the newest stored
+        // commit (7-day overlap absorbs clock skew and rebases; hash dedup
+        // below drops the overlap). Full history only for first-time projects.
+        const newest = db
+          .select({ max: sql<string | null>`max(${gitCommits.committedAt})` })
+          .from(gitCommits)
+          .where(eq(gitCommits.projectId, project.id))
+          .get()
+        const since = newest?.max
+          ? new Date(Date.parse(newest.max) - 7 * 86_400_000).toISOString()
+          : undefined
+        const commits = await this.readCommits(project.directoryPath, since, authorEmails, {
+          assumeRepo: true
+        })
 
         if (commits.length === 0) continue
 
