@@ -19,6 +19,7 @@ import { fileWatcherService } from './services/file-watcher-service'
 import { widgetService } from './services/widget-service'
 import { secretScanService } from './services/secret-scan-service'
 import { settingsService } from './services/settings-service'
+import { applyExcludedPaths } from './services/excluded-paths'
 
 // Single instance lock — prevent multiple instances
 const gotLock = app.requestSingleInstanceLock()
@@ -128,6 +129,9 @@ app.whenReady().then(() => {
 
   // Initialize database BEFORE any window is created
   initializeDatabase()
+
+  // Apply user-configured excluded folders before anything scans
+  applyExcludedPaths()
 
   // Register IPC handlers after database is ready
   registerIpcHandlers()

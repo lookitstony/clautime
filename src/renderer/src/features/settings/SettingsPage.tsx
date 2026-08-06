@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, type ChangeEvent } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, type ChangeEvent } from 'react'
 import { toast } from 'sonner'
 import { triggerUpdateCheck } from './use-updater'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -382,6 +382,59 @@ export function SettingsPage(): React.JSX.Element {
       toast.success('Settings saved')
     }
   })
+
+  // ============= Excluded Folders =============
+  const excludedPaths = useMemo<string[]>(() => {
+    const raw = settings?.['excluded_paths']
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : []
+    } catch {
+      return []
+    }
+  }, [settings])
+  const [newExcludedPath, setNewExcludedPath] = useState('')
+
+  // Persist immediately; purging already-tracked sessions under a newly
+  // excluded folder is deferred to the shared rescan (marked pending here).
+  const saveExcludedPaths = useCallback(
+    async (list: string[]) => {
+      try {
+        const r = await window.api.settings.set('excluded_paths', JSON.stringify(list))
+        if (!r.success) throw new Error(r.error.message)
+        queryClient.invalidateQueries({ queryKey: ['settings'] })
+        markRescanPending()
+        toast.success('Excluded folders saved — rescan to apply')
+      } catch {
+        toast.error('Failed to save excluded folders')
+      }
+    },
+    [queryClient, markRescanPending]
+  )
+
+  const addExcludedPath = useCallback(
+    (path: string) => {
+      const trimmed = path.trim()
+      if (!trimmed) return
+      setNewExcludedPath('')
+      if (excludedPaths.some((p) => p.toLowerCase() === trimmed.toLowerCase())) return
+      saveExcludedPaths([...excludedPaths, trimmed])
+    },
+    [excludedPaths, saveExcludedPaths]
+  )
+
+  const removeExcludedPath = useCallback(
+    (path: string) => {
+      saveExcludedPaths(excludedPaths.filter((p) => p !== path))
+    },
+    [excludedPaths, saveExcludedPaths]
+  )
+
+  const handleBrowseExcludedPath = useCallback(async () => {
+    const r = await window.api.dialog.openFolder()
+    if (r.success && r.data) addExcludedPath(r.data)
+  }, [addExcludedPath])
 
   // ============= Git Identity =============
   const presentationMode = settings?.['presentation_mode'] === 'true'
@@ -1289,10 +1342,7 @@ export function SettingsPage(): React.JSX.Element {
                 const enabled = isProviderOn(provider.settingKey)
                 const isLastOn = enabled && enabledProviderCount <= 1
                 return (
-                  <div
-                    key={provider.id}
-                    className="flex items-center justify-between pt-2"
-                  >
+                  <div key={provider.id} className="flex items-center justify-between pt-2">
                     <div>
                       <label className="block text-[12px] font-semibold text-[var(--text-primary)]">
                         Track {provider.label} Sessions
@@ -1307,7 +1357,71 @@ export function SettingsPage(): React.JSX.Element {
                   </div>
                 )
               })}
+            </SectionCard>
+          </section>
+        )}
 
+        {/* Excluded Folders */}
+        {activeCategory === 'detection' && (
+          <section>
+            <SectionHeader title="Excluded Folders" />
+            <SectionCard>
+              <p className="mb-3 text-[11px] text-[var(--text-muted)]">
+                Sessions from these folders (and everything under them) are never tracked. Transient
+                agent workspaces (<span className="font-mono">pipes</span>,{' '}
+                <span className="font-mono">piped\scratch</span>, Claude worktrees) are always
+                excluded automatically.
+              </p>
+
+              {excludedPaths.length > 0 && (
+                <ul className="mb-3 space-y-1">
+                  {excludedPaths.map((path) => (
+                    <li
+                      key={path}
+                      className="flex items-center gap-2 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-1.5"
+                    >
+                      <span className="flex-1 truncate font-mono text-[12px] text-[var(--text-secondary)]">
+                        {path}
+                      </span>
+                      <button
+                        type="button"
+                        title="Remove"
+                        onClick={() => removeExcludedPath(path)}
+                        className="text-[var(--text-muted)] hover:text-[var(--danger,#ef4444)]"
+                      >
+                        <X size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newExcludedPath}
+                  placeholder="C:\path\to\folder"
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setNewExcludedPath(e.target.value)
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addExcludedPath(newExcludedPath)
+                  }}
+                  className="flex-1 rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <Button size="sm" variant="ghost" onClick={handleBrowseExcludedPath}>
+                  Browse
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!newExcludedPath.trim()}
+                  className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                  onClick={() => addExcludedPath(newExcludedPath)}
+                >
+                  <Plus size={14} className="mr-1" />
+                  Add
+                </Button>
+              </div>
             </SectionCard>
           </section>
         )}
@@ -1435,7 +1549,9 @@ export function SettingsPage(): React.JSX.Element {
                 )}
                 <div>
                   <p className="text-[12px] font-semibold text-[var(--text-primary)]">
-                    {rescanPending ? 'Settings changed — rescan to apply' : 'Sessions are up to date'}
+                    {rescanPending
+                      ? 'Settings changed — rescan to apply'
+                      : 'Sessions are up to date'}
                   </p>
                   <p className="text-[11px] text-[var(--text-muted)]">
                     {rescanPending

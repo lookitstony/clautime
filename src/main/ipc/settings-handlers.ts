@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { settingsService } from '../services/settings-service'
+import { applyExcludedPaths, EXCLUDED_PATHS_KEY } from '../services/excluded-paths'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 
 export function registerSettingsHandlers(): void {
@@ -19,6 +20,7 @@ export function registerSettingsHandlers(): void {
     async (_event, key: string, value: string): Promise<IpcResult<void>> => {
       try {
         settingsService.setSetting(key, value)
+        if (key === EXCLUDED_PATHS_KEY) applyExcludedPaths()
         return ipcSuccess(undefined)
       } catch (error) {
         log.error('IPC settings:set failed:', error)
