@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { isExcludedProjectDir, isExcludedProjectPath } from './paths'
+import { describe, it, expect, afterEach } from 'vitest'
+import { isExcludedProjectDir, isExcludedProjectPath, setCustomExcludedPaths } from './paths'
+
+afterEach(() => {
+  setCustomExcludedPaths([])
+})
 
 describe('isExcludedProjectPath', () => {
   it('excludes pipes worktree segments', () => {
@@ -51,5 +55,36 @@ describe('isExcludedProjectDir', () => {
   it('keeps encoded real project names', () => {
     expect(isExcludedProjectDir('C--apps-3DPrintz')).toBe(false)
     expect(isExcludedProjectDir('C--apps-ClawdTime')).toBe(false)
+  })
+})
+
+describe('custom excluded paths', () => {
+  it('excludes configured folders and everything under them (case-insensitive)', () => {
+    setCustomExcludedPaths(['C:\\piped\\benchmarks'])
+    expect(isExcludedProjectPath('C:\\piped\\benchmarks')).toBe(true)
+    expect(isExcludedProjectPath('C:\\piped\\benchmarks\\burning\\match\\2026')).toBe(true)
+    expect(isExcludedProjectPath('c:/piped/BENCHMARKS/sub')).toBe(true)
+    expect(isExcludedProjectPath('C:\\piped\\benchmarks2')).toBe(false)
+    expect(isExcludedProjectPath('C:\\apps\\3DPrintz')).toBe(false)
+  })
+
+  it('matches encoded project dir names for configured folders', () => {
+    setCustomExcludedPaths(['C:\\piped\\benchmarks'])
+    expect(isExcludedProjectDir('C--piped-benchmarks')).toBe(true)
+    expect(isExcludedProjectDir('C--piped-benchmarks-create-a-pacman-game')).toBe(true)
+    expect(isExcludedProjectDir('C--piped-benchmarks2')).toBe(false)
+    expect(isExcludedProjectDir('C--apps-3DPrintz')).toBe(false)
+  })
+
+  it('handles trailing slashes and blank entries', () => {
+    setCustomExcludedPaths(['C:\\piped\\benchmarks\\', '  ', ''])
+    expect(isExcludedProjectPath('C:\\piped\\benchmarks\\x')).toBe(true)
+    expect(isExcludedProjectPath('C:\\apps\\ClawdTime')).toBe(false)
+  })
+
+  it('clearing the list restores default behavior', () => {
+    setCustomExcludedPaths(['C:\\piped\\benchmarks'])
+    setCustomExcludedPaths([])
+    expect(isExcludedProjectPath('C:\\piped\\benchmarks')).toBe(false)
   })
 })

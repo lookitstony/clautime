@@ -31,14 +31,45 @@ export function toolForSourceFile(sourceFile: string): SessionTool {
 }
 
 /**
+ * User-configured excluded folders (from the `excluded_paths` setting), kept as
+ * module state so the pure exclusion predicates below stay call-site-compatible
+ * everywhere. The main process loads this at startup and re-applies it whenever
+ * the setting changes; built-in rules (pipes/, piped scratch, worktrees) always
+ * apply regardless.
+ */
+let customPathPrefixes: string[] = []
+let customEncodedPrefixes: string[] = []
+
+/** Claude's projects-dir encoding: every non-alphanumeric char becomes `-`. */
+function encodePathToDirPrefix(p: string): string {
+  return p.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+}
+
+export function setCustomExcludedPaths(paths: string[]): void {
+  const cleaned = paths.map((p) => p.trim()).filter(Boolean)
+  customPathPrefixes = cleaned.map((p) =>
+    normalizePath(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  )
+  customEncodedPrefixes = cleaned.map((p) => encodePathToDirPrefix(normalizePath(p)))
+}
+
+export function getCustomExcludedPaths(): string[] {
+  return [...customPathPrefixes]
+}
+
+/**
  * Piped-swarm creates throwaway git worktrees under a `pipes/` folder
  * (e.g. C:\apps\Foo\pipes\ticket-1). Claude encodes those dir names with a
  * `-pipes-` segment. They are transient and noisy, not real projects, so we
  * exclude them from discovery and scanning. `encodedName` is the
  * .claude/projects/ folder name (path separators replaced with `-`).
+ * User-configured excluded folders (see {@link setCustomExcludedPaths}) are
+ * matched as encoded prefixes on a `-` boundary.
  */
 export function isExcludedProjectDir(encodedName: string): boolean {
-  return /-pipes(-|$)|-piped-scratch(-|$)|-claude-worktrees(-|$)/i.test(encodedName)
+  if (/-pipes(-|$)|-piped-scratch(-|$)|-claude-worktrees(-|$)/i.test(encodedName)) return true
+  const lower = encodedName.toLowerCase()
+  return customEncodedPrefixes.some((prefix) => lower === prefix || lower.startsWith(prefix + '-'))
 }
 
 /**
@@ -50,11 +81,15 @@ export function isExcludedProjectDir(encodedName: string): boolean {
  * auto-created projects list.
  */
 export function isExcludedProjectPath(projectPath: string): boolean {
-  const segments = projectPath
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter(Boolean)
-    .map((s) => s.toLowerCase())
+  const normalized = normalizePath(projectPath).replace(/\\/g, '/').toLowerCase()
+  if (
+    customPathPrefixes.some(
+      (prefix) => normalized === prefix || normalized.startsWith(prefix + '/')
+    )
+  ) {
+    return true
+  }
+  const segments = normalized.split('/').filter(Boolean)
   return segments.some((seg, i) => {
     if (seg === 'pipes') return true
     if (seg === 'scratch' && segments[i - 1] === 'piped') return true
