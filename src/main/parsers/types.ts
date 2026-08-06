@@ -51,6 +51,12 @@ export interface ParsedSessionData {
   subagentMessages: ParsedMessage[]
   /** Progress event timestamps from subagent JSONL files */
   subagentProgressTimestamps: string[]
+  /**
+   * Consumed byte offset per physical file (main + subagent) after this parse.
+   * Persisted to scan_state so the next scan reads only appended data. Absent
+   * for parsers that don't support incremental reads yet.
+   */
+  fileOffsets?: Record<string, number>
 }
 
 export interface SessionParserOptions {
@@ -60,6 +66,9 @@ export interface SessionParserOptions {
 /** Clean interface for session file parsing (NFR11). */
 export interface SessionParser {
   discoverSessionFiles(claudeDir: string): Promise<string[]>
-  parseSessionFile(filePath: string): Promise<ParsedSessionData | null>
+  parseSessionFile(
+    filePath: string,
+    opts?: { offsets?: Record<string, number> }
+  ): Promise<ParsedSessionData | null>
   parseAllSessions(claudeDir: string, options?: SessionParserOptions): Promise<ParsedSessionData[]>
 }

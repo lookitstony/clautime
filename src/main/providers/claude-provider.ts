@@ -36,7 +36,7 @@ export const claudeProvider: SessionProvider = {
     return { sessionId: basename(filePath, '.jsonl'), cwd: null }
   },
 
-  parseFile(filePath) {
-    return parseSessionFile(filePath)
+  parseFile(filePath, opts) {
+    return parseSessionFile(filePath, opts)
   }
 }
