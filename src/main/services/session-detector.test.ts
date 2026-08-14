@@ -26,6 +26,17 @@ function makeMessage(timestamp: string, overrides: Partial<ParsedMessage> = {}):
   }
 }
 
+/** ISO timestamp for a local wall-clock time — keeps midnight tests TZ-independent. */
+function localTs(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): string {
+  return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString()
+}
+
 function makeParsedSession(
   messages: ParsedMessage[],
   overrides: Partial<ParsedSessionData> = {}
@@ -117,6 +128,117 @@ describe('detectSessions', () => {
     expect(result[1].endedAt).toBe('2026-03-04T10:30:00Z')
     expect(result[1].durationMinutes).toBe(5)
     expect(result[1].promptCount).toBe(2)
+  })
+
+  it('should split a session at local midnight so each day is counted separately', () => {
+    const messages = [
+      makeMessage(localTs(2026, 8, 13, 23, 56)),
+      makeMessage(localTs(2026, 8, 13, 23, 58)),
+      // 4 minute gap — well under the timeout, but it crosses midnight
+      makeMessage(localTs(2026, 8, 14, 0, 2)),
+      makeMessage(localTs(2026, 8, 14, 0, 10))
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+    // Day 1 runs to midnight, day 2 starts there — no minutes fall in between
+    expect(result[0].startedAt).toBe(localTs(2026, 8, 13, 23, 56))
+    expect(result[0].endedAt).toBe(localTs(2026, 8, 14, 0, 0))
+    expect(result[0].durationMinutes).toBe(4)
+
+    expect(result[1].startedAt).toBe(localTs(2026, 8, 14, 0, 0))
+    expect(result[1].endedAt).toBe(localTs(2026, 8, 14, 0, 10))
+    expect(result[1].durationMinutes).toBe(10)
+  })
+
+  it('should not lose the gap minutes when a session is split at midnight', () => {
+    // A prompt at 23:50 whose answer lands at 00:04 — the 14 minute gap is
+    // under the timeout, so it is work time and must survive the split.
+    const messages = [
+      makeMessage(localTs(2026, 8, 13, 23, 50)),
+      makeMessage(localTs(2026, 8, 14, 0, 4), { type: 'assistant' })
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 15)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].durationMinutes).toBe(10)
+    expect(result[1].durationMinutes).toBe(4)
+    // Same total as the single unsplit session would have had
+    expect(result[0].durationMinutes + result[1].durationMinutes).toBe(14)
+  })
+
+  it('should split at local midnight even when a tool gap would otherwise bridge it', () => {
+    const messages = [
+      makeMessage(localTs(2026, 8, 13, 23, 55), {
+        hasToolUse: true,
+        toolNames: ['Agent']
+      }),
+      // 20 minute Agent gap — normally bridged (slow tool limit is 30 min)
+      makeMessage(localTs(2026, 8, 14, 0, 15), { isToolResult: true }),
+      makeMessage(localTs(2026, 8, 14, 0, 20))
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 10)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].endedAt).toBe(localTs(2026, 8, 14, 0, 0))
+    expect(result[1].startedAt).toBe(localTs(2026, 8, 14, 0, 0))
+    expect(result[0].durationMinutes).toBe(5)
+    expect(result[1].durationMinutes).toBe(20)
+  })
+
+  it('should NOT clip to midnight when the overnight gap is genuine idle time', () => {
+    // Stopped at 22:00, came back at 09:00 — that is not 2 hours of work
+    const messages = [
+      makeMessage(localTs(2026, 8, 13, 21, 55)),
+      makeMessage(localTs(2026, 8, 13, 22, 0)),
+      makeMessage(localTs(2026, 8, 14, 9, 0)),
+      makeMessage(localTs(2026, 8, 14, 9, 5))
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 15)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].endedAt).toBe(localTs(2026, 8, 13, 22, 0))
+    expect(result[0].durationMinutes).toBe(5)
+    expect(result[1].startedAt).toBe(localTs(2026, 8, 14, 9, 0))
+    expect(result[1].durationMinutes).toBe(5)
+  })
+
+  it('should keep a midnight fragment that the noise filter would otherwise drop', () => {
+    // The pre-midnight side is a lone tool result: no human prompt, no tokens.
+    // It still holds real minutes, so it must not be filtered out as noise.
+    const messages = [
+      makeMessage(localTs(2026, 8, 13, 23, 45), {
+        type: 'user',
+        isToolResult: true,
+        hasToolUse: true,
+        toolNames: ['Bash']
+      }),
+      makeMessage(localTs(2026, 8, 14, 0, 3))
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 20)
+
+    expect(result).toHaveLength(2)
+    expect(result[0].promptCount).toBe(0)
+    expect(result[0].durationMinutes).toBe(15)
+  })
+
+  it('should not mint a session from a sub-minute noise fragment before midnight', () => {
+    // Init/system noise at 23:59 with no prompt and no tokens is worth ~1 minute
+    // once clipped — not a session, and certainly not one dated to yesterday.
+    const messages = [
+      makeMessage(localTs(2026, 8, 13, 23, 59), { isToolResult: true }),
+      makeMessage(localTs(2026, 8, 14, 0, 5))
+    ]
+    const parsed = makeParsedSession(messages)
+    const result = detectSessions(parsed, 15)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].startedAt).toBe(localTs(2026, 8, 14, 0, 0))
   })
 
   it('should NOT split at Agent subagent gaps under 30 minutes', () => {
