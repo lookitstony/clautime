@@ -385,6 +385,18 @@ function emptyTokenUsage(): TokenUsage {
 }
 
 /**
+ * Calendar day of an ISO timestamp in local time, as YYYY-MM-DD.
+ * Slicing the ISO string instead would key off the UTC day, putting late-evening
+ * work on tomorrow's date west of UTC. Mirrors getDateKey in report-service.
+ */
+function localDateKey(isoString: string): string {
+  const d = new Date(isoString)
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
+/**
  * SessionService orchestrates: discover → filter → parse → store raw → detect → store sessions.
  * All database operations use batch inserts in transactions (NFR18, NFR20).
  */
@@ -1224,7 +1236,7 @@ export const sessionService = {
     >()
 
     for (const session of sessionRows) {
-      const date = session.startedAt.slice(0, 10)
+      const date = localDateKey(session.startedAt)
 
       // Get messages for this session's time window and source file
       const conditions: SQL[] = [

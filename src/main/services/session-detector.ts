@@ -17,48 +17,103 @@ export function detectSessions(
 
   const projectPath = resolveProjectPath(parsed)
   const results: DetectedSession[] = []
+  // Parallel to `results`: true when a segment boundary was clipped to midnight
+  // rather than landing on a real message. Such segments are exempt from the
+  // noise filter below — their time is real even if they hold few messages.
+  const clipped: boolean[] = []
   let segmentStart = 0
+  let startOverride: string | null = null
+
+  const pushSegment = (endIdx: number, endOverride: string | null): void => {
+    results.push(
+      buildDetectedSession(
+        parsed,
+        messages,
+        segmentStart,
+        endIdx,
+        projectPath,
+        startOverride,
+        endOverride
+      )
+    )
+    clipped.push(startOverride !== null || endOverride !== null)
+  }
 
   for (let i = 1; i < messages.length; i++) {
-    const prevTime = new Date(messages[i - 1].timestamp).getTime()
-    const currTime = new Date(messages[i].timestamp).getTime()
-    const gapMinutes = (currTime - prevTime) / (1000 * 60)
+    const prevTs = messages[i - 1].timestamp
+    const currTs = messages[i].timestamp
+    const gapMinutes = (new Date(currTs).getTime() - new Date(prevTs).getTime()) / (1000 * 60)
 
-    if (gapMinutes > idleTimeoutMinutes) {
-      // Don't split at tool execution gaps when there's evidence of active
-      // processing. Requires BOTH sides of the gap to be a tool boundary
-      // (tool_use before, tool_result after) to avoid bridging interrupted tools.
-      const prevIsToolCall = messages[i - 1].hasToolUse
-      const currIsToolResult = messages[i].isToolResult
-      if (prevIsToolCall && currIsToolResult) {
-        const prevTs = messages[i - 1].timestamp
-        const currTs = messages[i].timestamp
-        // Hard cap: no single tool execution should bridge more than 2 hours,
-        // even with progress events (catches tail -f, npm run dev left overnight)
-        if (
-          gapMinutes <= MAX_PROGRESS_GAP_MINUTES &&
-          hasProgressActivity(parsed.progressTimestamps, prevTs, currTs)
-        ) {
-          continue
-        }
-        // Fall back to tool-type heuristic limits for short gaps without progress
-        if (gapMinutes <= getMaxToolGap(messages[i - 1].toolNames)) {
-          continue
-        }
-      }
-
-      results.push(buildDetectedSession(parsed, messages, segmentStart, i - 1, projectPath))
+    if (shouldSplitOnGap(parsed, messages, i, gapMinutes, idleTimeoutMinutes)) {
+      // Idle gap — the time between the two messages is not work, so both
+      // sides keep their real timestamps and the gap is counted for nobody.
+      pushSegment(i - 1, null)
       segmentStart = i
+      startOverride = null
+      continue
+    }
+
+    // Continuous work. If it runs past local midnight, split there and clip
+    // both halves to the boundary so each day gets its true share and no
+    // minutes are dropped between them.
+    const midnight = midnightBetween(prevTs, currTs)
+    if (midnight) {
+      pushSegment(i - 1, midnight)
+      segmentStart = i
+      startOverride = midnight
     }
   }
 
   // Final segment
-  results.push(
-    buildDetectedSession(parsed, messages, segmentStart, messages.length - 1, projectPath)
-  )
+  pushSegment(messages.length - 1, null)
 
   // Filter out noise: sessions with 0 human prompts and minimal tokens (< 50) are just init/system messages
-  return results.filter((s) => s.promptCount > 0 || s.inputTokens + s.outputTokens >= 50)
+  return results.filter(
+    (s, i) =>
+      (clipped[i] && s.durationMinutes >= MIN_CLIPPED_FRAGMENT_MINUTES) ||
+      s.promptCount > 0 ||
+      s.inputTokens + s.outputTokens >= 50
+  )
+}
+
+/**
+ * Whether the gap before messages[i] is idle time that should end the session.
+ *
+ * Extracted from the detection loop so the midnight-boundary logic can ask
+ * "would this have split anyway?" without duplicating the heuristics.
+ */
+function shouldSplitOnGap(
+  parsed: ParsedSessionData,
+  messages: ParsedMessage[],
+  i: number,
+  gapMinutes: number,
+  idleTimeoutMinutes: number
+): boolean {
+  if (gapMinutes <= idleTimeoutMinutes) return false
+
+  // Don't split at tool execution gaps when there's evidence of active
+  // processing. Requires BOTH sides of the gap to be a tool boundary
+  // (tool_use before, tool_result after) to avoid bridging interrupted tools.
+  const prevIsToolCall = messages[i - 1].hasToolUse
+  const currIsToolResult = messages[i].isToolResult
+  if (prevIsToolCall && currIsToolResult) {
+    const prevTs = messages[i - 1].timestamp
+    const currTs = messages[i].timestamp
+    // Hard cap: no single tool execution should bridge more than 2 hours,
+    // even with progress events (catches tail -f, npm run dev left overnight)
+    if (
+      gapMinutes <= MAX_PROGRESS_GAP_MINUTES &&
+      hasProgressActivity(parsed.progressTimestamps, prevTs, currTs)
+    ) {
+      return false
+    }
+    // Fall back to tool-type heuristic limits for short gaps without progress
+    if (gapMinutes <= getMaxToolGap(messages[i - 1].toolNames)) {
+      return false
+    }
+  }
+
+  return true
 }
 
 /**
@@ -130,6 +185,47 @@ export function decodeProjectPath(encoded: string): string {
 
 /** Hard cap: even with progress events, no tool gap bridges more than 2 hours */
 const MAX_PROGRESS_GAP_MINUTES = 120
+
+/** A gap longer than this is never clipped to midnight — see midnightBetween. */
+const MAX_CLIPPABLE_GAP_MS = 24 * 60 * 60_000
+
+/**
+ * A midnight fragment is spared the noise filter only if it holds at least this
+ * much time. Without a floor, init/system lines written just before midnight
+ * would be minted as tiny sessions dated to the previous day.
+ */
+const MIN_CLIPPED_FRAGMENT_MINUTES = 2
+
+/**
+ * The local midnight separating two timestamps, or null if they fall on the
+ * same calendar day.
+ *
+ * Returns null for gaps over 24h as well: those can straddle more than one
+ * midnight, and clipping to a single boundary would dump the extra days onto
+ * one side. Such gaps only survive a wildly large idle timeout, and leaving
+ * them unclipped just preserves today's behaviour.
+ */
+function midnightBetween(prevTs: string, currTs: string): string | null {
+  const prev = new Date(prevTs)
+  const curr = new Date(currTs)
+  if (
+    prev.getFullYear() === curr.getFullYear() &&
+    prev.getMonth() === curr.getMonth() &&
+    prev.getDate() === curr.getDate()
+  ) {
+    return null
+  }
+  if (curr.getTime() - prev.getTime() > MAX_CLIPPABLE_GAP_MS) return null
+
+  const midnight = new Date(curr.getFullYear(), curr.getMonth(), curr.getDate())
+  // Zones whose DST transition lands on 00:00 (America/Santiago, America/Havana)
+  // can rewind past midnight, putting the boundary outside the gap. Clipping to
+  // it there would invert the first segment and overlap the second.
+  const midnightMs = midnight.getTime()
+  if (midnightMs <= prev.getTime() || midnightMs >= curr.getTime()) return null
+
+  return midnight.toISOString()
+}
 
 /**
  * Check if progress events show active tool processing during a time range.
@@ -249,10 +345,14 @@ function buildDetectedSession(
   messages: ParsedMessage[],
   startIdx: number,
   endIdx: number,
-  projectPath: string
+  projectPath: string,
+  /** Clip the session start to this instant instead of the first message's time. */
+  startOverride: string | null = null,
+  /** Clip the session end to this instant instead of the last message's time. */
+  endOverride: string | null = null
 ): DetectedSession {
-  const startedAt = messages[startIdx].timestamp
-  const endedAt = messages[endIdx].timestamp
+  const startedAt = startOverride ?? messages[startIdx].timestamp
+  const endedAt = endOverride ?? messages[endIdx].timestamp
   const startMs = new Date(startedAt).getTime()
   const endMs = new Date(endedAt).getTime()
   const durationMinutes = Math.round((endMs - startMs) / (1000 * 60))
