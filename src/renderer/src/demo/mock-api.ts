@@ -397,6 +397,13 @@ const toStatus = (inv: LocalInvoiceDetail): InvoiceStatus => ({
 
 // ── live state ──
 
+// Demo widget visibility — the landing page renders the actual floating iframes
+const openWidgetIds = new Set<number>()
+const widgetStateListeners = new Set<(projectIds: number[]) => void>()
+function notifyWidgetState(): void {
+  for (const cb of widgetStateListeners) cb([...openWidgetIds])
+}
+
 const watchState = new Map<number, { isWatching: boolean; alertSound: string }>([
   [1, { isWatching: true, alertSound: 'system' }],
   [2, { isWatching: true, alertSound: 'chime.wav' }],
@@ -814,16 +821,28 @@ export const mockApi = {
     // Widget windows don't exist in the browser — the landing page listens for
     // these messages and shows/hides a floating iframe of ./demo/#widget/<id>.
     toggleWidget: (projectId: number) => {
+      if (openWidgetIds.has(projectId)) openWidgetIds.delete(projectId)
+      else openWidgetIds.add(projectId)
       window.parent.postMessage({ type: 'clautime-demo-widget', action: 'toggle', projectId }, '*')
+      notifyWidgetState()
       return ok(undefined)
     },
     showAllWidgets: (projectIds: number[]) => {
+      for (const id of projectIds) openWidgetIds.add(id)
       window.parent.postMessage({ type: 'clautime-demo-widget', action: 'show-all', projectIds }, '*')
+      notifyWidgetState()
       return ok(undefined)
     },
     hideAllWidgets: () => {
+      openWidgetIds.clear()
       window.parent.postMessage({ type: 'clautime-demo-widget', action: 'hide-all' }, '*')
+      notifyWidgetState()
       return ok(undefined)
+    },
+    getVisibleWidgets: () => ok([...openWidgetIds]),
+    onWidgetStateChanged: (callback: (projectIds: number[]) => void) => {
+      widgetStateListeners.add(callback)
+      return () => widgetStateListeners.delete(callback)
     },
     showStopDialog: () => ok(undefined),
     getWidgetHotkey: () => ok('CommandOrControl+Shift+W'),

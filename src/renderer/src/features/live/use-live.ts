@@ -45,10 +45,36 @@ async function fetchAlertConfig(projectId: number): Promise<ProjectAlertConfig> 
   return result.data
 }
 
+async function fetchVisibleWidgets(): Promise<number[]> {
+  const result = await window.api.live.getVisibleWidgets()
+  if (!result.success) throw new Error(result.error.message)
+  return result.data
+}
+
 async function fetchAvailableSounds(): Promise<{ name: string; filename: string }[]> {
   const result = await window.api.live.getAvailableSounds()
   if (!result.success) throw new Error(result.error.message)
   return result.data
+}
+
+/**
+ * Project IDs whose floating widget is currently on screen. Main pushes
+ * `widget:stateChanged` whenever anything opens/closes/hides, so the icons
+ * never fall out of sync with the real windows.
+ */
+export function useVisibleWidgets() {
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    return window.api.live.onWidgetStateChanged((ids) => {
+      queryClient.setQueryData(['live', 'widgets'], ids)
+    })
+  }, [queryClient])
+
+  return useQuery({
+    queryKey: ['live', 'widgets'],
+    queryFn: fetchVisibleWidgets,
+    refetchInterval: 10000
+  })
 }
 
 export function useTodayStats() {

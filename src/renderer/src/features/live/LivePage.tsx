@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LiveStatsBar } from './LiveStatsBar'
 import { ProjectWatchList } from './ProjectWatchList'
-import { useTodayStats, useProjectStatuses, useTodayCost } from './use-live'
+import { useTodayStats, useProjectStatuses, useTodayCost, useVisibleWidgets } from './use-live'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useLiveStore } from '@/stores/use-live-store'
 import { useCreateSession } from '@/features/sessions/use-sessions'
@@ -23,8 +23,13 @@ export function LivePage(): React.JSX.Element {
   const { data: projectStatuses, isLoading: statusesLoading } = useProjectStatuses()
   const todayCost = useTodayCost()
 
+  const { data: visibleWidgets } = useVisibleWidgets()
+
   const [staleDialog, setStaleDialog] = useState(false)
-  const [allWidgetsOpen, setAllWidgetsOpen] = useState(false)
+  // Derived from the real widget windows, not local state that drifts on remount
+  const allWidgetsOpen =
+    (projectStatuses?.length ?? 0) > 0 &&
+    projectStatuses!.every((p) => visibleWidgets?.includes(p.projectId))
   const activeTimer = useLiveStore((s) => s.activeTimer)
   const isStale = useLiveStore((s) => s.isStale)
   const discardTimer = useLiveStore((s) => s.discardTimer)
@@ -82,10 +87,8 @@ export function LivePage(): React.JSX.Element {
                   onClick={() => {
                     if (allWidgetsOpen) {
                       window.api.live.hideAllWidgets()
-                      setAllWidgetsOpen(false)
                     } else {
                       window.api.live.showAllWidgets(projectStatuses.map((p) => p.projectId))
-                      setAllWidgetsOpen(true)
                     }
                   }}
                   className="rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"

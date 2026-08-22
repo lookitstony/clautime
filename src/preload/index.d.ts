@@ -169,6 +169,8 @@ interface LiveApi {
   toggleWidget(projectId: number): Promise<IpcResult<void>>
   showAllWidgets(projectIds: number[]): Promise<IpcResult<void>>
   hideAllWidgets(): Promise<IpcResult<void>>
+  getVisibleWidgets(): Promise<IpcResult<number[]>>
+  onWidgetStateChanged(callback: (projectIds: number[]) => void): () => void
   showStopDialog(projectId: number): Promise<IpcResult<void>>
   getWidgetHotkey(): Promise<IpcResult<string>>
   setWidgetHotkey(accelerator: string): Promise<IpcResult<void>>

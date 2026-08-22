@@ -210,6 +210,12 @@ const api = {
     toggleWidget: (projectId: number) => ipcRenderer.invoke('live:toggleWidget', projectId),
     showAllWidgets: (projectIds: number[]) => ipcRenderer.invoke('live:showAllWidgets', projectIds),
     hideAllWidgets: () => ipcRenderer.invoke('live:hideAllWidgets'),
+    getVisibleWidgets: () => ipcRenderer.invoke('live:getVisibleWidgets'),
+    onWidgetStateChanged: (callback: (projectIds: number[]) => void) => {
+      const handler = (_event: unknown, projectIds: number[]): void => callback(projectIds)
+      ipcRenderer.on('widget:stateChanged', handler)
+      return () => ipcRenderer.removeListener('widget:stateChanged', handler)
+    },
     showStopDialog: (projectId: number) => ipcRenderer.invoke('live:showStopDialog', projectId),
     getWidgetHotkey: () => ipcRenderer.invoke('live:getWidgetHotkey'),
     setWidgetHotkey: (accelerator: string) =>
