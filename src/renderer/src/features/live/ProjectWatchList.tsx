@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bell, BellOff, Play, Pause, Square, MonitorUp, ChevronDown } from 'lucide-react'
+import { Bell, BellOff, Play, Pause, Square, MonitorUp, MonitorOff, ChevronDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
@@ -9,7 +9,8 @@ import {
   useSetWatching,
   useSetAlertConfig,
   useAvailableSounds,
-  useSelectCustomSound
+  useSelectCustomSound,
+  useVisibleWidgets
 } from './use-live'
 import { useLiveStore } from '@/stores/use-live-store'
 import { ManualTimerDialog } from './ManualTimerDialog'
@@ -24,6 +25,7 @@ export function ProjectWatchList({ projects }: ProjectWatchListProps): React.JSX
   const setAlertConfig = useSetAlertConfig()
   const { data: sounds } = useAvailableSounds()
   const selectCustomSound = useSelectCustomSound()
+  const { data: visibleWidgets } = useVisibleWidgets()
   const activeTimer = useLiveStore((s) => s.activeTimer)
   const pauseTimer = useLiveStore((s) => s.pauseTimer)
   const resumeTimer = useLiveStore((s) => s.resumeTimer)
@@ -56,6 +58,7 @@ export function ProjectWatchList({ projects }: ProjectWatchListProps): React.JSX
             key={project.projectId}
             project={project}
             sounds={sounds ?? []}
+            isWidgetOpen={visibleWidgets?.includes(project.projectId) ?? false}
             activeTimer={activeTimer}
             onToggleWatch={() =>
               setWatching.mutate({
@@ -98,6 +101,7 @@ export function ProjectWatchList({ projects }: ProjectWatchListProps): React.JSX
 interface ProjectCardProps {
   project: ProjectLiveStatus
   sounds: { name: string; filename: string }[]
+  isWidgetOpen: boolean
   activeTimer: { projectId: number; startedAt: string; pausedAt: string | null } | null
   onToggleWatch: () => void
   onSoundChange: (value: string) => void
@@ -108,6 +112,7 @@ interface ProjectCardProps {
 function ProjectCard({
   project,
   sounds,
+  isWidgetOpen,
   activeTimer,
   onToggleWatch,
   onSoundChange,
@@ -142,15 +147,20 @@ function ProjectCard({
               type="button"
               onClick={() => window.api.live.toggleWidget(project.projectId)}
               className="mt-0.5 shrink-0 rounded p-1 transition-colors hover:bg-[var(--surface-border)]/50"
+              aria-label={isWidgetOpen ? 'Hide floating widget' : 'Show floating widget'}
             >
-              <MonitorUp
-                size={16}
-                className="text-[var(--text-muted)] hover:text-[var(--accent)]"
-              />
+              {isWidgetOpen ? (
+                <MonitorOff size={16} className="text-[var(--accent)]" />
+              ) : (
+                <MonitorUp
+                  size={16}
+                  className="text-[var(--text-muted)] hover:text-[var(--accent)]"
+                />
+              )}
             </button>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={4}>
-            Float always-on-top widget
+            {isWidgetOpen ? 'Hide floating widget' : 'Float always-on-top widget'}
           </TooltipContent>
         </Tooltip>
       </div>

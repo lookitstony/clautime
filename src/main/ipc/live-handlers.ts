@@ -171,6 +171,10 @@ export function registerLiveHandlers(): void {
     return ipcSuccess(undefined)
   })
 
+  ipcMain.handle('live:getVisibleWidgets', async (): Promise<IpcResult<number[]>> => {
+    return ipcSuccess(widgetService.getVisibleIds())
+  })
+
   ipcMain.handle('live:getWidgetHotkey', async (): Promise<IpcResult<string>> => {
     return ipcSuccess(widgetService.getHotkey())
   })

@@ -6,7 +6,6 @@ import log from 'electron-log/main.js'
 
 const widgets = new Map<number, BrowserWindow>()
 let isDestroying = false
-let userHiddenAll = false // User toggled all widgets hidden via hotkey
 let registeredAccelerator: string | null = null
 const DEFAULT_WIDGET_HOTKEY = 'CommandOrControl+Shift+H'
 const WIDGET_WIDTH = 240
@@ -62,24 +61,63 @@ function saveState(): void {
 // Load once at import time
 loadState()
 
+/** Project IDs whose widget window exists and is actually on screen */
+function visibleIds(): number[] {
+  return [...widgets.keys()].filter((id) => {
+    const w = widgets.get(id)
+    return w != null && !w.isDestroyed() && w.isVisible()
+  })
+}
+
+/** Push the real widget visibility state to every renderer so icons stay in sync */
+function broadcastState(): void {
+  if (isDestroying) return
+  const ids = visibleIds()
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('widget:stateChanged', ids)
+    }
+  } catch {
+    // Window may be closing
+  }
+}
+
 export const widgetService = {
   isOpen(projectId: number): boolean {
     const w = widgets.get(projectId)
     return w != null && !w.isDestroyed()
   },
 
+  /** True only if the window exists AND is on screen (hidden widgets count as closed) */
+  isVisible(projectId: number): boolean {
+    const w = widgets.get(projectId)
+    return w != null && !w.isDestroyed() && w.isVisible()
+  },
+
+  getVisibleIds(): number[] {
+    return visibleIds()
+  },
+
   toggle(projectId: number): void {
-    if (this.isOpen(projectId)) {
+    // Decide on what the user can actually see: a widget hidden by idle-sync or
+    // the global hotkey must re-show on click, not close silently.
+    if (this.isVisible(projectId)) {
       this.close(projectId)
     } else {
       userPinnedIds.add(projectId)
+      autoHiddenIds.delete(projectId)
+      idleHiddenIds.delete(projectId)
       this.open(projectId)
     }
+    broadcastState()
   },
 
   open(projectId: number): void {
-    if (this.isOpen(projectId)) {
-      widgets.get(projectId)!.focus()
+    const existing = widgets.get(projectId)
+    if (existing && !existing.isDestroyed()) {
+      if (!existing.isVisible()) existing.show()
+      existing.focus()
+      broadcastState()
       return
     }
 
@@ -153,11 +191,13 @@ export const widgetService = {
 
     win.on('closed', () => {
       widgets.delete(projectId)
+      broadcastState()
     })
 
     widgets.set(projectId, win)
     saveState()
     log.info(`Widget opened for project ${projectId}`)
+    broadcastState()
   },
 
   close(projectId: number): void {
@@ -170,6 +210,7 @@ export const widgetService = {
     if (w && !w.isDestroyed()) {
       w.destroy()
     }
+    broadcastState()
   },
 
   notifyAlert(projectName: string): void {
@@ -213,6 +254,7 @@ export const widgetService = {
         this.open(projectId)
       }
     }
+    broadcastState()
   },
 
   /** Hide widgets for idle projects, show them again when processing resumes */
@@ -236,25 +278,21 @@ export const widgetService = {
         }
       }
     }
+    broadcastState()
   },
 
   /** Toggle visibility of all widgets via hotkey */
   toggleAllVisibility(): void {
-    if (userHiddenAll) {
-      // Show all widgets
-      for (const w of widgets.values()) {
-        if (!w.isDestroyed()) w.show()
-      }
-      userHiddenAll = false
-      log.info('Widgets shown via hotkey')
-    } else {
-      // Hide all widgets
-      for (const w of widgets.values()) {
-        if (!w.isDestroyed()) w.hide()
-      }
-      userHiddenAll = true
-      log.info('Widgets hidden via hotkey')
+    // Read the real state instead of a remembered flag — widgets also get
+    // shown/hidden by idle sync and by the per-project toggle.
+    const anyVisible = visibleIds().length > 0
+    for (const w of widgets.values()) {
+      if (w.isDestroyed()) continue
+      if (anyVisible) w.hide()
+      else w.show()
     }
+    log.info(anyVisible ? 'Widgets hidden via hotkey' : 'Widgets shown via hotkey')
+    broadcastState()
   },
 
   /** Register global hotkey for toggling widget visibility */
@@ -295,20 +333,23 @@ export const widgetService = {
     return registeredAccelerator ?? DEFAULT_WIDGET_HOTKEY
   },
 
-  /** Open widgets for all given project IDs */
+  /** Open (or re-show) widgets for all given project IDs and pin them */
   showAll(projectIds: number[]): void {
     for (const id of projectIds) {
-      if (!this.isOpen(id)) {
-        this.open(id)
-      }
+      userPinnedIds.add(id)
+      autoHiddenIds.delete(id)
+      idleHiddenIds.delete(id)
+      this.open(id)
     }
+    broadcastState()
   },
 
-  /** Close all open widgets */
+  /** Close every widget, visible or hidden */
   hideAll(): void {
     for (const id of [...widgets.keys()]) {
       this.close(id)
     }
+    broadcastState()
   },
 
   /** True if any widget is currently open */
