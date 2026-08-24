@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-24
+
+### Fixed
+
+- Reported and invoiced hours counted concurrent agents separately instead of as elapsed time. Running several agents at once on one project inflated every total that summed session durations. On one sampled day a project read 19.28h against 12.90h actually elapsed, and a week billed 90.25h against 77.95h — a $1,137 overcharge at $92.50/h. The app already merged overlapping sessions for the "Human Hours" stat and for earnings, but the day and project totals on the Sessions page, the report summaries, the timesheet and Markdown exports, and the Stripe invoice line items all summed raw durations. They now merge overlaps within a project and sum across projects, so concurrent agents on one project count as one billable hour while parallel work for two clients still owes each client its own hour.
+
+  **If you have already sent an invoice generated before this release, regenerate it — the earlier figures were too high.**
+
 ## [1.3.0] - 2026-08-03
 
 ### Added
