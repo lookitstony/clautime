@@ -9,6 +9,7 @@ import type {
 } from '../../../../shared/types/session'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import { formatDuration, getProjectName, resolveProjectName, resolveClientName } from '@/lib/format'
+import { computeBucketedHumanMinutes } from '../../../../shared/earnings'
 
 async function fetchSessions(filters?: SessionFilters): Promise<Session[]> {
   const result = await window.api.sessions.getAll(filters)
@@ -306,7 +307,7 @@ export function useGroupedSessions(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       ),
       sessionCount: group.sessions.length,
-      totalDurationMinutes: group.sessions.reduce((sum, s) => sum + s.durationMinutes, 0),
+      totalDurationMinutes: computeBucketedHumanMinutes(group.sessions),
       totalPrompts: group.sessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0),
       totalTokens: group.sessions.reduce(
         (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),

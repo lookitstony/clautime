@@ -28,6 +28,7 @@ import { useSessionIdsWithCommits } from '../git/use-git'
 import { useUIStore } from '@/stores/use-ui-store'
 import { useFilterStore } from '@/stores/use-filter-store'
 import { cn } from '@/lib/utils'
+import { computeBucketedHumanMinutes } from '../../../../shared/earnings'
 import { getProjectColor, getDateKey, formatDateLabel, formatDuration, formatUsd } from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { Session } from '../../../../shared/types/session'
@@ -457,6 +458,6 @@ function groupSessionsByDay(sessions: Session[]): DayGroup[] {
       dateKey,
       label: formatDateLabel(daySessions[0].startedAt),
       sessions: daySessions,
-      totalMinutes: daySessions.reduce((sum, s) => sum + s.durationMinutes, 0)
+      totalMinutes: computeBucketedHumanMinutes(daySessions)
     }))
 }

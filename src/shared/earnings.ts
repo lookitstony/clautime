@@ -104,3 +104,40 @@ export function computeEarnings(
   }
   return total
 }
+
+/**
+ * Wall-clock minutes with concurrent agents counted once.
+ *
+ * Overlaps are merged *within* a rate bucket (project, falling back to client,
+ * falling back to raw path) and summed *across* buckets — the same grouping
+ * computeEarnings uses. Two agents on one project for an hour is one hour;
+ * an hour on each of two clients' projects is two hours, because each client
+ * is owed its own hour.
+ */
+export function computeBucketedHumanMinutes(
+  sessions: {
+    projectId?: number | null
+    clientId?: number | null
+    projectPath?: string
+    startedAt: string
+    endedAt: string
+  }[]
+): number {
+  const buckets = new Map<string, { startedAt: string; endedAt: string }[]>()
+
+  for (const s of sessions) {
+    const key =
+      s.projectId != null
+        ? `p${s.projectId}`
+        : s.clientId != null
+          ? `c${s.clientId}`
+          : `x${s.projectPath ?? ''}`
+    const bucket = buckets.get(key)
+    if (bucket) bucket.push(s)
+    else buckets.set(key, [s])
+  }
+
+  let total = 0
+  for (const bucket of buckets.values()) total += computeHumanMinutes(bucket)
+  return total
+}
