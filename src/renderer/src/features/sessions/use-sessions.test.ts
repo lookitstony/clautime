@@ -4,10 +4,13 @@ import type { Session } from '../../../../shared/types/session'
 import type { Client, Project } from '../../../../shared/types/client-project'
 
 function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'projectPath'>): Session {
+  const startedAt = overrides.startedAt ?? '2026-08-01T09:00:00.000Z'
+  const durationMinutes = overrides.durationMinutes ?? 60
+  // Keep the interval and the duration consistent. Grouping now merges
+  // overlapping intervals, so a fixture whose timestamps contradict its
+  // durationMinutes would not be testing anything real.
+  const endedAt = new Date(new Date(startedAt).getTime() + durationMinutes * 60_000).toISOString()
   return {
-    startedAt: '2026-08-01T09:00:00.000Z',
-    endedAt: '2026-08-01T10:00:00.000Z',
-    durationMinutes: 60,
     source: 'auto',
     description: null,
     status: 'completed',
@@ -22,7 +25,10 @@ function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'project
     clientId: null,
     createdAt: '2026-08-01T09:00:00.000Z',
     updatedAt: '2026-08-01T10:00:00.000Z',
-    ...overrides
+    ...overrides,
+    startedAt,
+    endedAt,
+    durationMinutes
   } as Session
 }
 
@@ -81,6 +87,7 @@ describe('useGroupedSessions ordering', () => {
       makeSession({
         id: 4,
         projectPath: 'C:\\apps\\Alpha',
+        startedAt: '2026-08-01T09:30:00.000Z',
         durationMinutes: 500,
         projectId: 1,
         clientId: 1
@@ -89,5 +96,39 @@ describe('useGroupedSessions ordering', () => {
     const groups = useGroupedSessions(withExtra, projects, clients, false, 'hours-desc')
     expect(groups[0].projectName).toBe('Alpha')
     expect(groups[0].totalDurationMinutes).toBe(530)
+  })
+})
+
+describe('useGroupedSessions concurrency', () => {
+  it('counts agents running at once on one project as wall clock, not a sum', () => {
+    const concurrent = [
+      makeSession({
+        id: 10,
+        projectPath: 'C:\\apps\\Alpha',
+        startedAt: '2026-08-01T09:00:00.000Z',
+        durationMinutes: 180,
+        projectId: 1,
+        clientId: 1
+      }),
+      makeSession({
+        id: 11,
+        projectPath: 'C:\\apps\\Alpha',
+        startedAt: '2026-08-01T10:00:00.000Z',
+        durationMinutes: 60,
+        projectId: 1,
+        clientId: 1
+      }),
+      makeSession({
+        id: 12,
+        projectPath: 'C:\\apps\\Alpha',
+        startedAt: '2026-08-01T10:30:00.000Z',
+        durationMinutes: 150,
+        projectId: 1,
+        clientId: 1
+      })
+    ]
+    const groups = useGroupedSessions(concurrent, projects, clients)
+    // 09:00-13:00 elapsed, not 180 + 60 + 150 = 390
+    expect(groups[0].totalDurationMinutes).toBe(240)
   })
 })

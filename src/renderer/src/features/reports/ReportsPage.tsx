@@ -41,6 +41,7 @@ import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { usePresentationMode } from '../settings/use-presentation-mode'
 import { useGenerateReport } from './use-reports'
+import { computeHumanMinutes } from '../../../../shared/earnings'
 import type {
   ReportFormat,
   ReportResult,
@@ -70,6 +71,8 @@ function formatTimeOnly(isoString: string): string {
 interface ProjectGroup {
   projectName: string
   sessions: SessionLineItem[]
+  /** Wall-clock minutes — concurrent agents on this project counted once. */
+  totalDuration: number
 }
 
 interface ClientGroup {
@@ -95,16 +98,15 @@ function groupByClientAndProject(items: SessionLineItem[]): ClientGroup[] {
   return Array.from(clientMap.entries())
     .map(([clientName, projectMap]) => {
       const projects = Array.from(projectMap.entries())
-        .map(([projectName, sessions]) => ({ projectName, sessions }))
-        .sort((a, b) => {
-          const aDur = a.sessions.reduce((s, i) => s + i.durationMinutes, 0)
-          const bDur = b.sessions.reduce((s, i) => s + i.durationMinutes, 0)
-          return bDur - aDur
-        })
-      const totalDuration = projects.reduce(
-        (s, p) => s + p.sessions.reduce((ss, i) => ss + i.durationMinutes, 0),
-        0
-      )
+        .map(([projectName, sessions]) => ({
+          projectName,
+          sessions,
+          totalDuration: computeHumanMinutes(sessions)
+        }))
+        .sort((a, b) => b.totalDuration - a.totalDuration)
+      // Merge within a project, sum across them — one client's two projects
+      // worked in parallel still owe two hours.
+      const totalDuration = projects.reduce((s, p) => s + p.totalDuration, 0)
       return { clientName, projects, totalDuration }
     })
     .sort((a, b) => b.totalDuration - a.totalDuration)
@@ -174,10 +176,7 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
                   clientGroup.projects.map((project) => {
                     const projectKey = `${clientGroup.clientName}:${project.projectName}`
                     const projectCollapsed = collapsedProjects.has(projectKey)
-                    const totalDuration = project.sessions.reduce(
-                      (s, i) => s + i.durationMinutes,
-                      0
-                    )
+                    const totalDuration = project.totalDuration
                     const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
                     const totalTokens = project.sessions.reduce(
                       (s, i) => s + i.inputTokens + i.outputTokens,
@@ -739,7 +738,7 @@ function reportToMarkdown(
         lines.push(`### ${clientGroup.clientName}`)
       }
       for (const project of clientGroup.projects) {
-        const totalDuration = project.sessions.reduce((s, i) => s + i.durationMinutes, 0)
+        const totalDuration = project.totalDuration
         const totalPrompts = project.sessions.reduce((s, i) => s + i.promptCount, 0)
         const totalTokens = project.sessions.reduce((s, i) => s + i.inputTokens + i.outputTokens, 0)
         lines.push('')
@@ -1039,19 +1038,22 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
   const agg = new Map<string, { date: string; client: string; project: string; minutes: number }>()
 
   if (report.sessionBreakdown) {
+    // Bucket first, then merge — summing here would re-inflate the overlap
+    // the report summary already collapsed.
+    const buckets = new Map<string, SessionLineItem[]>()
     for (const item of report.sessionBreakdown) {
       const k = key(item.date, item.clientName ?? '\u2014', item.projectName)
-      const existing = agg.get(k)
-      if (existing) {
-        existing.minutes += item.durationMinutes
-      } else {
-        agg.set(k, {
-          date: item.date,
-          client: item.clientName ?? '\u2014',
-          project: item.projectName,
-          minutes: item.durationMinutes
-        })
-      }
+      const bucket = buckets.get(k)
+      if (bucket) bucket.push(item)
+      else buckets.set(k, [item])
+    }
+    for (const [k, items] of buckets) {
+      agg.set(k, {
+        date: items[0].date,
+        client: items[0].clientName ?? '\u2014',
+        project: items[0].projectName,
+        minutes: computeHumanMinutes(items)
+      })
     }
   } else if (report.dailySummary) {
     for (const item of report.dailySummary) {

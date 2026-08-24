@@ -13,6 +13,7 @@ import { stripeService } from './stripe-service'
 import { aiService } from './ai-service'
 import { AppError } from '../../shared/types/ipc'
 import { clientAlias } from '../../shared/presentation-alias'
+import { computeBucketedHumanMinutes } from '../../shared/earnings'
 import {
   INVOICE_STATUSES,
   type GeneratedLineItem,
@@ -172,7 +173,12 @@ export const invoiceService = {
       }
       const group = dayProjectGroups.get(key)!
       group.sessions.push(session)
-      group.totalMinutes += session.durationMinutes
+    }
+
+    // Bill wall-clock, not the sum of parallel agents: several sessions running
+    // at once on one project are one billable hour, not two.
+    for (const group of dayProjectGroups.values()) {
+      group.totalMinutes = computeBucketedHumanMinutes(group.sessions)
     }
 
     // ── Attribute commits to session days (same logic as reports) ──

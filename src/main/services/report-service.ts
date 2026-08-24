@@ -5,7 +5,7 @@ import { sessions } from '../db/schema/sessions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { getProjectName } from '../../shared/paths'
-import { computeEarnings } from '../../shared/earnings'
+import { computeEarnings, computeBucketedHumanMinutes } from '../../shared/earnings'
 import { clientAlias, projectAlias } from '../../shared/presentation-alias'
 import { clientProjectService } from './client-project-service'
 import { settingsService } from './settings-service'
@@ -176,7 +176,7 @@ export const reportService = {
           string,
           {
             sessionCount: number
-            totalDuration: number
+            durationRows: typeof rows
             totalPrompts: number
             totalInput: number
             totalOutput: number
@@ -187,7 +187,7 @@ export const reportService = {
                 clientName: string | null
                 projectName: string
                 sessionCount: number
-                totalDuration: number
+                durationRows: typeof rows
                 totalPrompts: number
                 totalInput: number
                 totalOutput: number
@@ -200,7 +200,7 @@ export const reportService = {
           const key = getDateKey(row.startedAt)
           const existing = dayMap.get(key) ?? {
             sessionCount: 0,
-            totalDuration: 0,
+            durationRows: [] as typeof rows,
             totalPrompts: 0,
             totalInput: 0,
             totalOutput: 0,
@@ -209,7 +209,7 @@ export const reportService = {
           }
           const { projectName, clientName } = getProjectInfo(row)
           existing.sessionCount++
-          existing.totalDuration += row.durationMinutes
+          existing.durationRows.push(row)
           existing.totalPrompts += row.promptCount
           existing.totalInput += row.inputTokens
           existing.totalOutput += row.outputTokens
@@ -220,13 +220,13 @@ export const reportService = {
             clientName,
             projectName,
             sessionCount: 0,
-            totalDuration: 0,
+            durationRows: [] as typeof rows,
             totalPrompts: 0,
             totalInput: 0,
             totalOutput: 0
           }
           bp.sessionCount++
-          bp.totalDuration += row.durationMinutes
+          bp.durationRows.push(row)
           bp.totalPrompts += row.promptCount
           bp.totalInput += row.inputTokens
           bp.totalOutput += row.outputTokens
@@ -240,7 +240,7 @@ export const reportService = {
           .map(([date, data]) => ({
             date: formatDateLabel(date + 'T12:00:00'),
             sessionCount: data.sessionCount,
-            totalDurationMinutes: data.totalDuration,
+            totalDurationMinutes: computeBucketedHumanMinutes(data.durationRows),
             totalPrompts: data.totalPrompts,
             totalInputTokens: data.totalInput,
             totalOutputTokens: data.totalOutput,
@@ -255,7 +255,7 @@ export const reportService = {
                 clientName: bp.clientName,
                 projectName: bp.projectName,
                 sessionCount: bp.sessionCount,
-                totalDurationMinutes: bp.totalDuration,
+                totalDurationMinutes: computeBucketedHumanMinutes(bp.durationRows),
                 totalPrompts: bp.totalPrompts,
                 totalInputTokens: bp.totalInput,
                 totalOutputTokens: bp.totalOutput
@@ -272,7 +272,7 @@ export const reportService = {
           {
             clientName: string | null
             sessionCount: number
-            totalDuration: number
+            durationRows: typeof rows
             totalPrompts: number
             totalInput: number
             totalOutput: number
@@ -284,13 +284,13 @@ export const reportService = {
           const existing = projectAgg.get(projectName) ?? {
             clientName,
             sessionCount: 0,
-            totalDuration: 0,
+            durationRows: [] as typeof rows,
             totalPrompts: 0,
             totalInput: 0,
             totalOutput: 0
           }
           existing.sessionCount++
-          existing.totalDuration += row.durationMinutes
+          existing.durationRows.push(row)
           existing.totalPrompts += row.promptCount
           existing.totalInput += row.inputTokens
           existing.totalOutput += row.outputTokens
@@ -298,22 +298,22 @@ export const reportService = {
         }
 
         const projectItems: PeriodProjectItem[] = Array.from(projectAgg.entries())
-          .sort(([, a], [, b]) => b.totalDuration - a.totalDuration)
           .map(([name, data]) => ({
             projectName: name,
             clientName: data.clientName,
             sessionCount: data.sessionCount,
-            totalDurationMinutes: data.totalDuration,
+            totalDurationMinutes: computeBucketedHumanMinutes(data.durationRows),
             totalPrompts: data.totalPrompts,
             totalInputTokens: data.totalInput,
             totalOutputTokens: data.totalOutput
           }))
+          .sort((a, b) => b.totalDurationMinutes - a.totalDurationMinutes)
 
         const summary: PeriodSummary = {
           startDate: filters.startDate,
           endDate: filters.endDate,
           totalSessions: rows.length,
-          totalDurationMinutes: rows.reduce((s, r) => s + r.durationMinutes, 0),
+          totalDurationMinutes: computeBucketedHumanMinutes(rows),
           totalPrompts: rows.reduce((s, r) => s + r.promptCount, 0),
           totalInputTokens: rows.reduce((s, r) => s + r.inputTokens, 0),
           totalOutputTokens: rows.reduce((s, r) => s + r.outputTokens, 0),
@@ -325,16 +325,16 @@ export const reportService = {
     }
 
     // Compute summary with billing
-    const billedAgg = new Map<number, { clientName: string; minutes: number; rate: number }>()
+    const billedAgg = new Map<number, { clientName: string; rows: typeof rows; rate: number }>()
     for (const row of rows) {
       if (row.clientId != null && clientRateMap.has(row.clientId)) {
         const existing = billedAgg.get(row.clientId)
         if (existing) {
-          existing.minutes += row.durationMinutes
+          existing.rows.push(row)
         } else {
           billedAgg.set(row.clientId, {
             clientName: clientMap.get(row.clientId) ?? 'Unknown',
-            minutes: row.durationMinutes,
+            rows: [row],
             rate: clientRateMap.get(row.clientId)!
           })
         }
@@ -342,7 +342,7 @@ export const reportService = {
     }
 
     const billedByClient = Array.from(billedAgg.values()).map((b) => {
-      const hours = Math.round((b.minutes / 60) * 100) / 100
+      const hours = Math.round((computeBucketedHumanMinutes(b.rows) / 60) * 100) / 100
       return {
         clientName: b.clientName,
         hours,
@@ -355,7 +355,7 @@ export const reportService = {
 
     result.summary = {
       totalSessions: rows.length,
-      totalDurationMinutes: rows.reduce((s, r) => s + r.durationMinutes, 0),
+      totalDurationMinutes: computeBucketedHumanMinutes(rows),
       totalPrompts: rows.reduce((s, r) => s + r.promptCount, 0),
       totalInputTokens: rows.reduce((s, r) => s + r.inputTokens, 0),
       totalOutputTokens: rows.reduce((s, r) => s + r.outputTokens, 0),
