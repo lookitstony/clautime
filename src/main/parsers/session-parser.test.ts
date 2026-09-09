@@ -85,6 +85,19 @@ afterEach(async () => {
 })
 
 describe('discoverSessionFiles', () => {
+  it('includes worktree logs when scanning their main project', async () => {
+    for (const name of [
+      'C--repo',
+      'C--repo--claude-worktrees-feature',
+      'C--repo--review-worktrees-pr-894',
+      'C--other'
+    ]) {
+      const directory = join(tmpDir, 'projects', name)
+      await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, 'session.jsonl'), '')
+    }
+    expect(await discoverSessionFiles(tmpDir, ['C--repo'])).toHaveLength(3)
+  })
   it('discovers .jsonl files in project subdirectories', async () => {
     const projectDir = join(tmpDir, 'projects', 'C--apps-MyProject')
     await mkdir(projectDir, { recursive: true })

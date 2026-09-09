@@ -8,8 +8,11 @@ import { sessionService } from './session-service'
 import { clientProjectService } from './client-project-service'
 import { gitService } from './git-service'
 import { getClaudeConfigDirs } from './discovery-service'
-import { decodeProjectPath } from './session-detector'
-import { isExcludedProjectDir } from '../../shared/paths'
+import { decodeProjectPath, encodeProjectPath } from './session-detector'
+import { getCodexSessionsDir, readCodexSessionMeta } from '../parsers/codex-parser'
+import { mainProjectPath } from './worktree-paths'
+import { isProviderEnabled } from './provider-tracking'
+import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
 
 // Per-project debounce before an incremental scan. Kept high because each scan
 // re-parses the project's (often large, actively-growing) JSONL and writes to
@@ -67,6 +70,23 @@ export const fileWatcherService = {
       } catch (err) {
         log.warn(`File watcher: failed to start on ${projectsDir}:`, err)
       }
+    }
+
+    const codexRoot = getCodexSessionsDir()
+    try {
+      const watcher = watch(codexRoot, { recursive: true }, (_eventType, filename) => {
+        if (
+          filename &&
+          extname(filename).toLowerCase() === '.jsonl' &&
+          isProviderEnabled('codex')
+        ) {
+          this._debouncedCodexScan(join(codexRoot, filename))
+        }
+      })
+      watcher.on('error', (err) => log.warn('Codex file watcher error:', err))
+      this._watchers.push(watcher)
+    } catch (err) {
+      log.debug('Codex session directory is not available for watching:', err)
     }
 
     // Run a full scan on startup to catch anything missed while the app was closed
@@ -164,9 +184,39 @@ export const fileWatcherService = {
     )
   },
 
-  async _runIncrementalScan(projectDirName: string): Promise<void> {
+  _debouncedCodexScan(filePath: string): void {
+    const key = `codex:${filePath}`
+    // Keep the first deadline so continuous writes still update the displayed time.
+    if (this._debounceTimers.has(key)) return
+    this._debounceTimers.set(
+      key,
+      setTimeout(async () => {
+        this._debounceTimers.delete(key)
+        if (!isProviderEnabled('codex')) return
+        if (sessionService._scanInProgress) {
+          this._debouncedCodexScan(filePath)
+          return
+        }
+        try {
+          const meta = await readCodexSessionMeta(filePath)
+          if (!meta?.cwd || isExcludedProjectPath(meta.cwd)) return
+          if (sessionService._scanInProgress) {
+            this._debouncedCodexScan(filePath)
+            return
+          }
+          const directory = mainProjectPath(meta.cwd)
+          clientProjectService.autoCreateProject(directory)
+          await this._runIncrementalScan(encodeProjectPath(directory), directory)
+        } catch (err) {
+          log.warn('Codex incremental scan failed:', err)
+        }
+      }, DEBOUNCE_MS)
+    )
+  },
+
+  async _runIncrementalScan(projectDirName: string, directoryPath?: string): Promise<void> {
     try {
-      const decodedPath = decodeProjectPath(projectDirName)
+      const decodedPath = directoryPath ?? decodeProjectPath(projectDirName)
       log.info(`File watcher: incremental scan for project ${decodedPath}`)
 
       // Run incremental scan filtered to just this project's files

@@ -6,9 +6,9 @@ afterEach(() => {
 })
 
 describe('isExcludedProjectPath', () => {
-  it('excludes pipes worktree segments', () => {
-    expect(isExcludedProjectPath('C:\\apps\\PipedCreations\\pipes\\ticket\\17')).toBe(true)
-    expect(isExcludedProjectPath('C:\\apps\\3D\\Printing\\Game\\pipes\\ticket\\1')).toBe(true)
+  it('includes pipes worktree segments', () => {
+    expect(isExcludedProjectPath('C:\\apps\\PipedCreations\\pipes\\ticket\\17')).toBe(false)
+    expect(isExcludedProjectPath('C:\\apps\\3D\\Printing\\Game\\pipes\\ticket\\1')).toBe(false)
   })
 
   it('excludes piped scratch workspaces', () => {
@@ -16,17 +16,17 @@ describe('isExcludedProjectPath', () => {
     expect(isExcludedProjectPath('C:\\piped\\scratch')).toBe(true)
   })
 
-  it('excludes Claude Code worktrees (with or without leading dot)', () => {
+  it('includes Claude Code worktrees (with or without leading dot)', () => {
     expect(
       isExcludedProjectPath(
         'C:\\clients\\x\\code\\.claude\\worktrees\\affectionate\\almeida\\308f80'
       )
-    ).toBe(true)
+    ).toBe(false)
     expect(
       isExcludedProjectPath(
         'C:\\clients\\x\\code\\claude\\worktrees\\affectionate\\almeida\\308f80'
       )
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('keeps real projects', () => {
@@ -38,18 +38,18 @@ describe('isExcludedProjectPath', () => {
 })
 
 describe('isExcludedProjectDir', () => {
-  it('excludes encoded pipes, piped-scratch, and claude-worktrees names', () => {
-    expect(isExcludedProjectDir('C--apps-PipedCreations-pipes-ticket-17')).toBe(true)
+  it('excludes scratch directories but includes Claude worktrees', () => {
+    expect(isExcludedProjectDir('C--apps-PipedCreations-pipes-ticket-17')).toBe(false)
     expect(isExcludedProjectDir('C--piped-scratch-scratch-1a1d25')).toBe(true)
     expect(
       isExcludedProjectDir('C--clients-x-code--claude-worktrees-affectionate-almeida-308f80')
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('matches encoded names ending exactly at the excluded dir', () => {
     expect(isExcludedProjectDir('C--piped-scratch')).toBe(true)
-    expect(isExcludedProjectDir('C--apps-Foo-pipes')).toBe(true)
-    expect(isExcludedProjectDir('C--code--claude-worktrees')).toBe(true)
+    expect(isExcludedProjectDir('C--apps-Foo-pipes')).toBe(false)
+    expect(isExcludedProjectDir('C--code--claude-worktrees')).toBe(false)
   })
 
   it('keeps encoded real project names', () => {

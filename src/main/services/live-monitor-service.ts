@@ -14,12 +14,12 @@ import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { getClaudeConfigDirs } from './discovery-service'
 import { encodeProjectPath } from './session-detector'
+import { mainProjectPath, mainProjectEncoded } from './worktree-paths'
 import {
   getCodexSessionsDir,
   readCodexSessionMeta,
   tailReadCodexState
 } from '../parsers/codex-parser'
-import { normalizePath } from '../../shared/paths'
 import { isProviderEnabled } from './provider-tracking'
 import { widgetService } from './widget-service'
 import { computeEarnings } from '../../shared/earnings'
@@ -292,14 +292,12 @@ export const liveMonitorService = {
 
       // Pro-rate sessions that span midnight — only count the portion after today's midnight
       const midnightMs = new Date(todayMidnight).getTime()
-      const totalMinutes = projectSessions.reduce((sum, s) => {
-        const startMs = new Date(s.startedAt).getTime()
-        if (startMs >= midnightMs) return sum + s.durationMinutes
-        // Session started before midnight — only count from midnight to endedAt
-        const endMs = new Date(s.endedAt).getTime()
-        const todayPortionMs = Math.max(0, endMs - midnightMs)
-        return sum + Math.round(todayPortionMs / 60_000)
-      }, 0)
+      const totalMinutes = computeHumanMinutes(
+        projectSessions.map((s) => ({
+          startedAt: new Date(Math.max(new Date(s.startedAt).getTime(), midnightMs)).toISOString(),
+          endedAt: s.endedAt
+        }))
+      )
       const totalPrompts = projectSessions.reduce((sum, s) => sum + (s.promptCount ?? 0), 0)
       const totalTokens = projectSessions.reduce(
         (sum, s) => sum + (s.inputTokens ?? 0) + (s.outputTokens ?? 0),
@@ -380,6 +378,7 @@ export const liveMonitorService = {
       name: string,
       value: { lastPromptAt: string; isProcessing: boolean }
     ): void => {
+      name = mainProjectEncoded(name)
       const existing = result.get(name)
       if (!existing) {
         result.set(name, value)
@@ -634,7 +633,7 @@ export const liveMonitorService = {
             this._codexCwdCache.set(fp, cwd)
           }
           if (!cwd) continue
-          const encoded = encodeProjectPath(normalizePath(cwd))
+          const encoded = encodeProjectPath(mainProjectPath(cwd))
 
           // Reuse the shared per-file cache when the file hasn't changed
           const cached = this._promptTimestampCache.get(fp)

@@ -196,6 +196,32 @@ describe('sessionService', () => {
   })
 
   describe('scanSessions', () => {
+    it('rescans appended logs even when Windows leaves the modification time unchanged', async () => {
+      const file = '/home/user/.claude/projects/test/session1.jsonl'
+      testDb
+        .insert(scanState)
+        .values({
+          filePath: file,
+          lastModifiedAt: '2026-03-04T10:00:00Z',
+          lastScannedAt: '2026-03-04T12:00:00Z',
+          sessionCount: 1,
+          lastFileSize: 100
+        })
+        .run()
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T10:00:00Z'), size: 200 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:10:00Z')
+        ])
+      )
+      expect((await sessionService.scanSessions()).updatedFiles).toBe(1)
+      expect(testDb.select().from(sessions).all()[0].durationMinutes).toBe(10)
+      mockParseFile.mockClear()
+      expect((await sessionService.scanSessions()).updatedFiles).toBe(0)
+      expect(mockParseFile).not.toHaveBeenCalled()
+    })
     it('passes the Claude dir override only to the Claude provider, not others', async () => {
       mockDiscoverFiles.mockResolvedValue([])
       await sessionService.scanSessions('/home/user/.claude')

@@ -1,9 +1,12 @@
-import { eq, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
+import { mainProjectPath } from './worktree-paths'
+import { gitCommits } from '../db/schema/git-commits'
+import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { AppError } from '../../shared/types/ipc'
 import { CLIENT_COLORS } from '../../shared/types/client-project'
 import { normalizePath, getProjectName, isExcludedProjectPath } from '../../shared/paths'
@@ -179,7 +182,7 @@ export const clientProjectService = {
       throw new AppError('CLIENT_NOT_FOUND', `Client with id ${data.clientId} not found`)
     }
 
-    const normalized = normalizePath(data.directoryPath)
+    const normalized = mainProjectPath(data.directoryPath)
 
     // Check if a project with this directory already exists (e.g. under Unassigned)
     // If so, move it to the new client instead of duplicating
@@ -333,7 +336,9 @@ export const clientProjectService = {
   },
 
   autoCreateProject(directoryPath: string): Project | null {
-    // Never auto-create projects for piped-swarm worktrees (…/pipes/…)
+    if (isExcludedProjectPath(directoryPath)) return null
+    directoryPath = mainProjectPath(directoryPath)
+    // A worktree also inherits exclusions on its main project.
     if (isExcludedProjectPath(directoryPath)) return null
     const existing = this.findProjectByDirectory(directoryPath)
     if (existing) return null
@@ -449,7 +454,7 @@ export const clientProjectService = {
 
   findProjectByDirectory(directoryPath: string): Project | null {
     const db = getDb()
-    const normalized = normalizePath(directoryPath)
+    const normalized = mainProjectPath(directoryPath)
 
     // Exact match (case-insensitive on Windows via LOWER)
     const allProjects = db.select().from(projects).all()
@@ -460,15 +465,21 @@ export const clientProjectService = {
   },
 
   /**
-   * Scan all sessions with null projectId, attempt to match by projectPath → directory_path.
-   * Returns count of newly attributed sessions.
+   * Attribute new sessions and roll existing worktree projects into their main project.
    */
   attributeSessions(): number {
     const db = getDb()
-    const unattributed = db.select().from(sessions).where(isNull(sessions.projectId)).all()
-
-    if (unattributed.length === 0) return 0
-
+    const candidates = db.select().from(sessions).all()
+    const resolvedPaths = new Map<string, string>()
+    const canonical = (path: string): string => {
+      if (!resolvedPaths.has(path)) resolvedPaths.set(path, mainProjectPath(path))
+      return resolvedPaths.get(path)!
+    }
+    for (const path of new Set(candidates.map((s) => s.projectPath))) {
+      if (canonical(path) !== normalizePath(path)) {
+        this.autoCreateProject(canonical(path))
+      }
+    }
     const allProjects = db.select().from(projects).all()
     if (allProjects.length === 0) return 0
 
@@ -476,8 +487,13 @@ export const clientProjectService = {
     const now = new Date().toISOString()
 
     db.transaction((tx) => {
-      for (const session of unattributed) {
-        const normalized = normalizePath(session.projectPath).toLowerCase()
+      for (const session of candidates) {
+        const oldProject = allProjects.find((p) => p.id === session.projectId)
+        const wasWorktree =
+          oldProject &&
+          canonical(oldProject.directoryPath) !== normalizePath(oldProject.directoryPath)
+        if (session.projectId != null && !wasWorktree) continue
+        const normalized = canonical(session.projectPath).toLowerCase()
         const match = allProjects.find(
           (p) => normalizePath(p.directoryPath).toLowerCase() === normalized
         )
@@ -492,6 +508,30 @@ export const clientProjectService = {
             .run()
           count++
         }
+      }
+      // Remove only empty, automatically created worktree entries. Keep configured entries.
+      for (const project of allProjects) {
+        if (canonical(project.directoryPath) === normalizePath(project.directoryPath)) continue
+        const client = tx.select().from(clients).where(eq(clients.id, project.clientId)).get()
+        if (
+          client?.name !== 'Unassigned' ||
+          project.isBillable ||
+          project.hourlyRate != null ||
+          project.invoiceName != null ||
+          project.stageName != null
+        )
+          continue
+        if (
+          tx.select().from(sessions).where(eq(sessions.projectId, project.id)).get() ||
+          tx.select().from(gitCommits).where(eq(gitCommits.projectId, project.id)).get() ||
+          tx
+            .select()
+            .from(projectAlertConfig)
+            .where(eq(projectAlertConfig.projectId, project.id))
+            .get()
+        )
+          continue
+        tx.delete(projects).where(eq(projects.id, project.id)).run()
       }
     })
 
