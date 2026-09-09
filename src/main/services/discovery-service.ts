@@ -2,16 +2,12 @@ import { readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import log from 'electron-log/main.js'
-import {
-  isExcludedProjectDir,
-  isExcludedProjectPath,
-  normalizePath,
-  getProjectName
-} from '../../shared/paths'
+import { isExcludedProjectDir, isExcludedProjectPath, getProjectName } from '../../shared/paths'
 import { codexProvider } from '../providers/codex-provider'
 import { geminiProvider } from '../providers/gemini-provider'
 import { opencodeProvider } from '../providers/opencode-provider'
 import { encodeProjectPath } from './session-detector'
+import { mainProjectPath, mainProjectEncoded } from './worktree-paths'
 import { isProviderEnabled } from './provider-tracking'
 import type { SessionProvider } from '../providers/types'
 import type { DiscoveredProject } from '../../shared/types/session'
@@ -70,8 +66,8 @@ async function mergeProviderProjects(projects: DiscoveredProject[]): Promise<Dis
     let added = 0
     for (const meta of metas) {
       if (!meta?.cwd) continue
-      const projectPath = normalizePath(meta.cwd)
-      if (isExcludedProjectPath(projectPath)) continue
+      if (isExcludedProjectPath(meta.cwd)) continue
+      const projectPath = mainProjectPath(meta.cwd)
       const encodedName = encodeProjectPath(projectPath)
       if (byEncodedName.has(encodedName)) continue
       byEncodedName.set(encodedName, {
@@ -135,9 +131,9 @@ async function readClaudeProjects(): Promise<DiscoveredProject[]> {
       for (const entry of entries) {
         if (!entry.isDirectory()) continue
         if (isExcludedProjectDir(entry.name)) continue
-        const encodedName = entry.name
+        const encodedName = mainProjectEncoded(entry.name)
         if (byEncodedName.has(encodedName)) continue
-        const projectPath = decodeProjectName(encodedName)
+        const projectPath = mainProjectPath(decodeProjectName(encodedName))
         byEncodedName.set(encodedName, {
           projectPath,
           projectName: basename(projectPath) || encodedName,

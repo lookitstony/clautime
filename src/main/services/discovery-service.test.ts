@@ -66,6 +66,15 @@ beforeEach(() => {
 const itWin = process.platform === 'win32' ? it : it.skip
 
 describe('discoveryService.discoverDefaultProjects', () => {
+  itWin('lists worktree-only activity under one main project', async () => {
+    mockReaddir.mockResolvedValue([
+      dirent('C--repo--claude-worktrees-feature', true),
+      dirent('C--repo--review-worktrees-pr-894', true)
+    ])
+    const result = await discoveryService.discoverDefaultProjects()
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({ projectPath: 'C:\\repo', encodedName: 'C--repo' })
+  })
   itWin('discovers projects from ~/.claude/projects directory', async () => {
     mockReaddir.mockResolvedValue([
       dirent('C--apps-ClauTime', true),

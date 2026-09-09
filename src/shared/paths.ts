@@ -34,8 +34,8 @@ export function toolForSourceFile(sourceFile: string): SessionTool {
  * User-configured excluded folders (from the `excluded_paths` setting), kept as
  * module state so the pure exclusion predicates below stay call-site-compatible
  * everywhere. The main process loads this at startup and re-applies it whenever
- * the setting changes; built-in rules (pipes/, piped scratch, worktrees) always
- * apply regardless.
+ * the setting changes; the built-in piped scratch rule always
+ * applies regardless.
  */
 let customPathPrefixes: string[] = []
 let customEncodedPrefixes: string[] = []
@@ -57,29 +57,14 @@ export function getCustomExcludedPaths(): string[] {
   return [...customPathPrefixes]
 }
 
-/**
- * Piped-swarm creates throwaway git worktrees under a `pipes/` folder
- * (e.g. C:\apps\Foo\pipes\ticket-1). Claude encodes those dir names with a
- * `-pipes-` segment. They are transient and noisy, not real projects, so we
- * exclude them from discovery and scanning. `encodedName` is the
- * .claude/projects/ folder name (path separators replaced with `-`).
- * User-configured excluded folders (see {@link setCustomExcludedPaths}) are
- * matched as encoded prefixes on a `-` boundary.
- */
+/** Exclude piped scratch workspaces and user-configured encoded folder prefixes. */
 export function isExcludedProjectDir(encodedName: string): boolean {
-  if (/-pipes(-|$)|-piped-scratch(-|$)|-claude-worktrees(-|$)/i.test(encodedName)) return true
+  if (/-piped-scratch(-|$)/i.test(encodedName)) return true
   const lower = encodedName.toLowerCase()
   return customEncodedPrefixes.some((prefix) => lower === prefix || lower.startsWith(prefix + '-'))
 }
 
-/**
- * Decoded-path equivalent of {@link isExcludedProjectDir}: true when any path
- * segment is a `pipes` folder (e.g. C:\apps\Foo\pipes\ticket\1), a piped-swarm
- * scratch workspace (…\piped\scratch\…), or a Claude Code worktree
- * (…\.claude\worktrees\… — decoded folder names drop the leading dot). Used to
- * keep transient agent workspaces out of discovery, scanning, and the
- * auto-created projects list.
- */
+/** Decoded-path equivalent of isExcludedProjectDir. Worktrees are tracked under their main project. */
 export function isExcludedProjectPath(projectPath: string): boolean {
   const normalized = normalizePath(projectPath).replace(/\\/g, '/').toLowerCase()
   if (
@@ -91,10 +76,7 @@ export function isExcludedProjectPath(projectPath: string): boolean {
   }
   const segments = normalized.split('/').filter(Boolean)
   return segments.some((seg, i) => {
-    if (seg === 'pipes') return true
     if (seg === 'scratch' && segments[i - 1] === 'piped') return true
-    if (seg === 'worktrees' && (segments[i - 1] === '.claude' || segments[i - 1] === 'claude'))
-      return true
     return false
   })
 }

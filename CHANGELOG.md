@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-09-08
+
+### Fixed
+
+- Worktree session logs were excluded from tracking or attributed to separate projects, understating the main project's time. Claude and review worktrees now roll up to their main project, and the startup scan recovers previously skipped logs that remain on disk.
+- Live project totals now merge overlapping agent sessions. Two agents running 09:00–10:30 and 09:30–11:00 on the same project count as two hours.
+- Codex session changes now trigger automatic scans, including during continuous writes and after another scan finishes.
+- Growing transcript files are rescanned even when Windows leaves their modification timestamp unchanged.
+
+Historical totals may increase when previously omitted activity is recovered. Saved invoices are not automatically changed; review the recovered activity before making billing adjustments.
+
 ## [1.3.1] - 2026-08-24
 
 ### Fixed

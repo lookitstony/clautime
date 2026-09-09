@@ -1,10 +1,11 @@
+import { mainProjectPath } from '../services/worktree-paths'
 import {
   discoverGeminiSessionFiles,
   readGeminiSessionMeta,
   parseGeminiSessionFile
 } from '../parsers/gemini-parser'
 import { encodeProjectPath } from '../services/session-detector'
-import { normalizePath, toolForSourceFile } from '../../shared/paths'
+import { toolForSourceFile } from '../../shared/paths'
 import type { SessionProvider, ProviderDiscoverOptions, ProviderSessionMeta } from './types'
 
 /**
@@ -29,7 +30,7 @@ export const geminiProvider: SessionProvider = {
     const matched: string[] = []
     for (const f of files) {
       const meta = await readGeminiSessionMeta(f)
-      if (meta?.cwd && filterSet.has(encodeProjectPath(normalizePath(meta.cwd)))) matched.push(f)
+      if (meta?.cwd && filterSet.has(encodeProjectPath(mainProjectPath(meta.cwd)))) matched.push(f)
     }
     return matched
   },

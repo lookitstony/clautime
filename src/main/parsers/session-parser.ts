@@ -3,6 +3,7 @@ import { readJsonlLinesFrom, isLineBoundary } from './line-reader'
 import { join, basename, dirname } from 'node:path'
 import log from 'electron-log/main.js'
 import { isExcludedProjectDir } from '../../shared/paths'
+import { mainProjectEncoded } from '../services/worktree-paths'
 import type {
   ParsedSessionData,
   ParsedMessage,
@@ -91,7 +92,8 @@ export async function discoverSessionFiles(
   for (const dir of projectDirs) {
     if (!dir.isDirectory()) continue
     if (isExcludedProjectDir(dir.name)) continue
-    if (filterSet && !filterSet.has(dir.name)) continue
+    if (filterSet && !filterSet.has(dir.name) && !filterSet.has(mainProjectEncoded(dir.name)))
+      continue
 
     const projectPath = join(projectsDir, dir.name)
     try {

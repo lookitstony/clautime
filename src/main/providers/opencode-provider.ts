@@ -1,3 +1,4 @@
+import { mainProjectPath } from '../services/worktree-paths'
 import {
   discoverOpencodeSessionFiles,
   readOpencodeSessionMeta,
@@ -5,7 +6,7 @@ import {
   getOpencodeStorageDir
 } from '../parsers/opencode-parser'
 import { encodeProjectPath } from '../services/session-detector'
-import { normalizePath, toolForSourceFile } from '../../shared/paths'
+import { toolForSourceFile } from '../../shared/paths'
 import type { SessionProvider, ProviderDiscoverOptions, ProviderSessionMeta } from './types'
 
 /** Case/separator-insensitive "is `filePath` under `root`" test. */
@@ -39,7 +40,7 @@ export const opencodeProvider: SessionProvider = {
     const matched: string[] = []
     for (const f of files) {
       const meta = await readOpencodeSessionMeta(f)
-      if (meta?.cwd && filterSet.has(encodeProjectPath(normalizePath(meta.cwd)))) matched.push(f)
+      if (meta?.cwd && filterSet.has(encodeProjectPath(mainProjectPath(meta.cwd)))) matched.push(f)
     }
     return matched
   },

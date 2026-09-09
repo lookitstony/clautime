@@ -1689,9 +1689,11 @@ async function filterChangedFiles(filePaths: string[]): Promise<{
 
       const isNew = !record
       const isModified = record && mtime > record.lastScannedAt
+      // Windows can keep mtime unchanged while an open transcript keeps growing.
+      const hasAppendedBytes = record && fileStat.size > record.lastFileSize
       const isCompacted = record && fileStat.size < record.lastFileSize
 
-      if (isNew || isModified || isCompacted) {
+      if (isNew || isModified || hasAppendedBytes || isCompacted) {
         if (isCompacted) {
           log.info(
             `Compaction detected for ${filePath}: ${record!.lastFileSize} → ${fileStat.size}`

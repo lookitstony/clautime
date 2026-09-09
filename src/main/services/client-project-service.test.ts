@@ -328,6 +328,52 @@ describe('ClientProjectService — Directory Mapping', () => {
 })
 
 describe('ClientProjectService — Session Attribution', () => {
+  it('rolls worktree sessions into the main project and removes empty automatic worktree projects', () => {
+    const client = clientProjectService.createClient({ name: 'Trident client' })
+    const project = clientProjectService.createProject({
+      clientId: client.id,
+      name: 'Trident',
+      directoryPath: 'C:\\repo'
+    })
+    const unassigned = clientProjectService.getOrCreateUnassignedClient()
+    const oldWorktree = db
+      .insert(projectsSchema.projects)
+      .values({
+        clientId: unassigned.id,
+        name: '894',
+        directoryPath: 'C:\\repo\\.review-worktrees\\pr-894',
+        isBillable: false
+      })
+      .returning()
+      .get()
+    for (const [path, projectId] of [
+      ['C:\\repo\\.claude\\worktrees\\feature', null],
+      [oldWorktree.directoryPath, oldWorktree.id]
+    ] as const) {
+      db.insert(sessionsSchema.sessions)
+        .values({
+          projectPath: path,
+          projectId,
+          startedAt: '2026-09-08T14:00:00Z',
+          endedAt: '2026-09-08T15:00:00Z',
+          durationMinutes: 60
+        })
+        .run()
+    }
+    expect(clientProjectService.attributeSessions()).toBe(2)
+    expect(
+      db
+        .select()
+        .from(sessionsSchema.sessions)
+        .all()
+        .every((s) => s.projectId === project.id && s.clientId === client.id)
+    ).toBe(true)
+    expect(db.select().from(projectsSchema.projects).all()).toHaveLength(1)
+    expect(
+      clientProjectService.autoCreateProject('C:\\repo\\.claude\\worktrees\\another')
+    ).toBeNull()
+    expect(clientProjectService.attributeSessions()).toBe(0)
+  })
   it('attributes unassigned sessions to matching projects', () => {
     const client = clientProjectService.createClient({ name: 'AttrClient' })
     const project = clientProjectService.createProject({
@@ -577,7 +623,7 @@ describe('ClientProjectService — purgeExcludedProjects', () => {
       .values({
         clientId: unassigned.id,
         name: 'configured',
-        directoryPath: 'C:\\apps\\Foo\\pipes\\ticket\\1',
+        directoryPath: 'C:\\piped\\scratch\\ticket\\1',
         isBillable: false,
         hourlyRate: 150,
         createdAt: now,
@@ -611,7 +657,7 @@ describe('ClientProjectService — purgeExcludedProjects', () => {
     const project = clientProjectService.createProject({
       clientId: client.id,
       name: 'real-on-excluded-path',
-      directoryPath: 'C:\\apps\\Foo\\pipes\\ticket\\2'
+      directoryPath: 'C:\\piped\\scratch\\ticket\\2'
     })
 
     const deleted = clientProjectService.purgeExcludedProjects()
