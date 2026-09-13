@@ -542,13 +542,13 @@ export async function tailReadCodexState(filePath: string): Promise<CodexLiveSta
         } else if (t === 'function_call_output' || t === 'custom_tool_call_output') {
           state = 'processing'
         } else if (t === 'message' && payload.role === 'assistant') {
-          state = 'idle'
+          state = payload.phase === 'commentary' ? 'processing' : 'idle'
         }
         continue
       }
       if (obj.type === 'event_msg') {
         const t = payload.type as string
-        if (t === 'agent_message') state = 'idle'
+        if (t === 'agent_message') state = payload.phase === 'commentary' ? 'processing' : 'idle'
         else if (t === 'task_complete' || t === 'turn_aborted') state = 'idle'
         // token_count / reasoning deltas don't change turn state
       }

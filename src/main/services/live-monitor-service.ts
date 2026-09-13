@@ -82,13 +82,14 @@ export const liveMonitorService = {
     string,
     {
       mtime: number
+      size?: number
       lastPromptAt: string
       awaitingResponse: boolean
       state: 'idle' | 'awaiting' | 'tool-pending' | 'processing'
     }
   >(),
   // Track when each file's mtime last changed — to detect active writing vs stale
-  _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
+  _lastMtimeChange: new Map<string, { prevMtime: number; prevSize?: number; changedAt: number }>(),
   _lastEvictionDate: '', // ISO date string for cache eviction on date rollover
   // Track when each project stopped processing — idle time starts from here, not from lastPromptAt
   _idleSince: new Map<number, number>(),
@@ -618,13 +619,19 @@ export const liveMonitorService = {
           const mtime = s.mtime.getTime()
           if (mtime < todayStart) continue // idle since before today
 
-          // Track mtime changes to detect active writing (same window as Claude)
+          // Windows can retain mtime while Codex holds the rollout open for appends.
+          // File growth must also invalidate cached state and refresh activity.
           const prev = this._lastMtimeChange.get(fp)
-          if (!prev || prev.prevMtime !== mtime) {
-            this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
+          if (!prev || prev.prevMtime !== mtime || prev.prevSize !== s.size) {
+            this._lastMtimeChange.set(fp, {
+              prevMtime: mtime,
+              prevSize: s.size,
+              changedAt: now.getTime()
+            })
           }
-          const recentlyWritten = now.getTime() - this._lastMtimeChange.get(fp)!.changedAt < 30_000
-          const recentlyModified = now.getTime() - mtime < 3 * 60_000
+          const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
+          const recentlyWritten = now.getTime() - lastChanged < 30_000
+          const recentlyModified = now.getTime() - Math.max(mtime, lastChanged) < 3 * 60_000
 
           let cwd = this._codexCwdCache.get(fp)
           if (cwd === undefined) {
@@ -637,7 +644,7 @@ export const liveMonitorService = {
 
           // Reuse the shared per-file cache when the file hasn't changed
           const cached = this._promptTimestampCache.get(fp)
-          if (cached && cached.mtime === mtime) {
+          if (cached && cached.mtime === mtime && cached.size === s.size) {
             const awaitingWindow =
               cached.state === 'tool-pending' ? recentlyWritten : recentlyModified
             const isActive = recentlyWritten || (cached.awaitingResponse && awaitingWindow)
@@ -649,6 +656,7 @@ export const liveMonitorService = {
           const effectivePromptAt = lastPromptAt ?? new Date(mtime).toISOString()
           this._promptTimestampCache.set(fp, {
             mtime,
+            size: s.size,
             lastPromptAt: effectivePromptAt,
             awaitingResponse,
             state

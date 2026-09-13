@@ -385,6 +385,24 @@ describe('codex-parser', () => {
   })
 
   describe('tailReadCodexState', () => {
+    it.each(['response_item', 'event_msg'])('keeps %s commentary active', async (type) => {
+      const fp = await writeRollout(
+        jsonl(sessionMeta(), userMessage('2026-07-19T18:07:00.000Z', 'do the thing'), {
+          timestamp: '2026-07-19T18:07:30.000Z',
+          type,
+          payload: {
+            type: type === 'response_item' ? 'message' : 'agent_message',
+            role: 'assistant',
+            phase: 'commentary'
+          }
+        })
+      )
+      expect(await tailReadCodexState(fp)).toMatchObject({
+        awaitingResponse: true,
+        state: 'processing'
+      })
+    })
+
     it('reports awaiting after an unanswered human prompt', async () => {
       const fp = await writeRollout(
         jsonl(sessionMeta(), userMessage('2026-07-19T18:07:00.000Z', 'do the thing'))
