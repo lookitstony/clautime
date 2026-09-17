@@ -198,6 +198,7 @@ export function registerInvoiceHandlers(): void {
                 : item.amountCents,
             durationMinutes: request.lineMeta?.[i]?.durationMinutes,
             sessionIds: request.lineMeta?.[i]?.sessionIds,
+            billedRanges: request.lineMeta?.[i]?.billedRanges,
             sortOrder: i
           }))
         })

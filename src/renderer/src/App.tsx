@@ -23,6 +23,7 @@ import { ManualTimerDialog } from '@/features/live/ManualTimerDialog'
 import { useLiveBroadcastSync } from '@/features/live/use-live'
 import { useUpdaterNotifications } from '@/features/settings/use-updater'
 import type { ProjectLiveStatus } from '../../shared/types/live'
+import { reportScanErrors } from '@/lib/scan-errors'
 
 // While you're actively coding, the file watcher emits a scan-complete event
 // every few seconds (across every Claude profile). Invalidating on each one
@@ -59,7 +60,10 @@ function useFileWatcherEvents(): void {
       }
     }
 
-    window.api.live.onSessionsUpdated(schedule)
+    window.api.live.onSessionsUpdated((errors) => {
+      reportScanErrors(errors)
+      schedule()
+    })
 
     window.api.live.onNewProject((info) => {
       toast.info(`New project detected: ${info.projectName}`, {

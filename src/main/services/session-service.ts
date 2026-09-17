@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
-import { join, basename, dirname } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { join, basename, dirname, sep } from 'node:path'
 import {
   eq,
   and,
@@ -17,22 +18,48 @@ import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
 import { scanState } from '../db/schema/scan-state'
-import { aiSummaries } from '../db/schema/ai-summaries'
-import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages } from '../db/schema/raw-messages'
 import { progressEvents } from '../db/schema/raw-messages'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
-import { invoiceLineItems } from '../db/schema/invoices'
+import { sessionDerivations, sessionTimeOverrides } from '../db/schema/session-derivations'
+import { sessionDeletions, activeSessionCondition } from '../db/schema/session-deletions'
+import { sessionSplits } from '../db/schema/session-history'
+import {
+  sessionReconciliationCases,
+  sessionReconciliationResolutions
+} from '../db/schema/session-reconciliation'
+import {
+  recordSessionRevision,
+  splitMeasurement,
+  applySessionSplits,
+  SessionReconciliationError
+} from './session-history'
+import { retainInvoiceBillingRefs } from './session-billing'
+import {
+  retainLegacySession,
+  adoptedLegacySessionsElsewhere,
+  sourceLessLegacyDeletions,
+  sourceLessLegacySessions
+} from './session-legacy'
+import {
+  getReconciliationCases as readReconciliationCases,
+  keepSavedHistory,
+  mapSavedHistory,
+  replaceSavedHistory,
+  retainedResolutionCount,
+  recordReconciliationFailure,
+  resolveReconciliationCase
+} from './session-reconciliation'
 import { settingsService } from './settings-service'
 import { clientProjectService } from './client-project-service'
 import { detectSessionsFromMultiple } from './session-detector'
 import { parseSessionFiles } from './parse-orchestrator'
-import { enabledProviders, providerForFile, providerRegistry } from '../providers'
-import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
-import { isProviderEnabled } from './provider-tracking'
+import { enabledProviders, providerForFile } from '../providers'
+import { isExcludedProjectPath } from '../../shared/paths'
 import type {
   SessionFilters,
   ScanResult,
+  SessionScanError,
   PromptTiming,
   UpdateSession,
   GapAnalysis,
@@ -40,7 +67,9 @@ import type {
   DetectedSession,
   ModelUsageAggregate,
   ModelUsageFilters,
-  SessionTool
+  SessionTool,
+  SessionActivityMapping,
+  SessionReplacementChoice
 } from '../../shared/types/session'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 
@@ -78,116 +107,6 @@ async function discoverFilesByProvider(
 }
 
 /**
- * Remove a provider's auto-detected sessions (used when its tracking toggle is
- * turned off, so already-imported history disappears too). Raw messages stay,
- * so re-enabling and rescanning rebuilds the sessions.
- */
-function purgeSessionsForTool(db: ReturnType<typeof getDb>, tool: SessionTool): void {
-  // Drop this tool's scan_state too, so re-enabling the provider re-scans its
-  // files from disk. Without this a plain background scan sees no size/mtime
-  // change on the (unchanged) files and never re-detects — restoration would
-  // depend entirely on a rebuild happening to run. Raw messages stay, so a
-  // rebuild still recovers any files the CLI has since pruned.
-  const staleScan = db
-    .select({ filePath: scanState.filePath })
-    .from(scanState)
-    .all()
-    .filter((r) => providerForFile(r.filePath).id === tool)
-    .map((r) => r.filePath)
-  if (staleScan.length > 0) {
-    db.delete(scanState).where(inArray(scanState.filePath, staleScan)).run()
-  }
-
-  const ids = db
-    .select({ id: sessions.id })
-    .from(sessions)
-    .where(and(eq(sessions.source, 'auto'), eq(sessions.tool, tool)))
-    .all()
-    .map((r) => r.id)
-  if (ids.length === 0) return
-
-  db.transaction((tx) => {
-    tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, ids)).run()
-    tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, ids)).run()
-    tx.update(gitCommits).set({ sessionId: null }).where(inArray(gitCommits.sessionId, ids)).run()
-    tx.delete(sessions).where(inArray(sessions.id, ids)).run()
-  })
-  log.info(`Purged ${ids.length} ${tool} sessions (tracking disabled)`)
-}
-
-/**
- * Purge auto sessions for every provider whose tracking is currently off.
- * Iterates the provider registry (the single source of truth for which
- * providers exist) so a newly-added provider is purged and discovered from the
- * same list — no parallel hand-synced array to drift out of sync.
- */
-function purgeDisabledProviders(db: ReturnType<typeof getDb>): void {
-  for (const p of providerRegistry) {
-    if (!isProviderEnabled(p.id)) purgeSessionsForTool(db, p.id)
-  }
-}
-
-/**
- * Delete lingering auto sessions from excluded directories (rows created
- * before an exclusion rule existed — e.g. piped scratch dirs, worktrees).
- * Spared: manual sessions, sessions the user described, and sessions already
- * on an invoice line item (the audit trail behind billed amounts).
- * Exported for tests; production callers go through scanSessions.
- */
-export function purgeExcludedSessions(db: ReturnType<typeof getDb>): void {
-  // invoice-service stores session_ids comma-separated (item.sessionIds.join(',')).
-  // A malformed value fails CLOSED — better to leave stale rows than purge a
-  // session that may be backing a billed invoice amount.
-  const invoicedIds = new Set<number>()
-  for (const r of db
-    .select({ sessionIds: invoiceLineItems.sessionIds })
-    .from(invoiceLineItems)
-    .all()) {
-    if (!r.sessionIds) continue
-    const parsed = r.sessionIds.split(',').map(Number)
-    if (parsed.some((n) => !Number.isFinite(n))) {
-      log.error(`Skipping excluded-session purge: malformed invoice session_ids "${r.sessionIds}"`)
-      return
-    }
-    parsed.forEach((n) => invoicedIds.add(n))
-  }
-
-  const stale = db
-    .select({ id: sessions.id, projectPath: sessions.projectPath, sourceFile: sessions.sourceFile })
-    .from(sessions)
-    .where(and(eq(sessions.source, 'auto'), isNull(sessions.description)))
-    .all()
-    .filter((r) => isExcludedProjectPath(r.projectPath) && !invoicedIds.has(r.id))
-  if (stale.length === 0) return
-
-  const ids = stale.map((r) => r.id)
-  const sourceFiles = [...new Set(stale.map((r) => r.sourceFile).filter((f): f is string => !!f))]
-
-  db.transaction((tx) => {
-    tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, ids)).run()
-    tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, ids)).run()
-    tx.update(gitCommits).set({ sessionId: null }).where(inArray(gitCommits.sessionId, ids)).run()
-    tx.delete(sessions).where(inArray(sessions.id, ids)).run()
-
-    // Excluded files are never rescanned, so their scan_state / raw content
-    // would otherwise linger forever. Only drop file-level rows once no
-    // session (spared or otherwise) references the file anymore.
-    for (const sf of sourceFiles) {
-      const remaining = tx
-        .select({ id: sessions.id })
-        .from(sessions)
-        .where(eq(sessions.sourceFile, sf))
-        .all()
-      if (remaining.length > 0) continue
-      tx.delete(scanState).where(eq(scanState.filePath, sf)).run()
-      tx.delete(rawMessages).where(eq(rawMessages.sourceFile, sf)).run()
-      tx.delete(progressEvents).where(eq(progressEvents.sourceFile, sf)).run()
-    }
-  })
-  log.info(`Purged ${ids.length} sessions from excluded directories`)
-}
-
-/**
  * Reconstruct per-file ParsedSessionData from the raw_messages store.
  * With no filter it covers every stored file (full rebuild). With a filter it
  * covers only the given main files plus their subagent files — how incremental
@@ -200,16 +119,61 @@ function reconstructParsedFromRaw(
   const fileList = filter ? [...new Set([...filter.mainFiles, ...filter.subFiles])] : null
   if (fileList && fileList.length === 0) return []
 
+  // Disk discovery cannot enumerate deleted child logs. Select their retained
+  // streams using the main conversation's stored identity, not current offsets.
+  const subDirectories = filter
+    ? [
+        ...new Set(
+          db
+            .selectDistinct({
+              sourceFile: rawMessages.sourceFile,
+              sessionId: rawMessages.claudeSessionId
+            })
+            .from(rawMessages)
+            .where(
+              and(inArray(rawMessages.sourceFile, filter.mainFiles), eq(rawMessages.isSubagent, 0))
+            )
+            .all()
+            .map(
+              (r) =>
+                join(
+                  dirname(r.sourceFile),
+                  r.sessionId || basename(r.sourceFile, '.jsonl'),
+                  'subagents'
+                ) + sep
+            )
+        )
+      ]
+    : []
+
   const allRawMessages = db
     .select()
     .from(rawMessages)
-    .where(fileList ? inArray(rawMessages.sourceFile, fileList) : undefined)
+    .where(
+      fileList
+        ? or(
+            inArray(rawMessages.sourceFile, fileList),
+            ...subDirectories.map(
+              (dir) => sql`substr(${rawMessages.sourceFile}, 1, ${dir.length}) = ${dir}`
+            )
+          )
+        : undefined
+    )
     .orderBy(rawMessages.sourceFile, rawMessages.timestamp)
     .all()
   const allProgressEvents = db
     .select()
     .from(progressEvents)
-    .where(fileList ? inArray(progressEvents.sourceFile, fileList) : undefined)
+    .where(
+      fileList
+        ? or(
+            inArray(progressEvents.sourceFile, fileList),
+            ...subDirectories.map(
+              (dir) => sql`substr(${progressEvents.sourceFile}, 1, ${dir.length}) = ${dir}`
+            )
+          )
+        : undefined
+    )
     .orderBy(progressEvents.sourceFile, progressEvents.timestamp)
     .all()
 
@@ -237,12 +201,7 @@ function reconstructParsedFromRaw(
     const first = msgs[0]
     const sessionId = first.claudeSessionId || basename(sourceFile, '.jsonl')
     const projectPathEncoded = first.projectPathEncoded || basename(dirname(sourceFile))
-    // Skip piped-swarm worktree dirs so a rebuild also purges any already-stored pipe sessions
-    if (isExcludedProjectDir(projectPathEncoded)) continue
-    // Honor the per-provider tracking toggle on rebuild too — raw messages stay, sessions don't
-    if (!isProviderEnabled(providerForFile(sourceFile).id)) continue
     const projectDirectory = msgs.find((m) => m.cwd)?.cwd || null
-    if (projectDirectory && isExcludedProjectPath(projectDirectory)) continue
 
     // Reconstruct messages
     const parsedMessages: ParsedMessage[] = msgs.map((rm) => ({
@@ -284,7 +243,7 @@ function reconstructParsedFromRaw(
     const subagentProgressTimestamps: string[] = []
 
     // Find subagent files that belong to this main file's session
-    const sessionDir = join(dirname(sourceFile), sessionId, 'subagents')
+    const sessionDir = join(dirname(sourceFile), sessionId, 'subagents') + sep
     for (const [subFile, subMsgs] of subByFile) {
       if (subFile.startsWith(sessionDir)) {
         for (const sm of subMsgs) {
@@ -396,6 +355,18 @@ function localDateKey(isoString: string): string {
   return `${d.getFullYear()}-${month}-${day}`
 }
 
+/** Date filters include their last millisecond; session ends are exclusive. */
+function sessionEndCondition(endDate: string): SQL {
+  return or(
+    lte(sessions.endedAt, endDate),
+    and(
+      eq(sessions.endedAt, new Date(new Date(endDate).getTime() + 1).toISOString()),
+      // Keep a zero-duration session at the next day's midnight on that day.
+      lte(sessions.startedAt, endDate)
+    )
+  )!
+}
+
 /**
  * SessionService orchestrates: discover → filter → parse → store raw → detect → store sessions.
  * All database operations use batch inserts in transactions (NFR18, NFR20).
@@ -431,10 +402,6 @@ export const sessionService = {
 
     // 1. Discover session files from every enabled provider (optionally filtered)
     const perProvider = await discoverFilesByProvider(claudeDir, projectFilter)
-    purgeDisabledProviders(getDb())
-    purgeExcludedSessions(getDb())
-    const purgedProjects = clientProjectService.purgeExcludedProjects()
-    if (purgedProjects > 0) log.info(`Purged ${purgedProjects} excluded auto-created project(s)`)
     const allFiles = perProvider.flatMap((r) => r.files)
     log.info(
       `Discovered ${allFiles.length} total session files (${perProvider
@@ -451,6 +418,10 @@ export const sessionService = {
     log.info(`${filesToProcess.length} files need processing (new or changed)`)
 
     if (filesToProcess.length === 0) {
+      const errors = this.getReconciliationCases().map(({ sourceFile, message }) => ({
+        sourceFile,
+        message
+      }))
       const durationMs = Date.now() - startTime
       log.info(`Scan complete (no changes) in ${durationMs}ms`)
       return {
@@ -458,7 +429,8 @@ export const sessionService = {
         updatedFiles: 0,
         totalFiles: allFiles.length,
         durationMs,
-        attributedCount: 0
+        attributedCount: 0,
+        ...(errors.length > 0 ? { errors } : {})
       }
     }
 
@@ -481,7 +453,7 @@ export const sessionService = {
     }
 
     // 4. Store raw messages in DB (with dedup)
-    await storeRawMessages(parsedSessions)
+    await storeRawMessages(parsedSessions, false)
 
     // 5. Detect sessions from the full per-file history in raw_messages (the
     // freshly stored tail plus everything already known for these files)
@@ -494,112 +466,85 @@ export const sessionService = {
     const detected = detectSessionsFromMultiple(reconstructed, idleTimeoutMinutes)
     log.info(`Detected ${detected.length} sessions from ${parsedSessions.length} parsed files`)
 
-    // 6. Store in DB — batch operations in a transaction
-    const sourceFiles = [...new Set(filesToProcess)]
-
-    db.transaction((tx) => {
-      // Delete stale auto sessions for re-scanned files
-      // Must first remove FK references from ai_summaries and git_commits
-      if (sourceFiles.length > 0) {
-        for (const sf of sourceFiles) {
-          const staleIds = tx
-            .select({ id: sessions.id })
-            .from(sessions)
-            .where(and(eq(sessions.source, 'auto'), eq(sessions.sourceFile, sf)))
-            .all()
-            .map((r) => r.id)
-
-          if (staleIds.length > 0) {
-            tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, staleIds)).run()
-            tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, staleIds)).run()
-            tx.update(gitCommits)
-              .set({ sessionId: null })
-              .where(inArray(gitCommits.sessionId, staleIds))
-              .run()
-            tx.delete(sessions)
-              .where(and(eq(sessions.source, 'auto'), eq(sessions.sourceFile, sf)))
+    // Each source commits its sessions and checkpoints independently. An
+    // unresolved file cannot roll back healthy files from the same scan.
+    let errors: SessionScanError[] = []
+    let committedSessions = 0
+    let updatedFiles = 0
+    for (const p of parsedSessions) {
+      const fileDetected = detected.filter((d) => d.sourceFile === p.sourceFile)
+      const activity = reconstructed.find((file) => file.sourceFile === p.sourceFile)
+      try {
+        const reconciledCount = db.transaction((tx) => {
+          const activeCount =
+            retainedResolutionCount(tx, p.sourceFile, fileDetected, idleTimeoutMinutes, activity) ??
+            reconcileDetectedSessions(tx, fileDetected, p.sourceFile)
+          resolveReconciliationCase(tx, p.sourceFile)
+          const scanNow = new Date().toISOString()
+          for (const [filePath, consumed] of Object.entries(p.fileOffsets ?? {})) {
+            if (filePath === p.sourceFile) continue
+            tx.insert(scanState)
+              .values({
+                filePath,
+                lastModifiedAt: scanNow,
+                lastScannedAt: scanNow,
+                sessionCount: 0,
+                lastFileSize: consumed
+              })
+              .onConflictDoUpdate({ target: scanState.filePath, set: { lastFileSize: consumed } })
               .run()
           }
-        }
-      }
-
-      // Insert detected sessions (per-row to capture ids for model usage rows)
-      if (detected.length > 0) {
-        const now = new Date().toISOString()
-        for (const d of detected) {
-          const inserted = tx
-            .insert(sessions)
-            .values({
-              projectPath: d.projectPath,
-              startedAt: d.startedAt,
-              endedAt: d.endedAt,
-              durationMinutes: d.durationMinutes,
-              source: 'auto' as const,
-              status: 'completed' as const,
-              tool: d.tool,
-              claudeSessionId: d.claudeSessionId,
-              promptCount: d.promptCount,
-              inputTokens: d.inputTokens,
-              outputTokens: d.outputTokens,
-              sourceFile: d.sourceFile,
-              createdAt: now,
-              updatedAt: now
-            })
-            .returning({ id: sessions.id })
-            .get()
-          insertModelUsage(tx, inserted.id, d)
-        }
-      }
-
-      // Update scan_state records. lastFileSize records the CONSUMED byte
-      // offset (through the last complete line) when the parser reports one —
-      // that's the resume point for the next incremental parse. Stat size is
-      // the fallback for parsers without incremental support.
-      const consumedByFile = new Map<string, number>()
-      for (const p of parsedSessions) {
-        const consumed = p.fileOffsets?.[p.sourceFile]
-        if (consumed != null) consumedByFile.set(p.sourceFile, consumed)
-      }
-      const scanNow = new Date().toISOString()
-      for (const filePath of filesToProcess) {
-        const fileMtime = mtimes.get(filePath) ?? scanNow
-        const sessionCount = detected.filter((d) => d.sourceFile === filePath).length
-        const fileSize = consumedByFile.get(filePath) ?? fileSizes.get(filePath) ?? 0
-        tx.insert(scanState)
-          .values({
-            filePath,
-            lastModifiedAt: fileMtime,
+          const checkpoint = {
+            lastModifiedAt: mtimes.get(p.sourceFile) ?? scanNow,
             lastScannedAt: scanNow,
-            sessionCount,
-            lastFileSize: fileSize
-          })
-          .onConflictDoUpdate({
-            target: scanState.filePath,
-            set: {
-              lastModifiedAt: fileMtime,
-              lastScannedAt: scanNow,
-              sessionCount,
-              lastFileSize: fileSize
-            }
-          })
-          .run()
+            sessionCount: activeCount,
+            lastFileSize: p.fileOffsets?.[p.sourceFile] ?? fileSizes.get(p.sourceFile) ?? 0
+          }
+          tx.insert(scanState)
+            .values({ filePath: p.sourceFile, ...checkpoint })
+            .onConflictDoUpdate({ target: scanState.filePath, set: checkpoint })
+            .run()
+          return activeCount
+        })
+        committedSessions += reconciledCount
+        updatedFiles++
+      } catch (error) {
+        if (!(error instanceof SessionReconciliationError)) throw error
+        db.transaction((tx) =>
+          recordReconciliationFailure(
+            tx,
+            p.sourceFile,
+            error.message,
+            fileDetected,
+            idleTimeoutMinutes,
+            activity
+          )
+        )
+        errors.push({ sourceFile: p.sourceFile, message: error.message })
+        log.warn(error.message)
       }
-    })
+    }
 
-    // 7. Update global last scan timestamp
-    settingsService.setSetting('last_scan_at', new Date().toISOString())
+    // Include retained sources whose physical files were not part of this scan.
+    errors = this.getReconciliationCases().map(({ sourceFile, message }) => ({
+      sourceFile,
+      message
+    }))
+    // Only mark a complete scan when no reconciliation remains unresolved.
+    if (errors.length === 0) settingsService.setSetting('last_scan_at', new Date().toISOString())
 
     const durationMs = Date.now() - startTime
     log.info(
-      `Scan complete: ${detected.length} sessions from ${filesToProcess.length} files in ${durationMs}ms`
+      `Scan finished: ${committedSessions} sessions from ${updatedFiles} files, ${errors.length} unresolved in ${durationMs}ms`
     )
 
     return {
-      newSessions: detected.length,
-      updatedFiles: filesToProcess.length,
+      newSessions: committedSessions,
+      updatedFiles,
       totalFiles: allFiles.length,
       durationMs,
-      attributedCount: 0
+      attributedCount: 0,
+      ...(errors.length > 0 ? { errors } : {})
     }
   },
 
@@ -620,7 +565,134 @@ export const sessionService = {
     }
   },
 
-  _doRebuild(): ScanResult {
+  getReconciliationCases() {
+    const db = getDb()
+    // Revalidate kept approvals independently of filesystem discovery. This also
+    // protects invoice previews and catches bulk assignment/policy changes.
+    const kept = db
+      .selectDistinct({ sourceFile: sessionReconciliationCases.sourceFile })
+      .from(sessionReconciliationCases)
+      .innerJoin(
+        sessionReconciliationResolutions,
+        eq(sessionReconciliationCases.sourceFile, sessionReconciliationResolutions.sourceFile)
+      )
+      .where(isNotNull(sessionReconciliationCases.resolvedAt))
+      .all()
+    if (kept.length > 0) {
+      const setting = settingsService.getSetting('idle_timeout_minutes')
+      const parsed = setting ? parseInt(setting, 10) : NaN
+      const timeout = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
+      db.transaction((tx) => {
+        const reconstructed = reconstructParsedFromRaw(db, {
+          mainFiles: kept.map((row) => row.sourceFile),
+          subFiles: []
+        })
+        const detected = detectSessionsFromMultiple(reconstructed, timeout)
+        for (const { sourceFile } of kept) {
+          const activity = reconstructed.find((row) => row.sourceFile === sourceFile)
+          const intervals = detected.filter((row) => row.sourceFile === sourceFile)
+          try {
+            retainedResolutionCount(tx, sourceFile, intervals, timeout, activity)
+          } catch (error) {
+            if (!(error instanceof SessionReconciliationError)) throw error
+            recordReconciliationFailure(tx, sourceFile, error.message, intervals, timeout, activity)
+          }
+        }
+      })
+    }
+    return readReconciliationCases()
+  },
+
+  keepSavedHistory(sourceFile: string, fingerprint: string): void {
+    if (this._scanInProgress) throw new Error('A scan is running. Confirm after it finishes.')
+    const setting = settingsService.getSetting('idle_timeout_minutes')
+    const parsed = setting ? parseInt(setting, 10) : NaN
+    const timeout = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
+    const db = getDb()
+    db.transaction((tx) => {
+      const reconstructed = reconstructParsedFromRaw(db, { mainFiles: [sourceFile], subFiles: [] })
+      const detected = detectSessionsFromMultiple(reconstructed, timeout).filter(
+        (row) => row.sourceFile === sourceFile
+      )
+      keepSavedHistory(
+        tx,
+        sourceFile,
+        fingerprint,
+        detected,
+        timeout,
+        reconstructed.find((file) => file.sourceFile === sourceFile)
+      )
+    })
+  },
+
+  mapSavedHistory(
+    sourceFile: string,
+    fingerprint: string,
+    mappings: SessionActivityMapping[]
+  ): void {
+    if (this._scanInProgress) throw new Error('A scan is running. Confirm after it finishes.')
+    const setting = settingsService.getSetting('idle_timeout_minutes')
+    const parsed = setting ? parseInt(setting, 10) : NaN
+    const timeout = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
+    const db = getDb()
+    db.transaction((tx) => {
+      const reconstructed = reconstructParsedFromRaw(db, { mainFiles: [sourceFile], subFiles: [] })
+      const detected = detectSessionsFromMultiple(reconstructed, timeout).filter(
+        (row) => row.sourceFile === sourceFile
+      )
+      mapSavedHistory(
+        tx,
+        sourceFile,
+        fingerprint,
+        mappings,
+        detected,
+        timeout,
+        reconstructed.find((file) => file.sourceFile === sourceFile)
+      )
+    })
+  },
+
+  replaceSavedHistory(
+    sourceFile: string,
+    fingerprint: string,
+    choices: SessionReplacementChoice[] = []
+  ): void {
+    if (this._scanInProgress) throw new Error('A scan is running. Confirm after it finishes.')
+    const setting = settingsService.getSetting('idle_timeout_minutes')
+    const parsed = setting ? parseInt(setting, 10) : NaN
+    const timeout = Number.isNaN(parsed) ? DEFAULT_IDLE_TIMEOUT_MINUTES : parsed
+    const db = getDb()
+    db.transaction((tx) => {
+      const reconstructed = reconstructParsedFromRaw(db, { mainFiles: [sourceFile], subFiles: [] })
+      const detected = detectSessionsFromMultiple(reconstructed, timeout).filter(
+        (row) => row.sourceFile === sourceFile
+      )
+      replaceSavedHistory(
+        tx,
+        sourceFile,
+        fingerprint,
+        detected,
+        timeout,
+        reconstructed.find((file) => file.sourceFile === sourceFile),
+        choices
+      )
+    })
+  },
+
+  async recheckReconciliation(sourceFile: string): Promise<ScanResult> {
+    if (this._scanInProgress) throw new Error('A scan is running. Recheck after it finishes.')
+    if (!this.getReconciliationCases().some((row) => row.sourceFile === sourceFile)) {
+      throw new Error('This source no longer has a pending review. Refresh the list.')
+    }
+    this._scanInProgress = true
+    try {
+      return this._doRebuild(sourceFile)
+    } finally {
+      this._scanInProgress = false
+    }
+  },
+
+  _doRebuild(sourceFile?: string): ScanResult {
     const startTime = Date.now()
     const db = getDb()
 
@@ -632,9 +704,16 @@ export const sessionService = {
 
     log.info(`Rebuilding sessions from raw messages (idle timeout: ${idleTimeoutMinutes}min)`)
 
-    const reconstructed = reconstructParsedFromRaw(db)
+    const reconstructed = reconstructParsedFromRaw(
+      db,
+      sourceFile ? { mainFiles: [sourceFile], subFiles: [] } : undefined
+    )
 
     if (reconstructed.length === 0) {
+      if (sourceFile)
+        throw new Error(
+          'No retained activity is available to recheck this source. Saved history and its review were retained.'
+        )
       log.info('No raw messages to rebuild from')
       return {
         newSessions: 0,
@@ -648,80 +727,47 @@ export const sessionService = {
     // 4. Detect sessions
     const detected = detectSessionsFromMultiple(reconstructed, idleTimeoutMinutes)
     log.info(`Rebuild detected ${detected.length} sessions from ${reconstructed.length} files`)
-    // 5. Preserve user edits from existing auto sessions
-    const existingAuto = db.select().from(sessions).where(eq(sessions.source, 'auto')).all()
-    const editsMap = new Map<
-      string,
-      { projectId: number | null; clientId: number | null; description: string | null }
-    >()
-    for (const s of existingAuto) {
-      if (s.projectId != null || s.clientId != null || s.description != null) {
-        const key = `${s.claudeSessionId}|${s.startedAt}`
-        editsMap.set(key, {
-          projectId: s.projectId,
-          clientId: s.clientId,
-          description: s.description
+    const errors: SessionScanError[] = []
+    let committedSessions = 0
+    for (const file of reconstructed) {
+      const fileDetected = detected.filter((d) => d.sourceFile === file.sourceFile)
+      try {
+        committedSessions += db.transaction((tx) => {
+          const count =
+            retainedResolutionCount(tx, file.sourceFile, fileDetected, idleTimeoutMinutes, file) ??
+            reconcileDetectedSessions(tx, fileDetected, file.sourceFile)
+          resolveReconciliationCase(tx, file.sourceFile)
+          return count
         })
+      } catch (error) {
+        if (!(error instanceof SessionReconciliationError)) throw error
+        db.transaction((tx) =>
+          recordReconciliationFailure(
+            tx,
+            file.sourceFile,
+            error.message,
+            fileDetected,
+            idleTimeoutMinutes,
+            file
+          )
+        )
+        errors.push({ sourceFile: file.sourceFile, message: error.message })
+        log.warn(error.message)
       }
     }
 
-    // 6. Replace auto sessions in a transaction
-    const autoIds = existingAuto.map((s) => s.id)
-
-    db.transaction((tx) => {
-      if (autoIds.length > 0) {
-        // FK cleanup before deleting auto sessions
-        tx.delete(aiSummaries).where(inArray(aiSummaries.sessionId, autoIds)).run()
-        tx.delete(sessionModelUsage).where(inArray(sessionModelUsage.sessionId, autoIds)).run()
-        tx.update(gitCommits)
-          .set({ sessionId: null })
-          .where(inArray(gitCommits.sessionId, autoIds))
-          .run()
-        tx.delete(sessions).where(eq(sessions.source, 'auto')).run()
-      }
-
-      if (detected.length > 0) {
-        const now = new Date().toISOString()
-        for (const d of detected) {
-          const key = `${d.claudeSessionId}|${d.startedAt}`
-          const edits = editsMap.get(key)
-          const inserted = tx
-            .insert(sessions)
-            .values({
-              projectPath: d.projectPath,
-              startedAt: d.startedAt,
-              endedAt: d.endedAt,
-              durationMinutes: d.durationMinutes,
-              source: 'auto' as const,
-              status: 'completed' as const,
-              tool: d.tool,
-              claudeSessionId: d.claudeSessionId,
-              promptCount: d.promptCount,
-              inputTokens: d.inputTokens,
-              outputTokens: d.outputTokens,
-              sourceFile: d.sourceFile,
-              projectId: edits?.projectId ?? null,
-              clientId: edits?.clientId ?? null,
-              description: edits?.description ?? null,
-              createdAt: now,
-              updatedAt: now
-            })
-            .returning({ id: sessions.id })
-            .get()
-          insertModelUsage(tx, inserted.id, d)
-        }
-      }
-    })
-
     const durationMs = Date.now() - startTime
-    log.info(`Rebuild complete: ${detected.length} sessions in ${durationMs}ms`)
+    log.info(
+      `Rebuild finished: ${committedSessions} sessions, ${errors.length} unresolved in ${durationMs}ms`
+    )
 
     return {
-      newSessions: detected.length,
+      newSessions: committedSessions,
       updatedFiles: 0,
       totalFiles: reconstructed.length,
       durationMs,
-      attributedCount: 0
+      attributedCount: 0,
+      ...(errors.length > 0 ? { errors } : {})
     }
   },
 
@@ -779,77 +825,7 @@ export const sessionService = {
       }
     }
 
-    // Synthesize records for compacted files (existing DB sessions with no raw_messages)
-    const existingAutoSessions = db.select().from(sessions).where(eq(sessions.source, 'auto')).all()
-    const filesWithRaw = new Set(
-      db
-        .select({ sf: rawMessages.sourceFile })
-        .from(rawMessages)
-        .all()
-        .map((r) => r.sf)
-    )
-
-    const compactedSessions = existingAutoSessions.filter(
-      (s) => s.sourceFile && !filesWithRaw.has(s.sourceFile)
-    )
-
-    if (compactedSessions.length > 0) {
-      log.info(`Backfill: synthesizing records for ${compactedSessions.length} compacted sessions`)
-      const now = new Date().toISOString()
-
-      db.transaction((tx) => {
-        for (let i = 0; i < compactedSessions.length; i++) {
-          const s = compactedSessions[i]
-          if (!s.sourceFile) continue
-
-          const projectPathEncoded = basename(dirname(s.sourceFile))
-          const inputTokensUser = Math.round(s.inputTokens * 0.7)
-          const inputTokensAssistant = s.inputTokens - inputTokensUser
-          const outputTokensUser = 0
-          const outputTokensAssistant = s.outputTokens
-
-          // Synthesize user message at startedAt
-          tx.insert(rawMessages)
-            .values({
-              sourceFile: s.sourceFile,
-              claudeSessionId: s.claudeSessionId,
-              type: 'user',
-              timestamp: s.startedAt,
-              inputTokens: inputTokensUser,
-              outputTokens: outputTokensUser,
-              cacheCreationInputTokens: 0,
-              cacheReadInputTokens: 0,
-              isSubagent: 0,
-              projectPathEncoded,
-              isToolResult: 0,
-              hasToolUse: 0,
-              createdAt: now
-            })
-            .run()
-
-          // Synthesize assistant message at endedAt (with ms offset to avoid collisions)
-          const endDate = new Date(s.endedAt)
-          endDate.setMilliseconds(endDate.getMilliseconds() + i)
-          tx.insert(rawMessages)
-            .values({
-              sourceFile: s.sourceFile,
-              claudeSessionId: s.claudeSessionId,
-              type: 'assistant',
-              timestamp: endDate.toISOString(),
-              inputTokens: inputTokensAssistant,
-              outputTokens: outputTokensAssistant,
-              cacheCreationInputTokens: 0,
-              cacheReadInputTokens: 0,
-              isSubagent: 0,
-              projectPathEncoded,
-              isToolResult: 0,
-              hasToolUse: 0,
-              createdAt: now
-            })
-            .run()
-        }
-      })
-    }
+    // Legacy rows without source activity stay intact; do not invent messages.
 
     // Update scanState lastFileSize for all processed files
     for (const filePath of allFiles) {
@@ -882,7 +858,7 @@ export const sessionService = {
    */
   getAllSessions(filters?: SessionFilters) {
     const db = getDb()
-    const conditions: SQL[] = []
+    const conditions: SQL[] = [activeSessionCondition]
 
     // Exclude sessions belonging to inactive (excluded) projects
     const excludedIds = clientProjectService.getExcludedProjectIds()
@@ -897,7 +873,7 @@ export const sessionService = {
       conditions.push(gte(sessions.startedAt, filters.startDate))
     }
     if (filters?.endDate) {
-      conditions.push(lte(sessions.endedAt, filters.endDate))
+      conditions.push(sessionEndCondition(filters.endDate))
     }
     if (filters?.source) {
       conditions.push(eq(sessions.source, filters.source))
@@ -910,10 +886,6 @@ export const sessionService = {
     }
     if (filters?.projectId != null) {
       conditions.push(eq(sessions.projectId, filters.projectId))
-    }
-
-    if (conditions.length === 0) {
-      return db.select().from(sessions).orderBy(sessions.startedAt).all()
     }
 
     return db
@@ -929,7 +901,13 @@ export const sessionService = {
    */
   getSessionById(id: number) {
     const db = getDb()
-    return db.select().from(sessions).where(eq(sessions.id, id)).get() ?? null
+    return (
+      db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.id, id), activeSessionCondition))
+        .get() ?? null
+    )
   },
 
   /**
@@ -937,7 +915,7 @@ export const sessionService = {
    */
   updateSession(id: number, data: UpdateSession) {
     const db = getDb()
-    const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
+    const existing = this.getSessionById(id)
     if (!existing) {
       throw new Error(`Session ${id} not found`)
     }
@@ -951,13 +929,46 @@ export const sessionService = {
     if (data.projectId !== undefined) updates.projectId = data.projectId
     if (data.clientId !== undefined) updates.clientId = data.clientId
 
-    db.update(sessions).set(updates).where(eq(sessions.id, id)).run()
+    const changed = Object.fromEntries(
+      Object.entries(updates).filter(
+        ([key, value]) => key !== 'updatedAt' && existing[key as keyof typeof existing] !== value
+      )
+    )
+    if (Object.keys(changed).length === 0) return existing
+
+    db.transaction((tx) => {
+      recordSessionRevision(
+        tx,
+        existing,
+        'edit',
+        Object.fromEntries(
+          Object.keys(changed).map((key) => [key, existing[key as keyof typeof existing]])
+        ),
+        changed
+      )
+      tx.update(sessions).set(updates).where(eq(sessions.id, id)).run()
+      const timeEdits = {
+        ...(data.startedAt !== undefined && data.startedAt !== existing.startedAt
+          ? { startedAt: 1 }
+          : {}),
+        ...(data.endedAt !== undefined && data.endedAt !== existing.endedAt ? { endedAt: 1 } : {}),
+        ...(data.durationMinutes !== undefined && data.durationMinutes !== existing.durationMinutes
+          ? { durationMinutes: 1 }
+          : {})
+      }
+      if (existing.source === 'auto' && Object.keys(timeEdits).length > 0) {
+        tx.insert(sessionTimeOverrides)
+          .values({ sessionId: id, ...timeEdits })
+          .onConflictDoUpdate({ target: sessionTimeOverrides.sessionId, set: timeEdits })
+          .run()
+      }
+    })
 
     return db.select().from(sessions).where(eq(sessions.id, id)).get()!
   },
 
   /**
-   * Delete a session by ID.
+   * Hide a session from active history without erasing its audit row.
    */
   deleteSession(id: number) {
     const db = getDb()
@@ -966,11 +977,42 @@ export const sessionService = {
       throw new Error(`Session ${id} not found`)
     }
 
-    // FK cleanup before delete
-    db.delete(aiSummaries).where(eq(aiSummaries.sessionId, id)).run()
-    db.delete(sessionModelUsage).where(eq(sessionModelUsage.sessionId, id)).run()
-    db.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.sessionId, id)).run()
-    db.delete(sessions).where(eq(sessions.id, id)).run()
+    if (db.select().from(sessionDeletions).where(eq(sessionDeletions.sessionId, id)).get()) return
+    if (!this.getSessionById(id))
+      throw new Error(`Session ${id} is audit history; delete its active parts instead`)
+    const baseline = db
+      .select()
+      .from(sessionDerivations)
+      .where(eq(sessionDerivations.sessionId, id))
+      .get()
+    if (
+      existing.source === 'auto' &&
+      !baseline &&
+      !existing.sourceFile &&
+      !existing.claudeSessionId?.trim()
+    ) {
+      throw new Error(
+        'This legacy session has no source identity or known conversation. Resolve its activity mapping before deleting it from history.'
+      )
+    }
+    const range = baseline ?? existing
+    db.transaction((tx) => {
+      const legacyRecordId =
+        existing.source === 'auto' && !baseline ? retainLegacySession(tx, existing) : null
+      tx.insert(sessionDeletions)
+        .values({
+          legacyRecordId,
+          id: randomUUID(),
+          sessionId: id,
+          sourceFile: existing.source === 'auto' ? existing.sourceFile : null,
+          tool: existing.tool,
+          claudeSessionId: existing.claudeSessionId,
+          startedAt: range.startedAt,
+          endedAt: range.endedAt,
+          createdAt: new Date().toISOString()
+        })
+        .run()
+    })
   },
 
   /**
@@ -1008,135 +1050,114 @@ export const sessionService = {
     return db.select().from(sessions).orderBy(sessions.id).all().pop()!
   },
 
-  /**
-   * Split a session into two at the given split point.
-   * Returns both new sessions. The original is deleted.
-   */
+  /** Keep the original as audit history and record a replayable split revision. */
   splitSession(
     id: number,
     splitAt: string
   ): [typeof sessions.$inferSelect, typeof sessions.$inferSelect] {
     const db = getDb()
-    const existing = db.select().from(sessions).where(eq(sessions.id, id)).get()
-    if (!existing) {
-      throw new Error(`Session ${id} not found`)
-    }
-
-    const startMs = new Date(existing.startedAt).getTime()
-    const endMs = new Date(existing.endedAt).getTime()
-    const splitMs = new Date(splitAt).getTime()
-
-    if (splitMs <= startMs || splitMs >= endMs) {
-      throw new Error('Split point must be between session start and end')
-    }
-
-    const now = new Date().toISOString()
-    const dur1 = Math.round((splitMs - startMs) / 60_000)
-    const dur2 = Math.round((endMs - splitMs) / 60_000)
-
-    // Estimate prompt and token split proportionally
-    const ratio = (splitMs - startMs) / (endMs - startMs)
-    const prompts1 = Math.round(existing.promptCount * ratio)
-    const prompts2 = existing.promptCount - prompts1
-    const inputTokens1 = Math.round(existing.inputTokens * ratio)
-    const inputTokens2 = existing.inputTokens - inputTokens1
-    const outputTokens1 = Math.round(existing.outputTokens * ratio)
-    const outputTokens2 = existing.outputTokens - outputTokens1
-
-    // Existing per-model usage, to be split proportionally between the halves
-    const existingUsage = db
+    const existing = this.getSessionById(id)
+    if (!existing) throw new Error(`Session ${id} not found`)
+    const baseline = db
+      .select()
+      .from(sessionDerivations)
+      .where(eq(sessionDerivations.sessionId, id))
+      .get()
+    const cut = Date.parse(splitAt)
+    if (!Number.isFinite(cut)) throw new Error('Invalid split point')
+    splitAt = new Date(cut).toISOString()
+    const usage = db
       .select()
       .from(sessionModelUsage)
       .where(eq(sessionModelUsage.sessionId, id))
       .all()
-
-    db.transaction((tx) => {
-      // FK cleanup before deleting original session
-      tx.delete(aiSummaries).where(eq(aiSummaries.sessionId, id)).run()
-      tx.delete(sessionModelUsage).where(eq(sessionModelUsage.sessionId, id)).run()
-      tx.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.sessionId, id)).run()
-
-      // Delete original
-      tx.delete(sessions).where(eq(sessions.id, id)).run()
-
-      // Insert two new sessions
-      const first = tx
-        .insert(sessions)
+    const saved = {
+      ...existing,
+      claudeSessionId: existing.claudeSessionId ?? '',
+      sourceFile: existing.sourceFile ?? '',
+      modelUsage: usage
+    }
+    const displayed = splitMeasurement(saved, splitAt)
+    const measured = splitMeasurement({ ...saved, ...(baseline ?? {}) }, splitAt)
+    const parentOverrides = db
+      .select()
+      .from(sessionTimeOverrides)
+      .where(eq(sessionTimeOverrides.sessionId, id))
+      .get()
+    const now = new Date().toISOString()
+    return db.transaction((tx) => {
+      const legacyRecordId =
+        existing.source === 'auto' && !baseline ? retainLegacySession(tx, existing) : null
+      retainInvoiceBillingRefs(tx)
+      const children = displayed.map((part, index) => {
+        const row = tx
+          .insert(sessions)
+          .values({
+            ...existing,
+            id: undefined,
+            startedAt: part.startedAt,
+            endedAt: part.endedAt,
+            durationMinutes: part.durationMinutes,
+            promptCount: measured[index].promptCount,
+            inputTokens: measured[index].inputTokens,
+            outputTokens: measured[index].outputTokens,
+            createdAt: now,
+            updatedAt: now
+          })
+          .returning()
+          .get()
+        insertModelUsage(tx, row.id, measured[index])
+        if (legacyRecordId) retainLegacySession(tx, row)
+        if (baseline) {
+          const reference = measured[index]
+          tx.insert(sessionDerivations)
+            .values({
+              sessionId: row.id,
+              startedAt: reference.startedAt,
+              endedAt: reference.endedAt,
+              durationMinutes: reference.durationMinutes
+            })
+            .run()
+          tx.insert(sessionTimeOverrides)
+            .values({
+              sessionId: row.id,
+              startedAt: Number(
+                (index === 0 && parentOverrides?.startedAt) || row.startedAt !== reference.startedAt
+              ),
+              endedAt: Number(
+                (index === 1 && parentOverrides?.endedAt) || row.endedAt !== reference.endedAt
+              ),
+              durationMinutes: Number(
+                parentOverrides?.durationMinutes ||
+                  row.durationMinutes !== reference.durationMinutes
+              )
+            })
+            .run()
+        }
+        return row
+      }) as [typeof sessions.$inferSelect, typeof sessions.$inferSelect]
+      const revisionId = recordSessionRevision(tx, existing, 'split', existing, {
+        splitAt,
+        children
+      })
+      const range = baseline ?? existing
+      tx.insert(sessionSplits)
         .values({
-          projectPath: existing.projectPath,
-          startedAt: existing.startedAt,
-          endedAt: splitAt,
-          durationMinutes: dur1,
-          source: existing.source as 'auto' | 'manual',
-          description: existing.description,
-          status: 'completed' as const,
+          revisionId,
+          legacyRecordId,
+          parentSessionId: id,
+          firstSessionId: children[0].id,
+          secondSessionId: children[1].id,
+          sourceFile: existing.source === 'auto' ? existing.sourceFile : null,
+          tool: existing.tool,
           claudeSessionId: existing.claudeSessionId,
-          promptCount: prompts1,
-          inputTokens: inputTokens1,
-          outputTokens: outputTokens1,
-          sourceFile: existing.sourceFile,
-          projectId: existing.projectId,
-          clientId: existing.clientId,
-          createdAt: now,
-          updatedAt: now
+          startedAt: range.startedAt,
+          endedAt: range.endedAt,
+          splitAt
         })
-        .returning({ id: sessions.id })
-        .get()
-      const second = tx
-        .insert(sessions)
-        .values({
-          projectPath: existing.projectPath,
-          startedAt: splitAt,
-          endedAt: existing.endedAt,
-          durationMinutes: dur2,
-          source: existing.source as 'auto' | 'manual',
-          description: existing.description,
-          status: 'completed' as const,
-          claudeSessionId: existing.claudeSessionId,
-          promptCount: prompts2,
-          inputTokens: inputTokens2,
-          outputTokens: outputTokens2,
-          sourceFile: existing.sourceFile,
-          projectId: existing.projectId,
-          clientId: existing.clientId,
-          createdAt: now,
-          updatedAt: now
-        })
-        .returning({ id: sessions.id })
-        .get()
-
-      // Split per-model usage by the same time ratio as prompts/tokens
-      for (const u of existingUsage) {
-        const in1 = Math.round(u.inputTokens * ratio)
-        const out1 = Math.round(u.outputTokens * ratio)
-        const cc1 = Math.round(u.cacheCreationInputTokens * ratio)
-        const cr1 = Math.round(u.cacheReadInputTokens * ratio)
-        tx.insert(sessionModelUsage)
-          .values([
-            {
-              sessionId: first.id,
-              model: u.model,
-              inputTokens: in1,
-              outputTokens: out1,
-              cacheCreationInputTokens: cc1,
-              cacheReadInputTokens: cr1
-            },
-            {
-              sessionId: second.id,
-              model: u.model,
-              inputTokens: u.inputTokens - in1,
-              outputTokens: u.outputTokens - out1,
-              cacheCreationInputTokens: u.cacheCreationInputTokens - cc1,
-              cacheReadInputTokens: u.cacheReadInputTokens - cr1
-            }
-          ])
-          .run()
-      }
+        .run()
+      return children
     })
-
-    // Return the two new sessions (most recent inserts)
-    const all = db.select().from(sessions).orderBy(sessions.id).all()
-    return [all[all.length - 2], all[all.length - 1]]
   },
 
   /**
@@ -1148,6 +1169,13 @@ export const sessionService = {
     if (!session?.sourceFile) return []
 
     const db = getDb()
+    // Activity follows the detector mapping; saved times may be user overrides.
+    const range =
+      db
+        .select()
+        .from(sessionDerivations)
+        .where(eq(sessionDerivations.sessionId, sessionId))
+        .get() ?? session
 
     // Try DB first
     const dbMessages = db
@@ -1156,8 +1184,8 @@ export const sessionService = {
       .where(
         and(
           eq(rawMessages.sourceFile, session.sourceFile),
-          gte(rawMessages.timestamp, session.startedAt),
-          lte(rawMessages.timestamp, session.endedAt),
+          gte(rawMessages.timestamp, range.startedAt),
+          lte(rawMessages.timestamp, range.endedAt),
           eq(rawMessages.isSubagent, 0)
         )
       )
@@ -1178,8 +1206,8 @@ export const sessionService = {
     const parsed = await providerForFile(session.sourceFile).parseFile(session.sourceFile)
     if (!parsed) return []
 
-    const startMs = new Date(session.startedAt).getTime()
-    const endMs = new Date(session.endedAt).getTime()
+    const startMs = new Date(range.startedAt).getTime()
+    const endMs = new Date(range.endedAt).getTime()
     const msgs = parsed.messages
       .filter((m) => {
         if (!m.timestamp) return false
@@ -1221,6 +1249,7 @@ export const sessionService = {
           gte(sessions.startedAt, startDate),
           lte(sessions.startedAt, endDate),
           eq(sessions.source, 'auto'),
+          activeSessionCondition,
           excludeCondition
         )
       )
@@ -1298,14 +1327,14 @@ export const sessionService = {
    */
   getModelUsage(filters?: ModelUsageFilters): ModelUsageAggregate[] {
     const db = getDb()
-    const conditions: SQL[] = []
+    const conditions: SQL[] = [activeSessionCondition]
 
     const excludedIds = clientProjectService.getExcludedProjectIds()
     if (excludedIds.length > 0) {
       conditions.push(or(isNull(sessions.projectId), notInArray(sessions.projectId, excludedIds))!)
     }
     if (filters?.startDate) conditions.push(gte(sessions.startedAt, filters.startDate))
-    if (filters?.endDate) conditions.push(lte(sessions.endedAt, filters.endDate))
+    if (filters?.endDate) conditions.push(sessionEndCondition(filters.endDate))
     if (filters?.clientId != null) conditions.push(eq(sessions.clientId, filters.clientId))
     if (filters?.projectId != null) conditions.push(eq(sessions.projectId, filters.projectId))
     if (filters?.sessionIds) {
@@ -1432,6 +1461,249 @@ function buildTimingsFromMessages(
   return timings
 }
 
+/**
+ * Reconcile only one-to-one intervals. Until split/merge review is implemented,
+ * an ambiguous change aborts the transaction instead of replacing saved work.
+ * The baseline keeps user-edited times out of identity matching.
+ */
+function reconcileDetectedSessions(
+  tx: Pick<ReturnType<typeof getDb>, 'select' | 'insert' | 'update' | 'delete'>,
+  detected: DetectedSession[],
+  sourceFile: string
+): number {
+  let activeCount = 0
+  const byFile = new Map<string, DetectedSession[]>([[sourceFile, []]])
+  for (const d of detected) {
+    const group = byFile.get(d.sourceFile) ?? []
+    group.push(d)
+    byFile.set(d.sourceFile, group)
+  }
+  for (const [sourceFile, fileDetected] of byFile) {
+    if (adoptedLegacySessionsElsewhere(tx, sourceFile, fileDetected).length)
+      throw new SessionReconciliationError(
+        `Session reconciliation needs review for ${sourceFile}. This legacy history is already linked to another source. Review this activity before importing it.`
+      )
+    if (sourceLessLegacySessions(tx, fileDetected).length)
+      throw new SessionReconciliationError(
+        `Session reconciliation needs review for ${sourceFile}. Saved legacy history has the same conversation but no source mapping. Review it before importing this activity.`
+      )
+    const existing = tx
+      .select()
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.source, 'auto'),
+          eq(sessions.sourceFile, sourceFile),
+          activeSessionCondition
+        )
+      )
+      .all()
+    const baselines = new Map(
+      tx
+        .select()
+        .from(sessionDerivations)
+        .innerJoin(sessions, eq(sessionDerivations.sessionId, sessions.id))
+        .where(eq(sessions.sourceFile, sourceFile))
+        .all()
+        .map((r) => [r.session_derivations.sessionId, r.session_derivations])
+    )
+    const overlaps = (
+      a: { startedAt: string; endedAt: string },
+      b: { startedAt: string; endedAt: string }
+    ): boolean => {
+      const [aStart, aEnd, bStart, bEnd] = [a.startedAt, a.endedAt, b.startedAt, b.endedAt].map(
+        Date.parse
+      )
+      return (
+        aStart === bStart ||
+        (aStart < bEnd && bStart < aEnd) ||
+        (aStart === aEnd && aStart >= bStart && aStart <= bEnd) ||
+        (bStart === bEnd && bStart >= aStart && bStart <= aEnd)
+      )
+    }
+    const deletions = tx
+      .select()
+      .from(sessionDeletions)
+      .where(eq(sessionDeletions.sourceFile, sourceFile))
+      .all()
+    if (
+      fileDetected.length > 0 &&
+      (deletions.some((deletion) => deletion.legacyRecordId) ||
+        sourceLessLegacyDeletions(tx, fileDetected).length > 0)
+    ) {
+      throw new SessionReconciliationError(
+        `Session reconciliation needs review for ${sourceFile}. Returned activity cannot be mapped safely to deleted legacy history; the deletion and saved history were retained.`
+      )
+    }
+    const incoming = applySessionSplits(tx, sourceFile, fileDetected).filter((d) => {
+      const overlapping = deletions.filter((deletion) => overlaps(deletion, d))
+      if (overlapping.length === 0) return true
+      if (
+        overlapping.some(
+          (deletion) =>
+            deletion.tool === d.tool &&
+            deletion.claudeSessionId === d.claudeSessionId &&
+            Date.parse(d.startedAt) >= Date.parse(deletion.startedAt) &&
+            Date.parse(d.endedAt) <= Date.parse(deletion.endedAt)
+        )
+      )
+        return false
+      throw new SessionReconciliationError(
+        `Session reconciliation needs review for ${sourceFile}. New boundaries overlap deleted history; the deletion and saved history were retained.`
+      )
+    })
+    activeCount += incoming.length
+    const matches = incoming.map((d) =>
+      existing.filter((s) =>
+        d.localSessionId !== undefined
+          ? s.id === d.localSessionId
+          : overlaps(baselines.get(s.id) ?? s, d)
+      )
+    )
+    const ambiguous =
+      existing.some((s) => matches.filter((rows) => rows.includes(s)).length !== 1) ||
+      matches.some(
+        (rows, i) =>
+          rows.length > 1 ||
+          (rows.length === 1 &&
+            (rows[0].tool !== incoming[i].tool ||
+              rows[0].claudeSessionId !== incoming[i].claudeSessionId ||
+              Date.parse((baselines.get(rows[0].id) ?? rows[0]).startedAt) !==
+                Date.parse(incoming[i].startedAt)))
+      )
+    if (ambiguous) {
+      throw new SessionReconciliationError(
+        `Session reconciliation needs review for ${sourceFile}. Saved history was retained; split/merge reconciliation is not yet supported.`
+      )
+    }
+
+    for (const [index, d] of incoming.entries()) {
+      const previous = matches[index][0]
+      const baseline = previous ? baselines.get(previous.id) : undefined
+      const storedUsage = previous
+        ? tx
+            .select()
+            .from(sessionModelUsage)
+            .where(eq(sessionModelUsage.sessionId, previous.id))
+            .all()
+        : []
+      const modelUsage = d.modelUsage ?? []
+      // A legacy transcript may only contain a surviving suffix. Do not replace
+      // its saved aggregates with a smaller, incomplete reconstruction.
+      if (
+        previous &&
+        !baseline &&
+        (previous.promptCount > d.promptCount ||
+          previous.inputTokens > d.inputTokens ||
+          previous.outputTokens > d.outputTokens ||
+          storedUsage.some((row) => {
+            const usage = modelUsage.find((u) => u.model === row.model)
+            return (
+              !usage ||
+              row.inputTokens > usage.inputTokens ||
+              row.outputTokens > usage.outputTokens ||
+              row.cacheCreationInputTokens > usage.cacheCreationInputTokens ||
+              row.cacheReadInputTokens > usage.cacheReadInputTokens
+            )
+          }))
+      ) {
+        throw new SessionReconciliationError(
+          `Legacy session reconciliation needs review for ${sourceFile}. Saved totals exceed retained activity; history was preserved.`
+        )
+      }
+      const measured = {
+        startedAt: d.startedAt,
+        endedAt: d.endedAt,
+        durationMinutes: d.durationMinutes
+      }
+      let id: number
+      if (previous) {
+        const savedOverrides = tx
+          .select()
+          .from(sessionTimeOverrides)
+          .where(eq(sessionTimeOverrides.sessionId, previous.id))
+          .get()
+        // Preserve inferred pre-migration edits too. Once inferred, intent must
+        // survive later equality with the moving detector baseline.
+        const reference = baseline ?? measured
+        const overrides = {
+          startedAt:
+            savedOverrides?.startedAt || Number(previous.startedAt !== reference.startedAt),
+          endedAt: savedOverrides?.endedAt || Number(previous.endedAt !== reference.endedAt),
+          durationMinutes:
+            savedOverrides?.durationMinutes ||
+            Number(previous.durationMinutes !== reference.durationMinutes)
+        }
+        tx.insert(sessionTimeOverrides)
+          .values({ sessionId: previous.id, ...overrides })
+          .onConflictDoUpdate({ target: sessionTimeOverrides.sessionId, set: overrides })
+          .run()
+        // Legacy rows have no trustworthy baseline: retain their saved times.
+        // Once mapped, only fields without explicit/inferred overrides advance.
+        const updates = {
+          startedAt: baseline && !overrides.startedAt ? d.startedAt : previous.startedAt,
+          endedAt: baseline && !overrides.endedAt ? d.endedAt : previous.endedAt,
+          durationMinutes:
+            baseline && !overrides.durationMinutes ? d.durationMinutes : previous.durationMinutes,
+          promptCount: d.promptCount,
+          inputTokens: d.inputTokens,
+          outputTokens: d.outputTokens
+        }
+        id = previous.id
+        if (
+          Object.entries(updates).some(
+            ([key, value]) => previous[key as keyof typeof updates] !== value
+          )
+        ) {
+          tx.update(sessions)
+            .set({ ...updates, updatedAt: new Date().toISOString() })
+            .where(eq(sessions.id, id))
+            .run()
+        }
+      } else {
+        id = tx
+          .insert(sessions)
+          .values({
+            ...measured,
+            projectPath: d.projectPath,
+            source: 'auto',
+            status: 'completed',
+            tool: d.tool,
+            claudeSessionId: d.claudeSessionId,
+            promptCount: d.promptCount,
+            inputTokens: d.inputTokens,
+            outputTokens: d.outputTokens,
+            sourceFile: d.sourceFile
+          })
+          .returning({ id: sessions.id })
+          .get().id
+      }
+      tx.insert(sessionDerivations)
+        .values({ sessionId: id, ...measured })
+        .onConflictDoUpdate({ target: sessionDerivations.sessionId, set: measured })
+        .run()
+      if (
+        storedUsage.length !== modelUsage.length ||
+        modelUsage.some(
+          (usage) =>
+            !storedUsage.some(
+              (row) =>
+                row.model === usage.model &&
+                row.inputTokens === usage.inputTokens &&
+                row.outputTokens === usage.outputTokens &&
+                row.cacheCreationInputTokens === usage.cacheCreationInputTokens &&
+                row.cacheReadInputTokens === usage.cacheReadInputTokens
+            )
+        )
+      ) {
+        tx.delete(sessionModelUsage).where(eq(sessionModelUsage.sessionId, id)).run()
+        insertModelUsage(tx, id, d)
+      }
+    }
+  }
+  return activeCount
+}
+
 /** Insert per-model usage rows for a freshly inserted session. */
 function insertModelUsage(
   tx: Pick<ReturnType<typeof getDb>, 'insert'>,
@@ -1440,7 +1712,16 @@ function insertModelUsage(
 ): void {
   if (!d.modelUsage || d.modelUsage.length === 0) return
   tx.insert(sessionModelUsage)
-    .values(d.modelUsage.map((u) => ({ sessionId, ...u })))
+    .values(
+      d.modelUsage.map((u) => ({
+        sessionId,
+        model: u.model,
+        inputTokens: u.inputTokens,
+        outputTokens: u.outputTokens,
+        cacheCreationInputTokens: u.cacheCreationInputTokens,
+        cacheReadInputTokens: u.cacheReadInputTokens
+      }))
+    )
     .run()
 }
 
@@ -1478,7 +1759,10 @@ function updateNullUuidRow(
 /**
  * Store raw messages and progress events in DB with dedup.
  */
-async function storeRawMessages(parsedSessions: ParsedSessionData[]): Promise<void> {
+async function storeRawMessages(
+  parsedSessions: ParsedSessionData[],
+  persistOffsets = true
+): Promise<void> {
   const db = getDb()
 
   const nullKey = (sf: string, ts: string, type: string, parentUuid: string | null): string =>
@@ -1614,6 +1898,9 @@ async function storeRawMessages(parsedSessions: ParsedSessionData[]): Promise<vo
         )
       }
     })
+
+    // Normal scans commit offsets with reconciliation; backfill persists here.
+    if (!persistOffsets) continue
 
     // Persist consumed byte offsets (main + subagent files) so the next scan
     // parses only appended data. Parsers without incremental support report no

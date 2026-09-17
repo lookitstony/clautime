@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { reportScanErrors } from '@/lib/scan-errors'
 import type {
   Session,
   SessionFilters,
@@ -67,7 +68,9 @@ export function useDeleteSession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
-    }
+      queryClient.invalidateQueries({ queryKey: ['live'] })
+    },
+    onError: (error) => toast.error(error.message)
   })
 }
 
@@ -81,6 +84,7 @@ export function useSplitSession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['live'] })
     }
   })
 }
@@ -145,6 +149,7 @@ export function useScanSessions() {
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['git'] })
       }, 3000)
+      if (reportScanErrors(result.errors)) return
       const parts: string[] = [`${result.newSessions} sessions found`]
       if (result.attributedCount > 0) {
         parts.push(`${result.attributedCount} attributed`)

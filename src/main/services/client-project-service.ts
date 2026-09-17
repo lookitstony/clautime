@@ -1,10 +1,12 @@
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
 import { mainProjectPath } from './worktree-paths'
+import { explicitAssignmentSessionIds } from './session-history'
 import { gitCommits } from '../db/schema/git-commits'
 import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { AppError } from '../../shared/types/ipc'
@@ -206,7 +208,7 @@ export const clientProjectService = {
       // Update sessions to reflect new client
       db.update(sessions)
         .set({ clientId: data.clientId, updatedAt: now })
-        .where(eq(sessions.projectId, existing.id))
+        .where(and(eq(sessions.projectId, existing.id), activeSessionCondition))
         .run()
 
       log.info(
@@ -272,7 +274,7 @@ export const clientProjectService = {
     if (data.clientId !== undefined && data.clientId !== existing.clientId) {
       db.update(sessions)
         .set({ clientId: data.clientId, updatedAt: now })
-        .where(eq(sessions.projectId, id))
+        .where(and(eq(sessions.projectId, id), activeSessionCondition))
         .run()
       log.info(
         `Moved project: ${result.name} (id=${id}) from client ${existing.clientId} to ${data.clientId}`
@@ -469,7 +471,13 @@ export const clientProjectService = {
    */
   attributeSessions(): number {
     const db = getDb()
-    const candidates = db.select().from(sessions).all()
+    const explicitAssignments = explicitAssignmentSessionIds(db)
+    const candidates = db
+      .select()
+      .from(sessions)
+      .where(activeSessionCondition)
+      .all()
+      .filter((session) => !explicitAssignments.has(session.id))
     const resolvedPaths = new Map<string, string>()
     const canonical = (path: string): string => {
       if (!resolvedPaths.has(path)) resolvedPaths.set(path, mainProjectPath(path))

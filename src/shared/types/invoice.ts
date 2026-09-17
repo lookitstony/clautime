@@ -35,6 +35,7 @@ export interface CreateInvoiceRequest {
     lineDate?: string
     durationMinutes?: number
     sessionIds?: number[]
+    billedRanges?: InvoiceBillingRange[]
   }>
 }
 
@@ -83,6 +84,15 @@ export interface GenerateLineItemsRequest {
   projectId?: number
 }
 
+/** Local billed-work snapshot; ranges survive edits to the invoice preview. */
+export interface InvoiceBillingRange {
+  sessionId: number
+  projectId: number | null
+  clientId: number | null
+  startedAt: string
+  endedAt: string
+}
+
 /** A generated line item (before sending to Stripe) */
 export interface GeneratedLineItem {
   /** The calendar date this covers (YYYY-MM-DD) */
@@ -95,6 +105,8 @@ export interface GeneratedLineItem {
   durationMinutes: number
   /** Session IDs that compose this line item */
   sessionIds: number[]
+  /** Frozen eligible intervals, preserved while the user edits the preview. */
+  billedRanges?: InvoiceBillingRange[]
   /** Project name(s) for display */
   projectNames: string[]
 }

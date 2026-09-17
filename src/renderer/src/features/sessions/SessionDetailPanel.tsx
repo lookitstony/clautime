@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { formatDuration, formatTimeRange, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { usePromptTimings, useUpdateSession, useDeleteSession } from './use-sessions'
+import { SplitSessionForm } from './SplitSessionForm'
 import { useGitCommitsForSession, useGitRemoteUrl } from '../git/use-git'
 import { providerInfo } from '../../../../shared/providers'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
@@ -123,8 +124,9 @@ export function SessionDetailPanel({
   const [isEditingDesc, setIsEditingDesc] = useState(false)
   const [editDesc, setEditDesc] = useState('')
 
-  // Delete confirmation state (manual sessions)
+  // Explicit history deletion confirmation
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+  const [isSplitting, setIsSplitting] = useState(false)
 
   const updateSession = useUpdateSession()
   const deleteSession = useDeleteSession()
@@ -137,6 +139,11 @@ export function SessionDetailPanel({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (isSplitting) {
+          setIsSplitting(false)
+          e.stopPropagation()
+          return
+        }
         if (isEditingTime) {
           setIsEditingTime(false)
           setEditError(null)
@@ -147,7 +154,7 @@ export function SessionDetailPanel({
         onClose()
       }
     },
-    [onClose, isEditingTime]
+    [onClose, isEditingTime, isSplitting]
   )
 
   // Edit time handlers
@@ -265,7 +272,7 @@ export function SessionDetailPanel({
   const handleDelete = useCallback(() => {
     deleteSession.mutate(session.id, {
       onSuccess: () => {
-        toast.success('Session deleted')
+        toast.success('Session deleted from history')
         onClose()
       }
     })
@@ -511,53 +518,86 @@ export function SessionDetailPanel({
       )}
 
       {/* Action buttons */}
-      <div className="flex items-center gap-2">
-        {isAuto ? null : (
-          <>
+      {isSplitting ? (
+        <SplitSessionForm
+          session={session}
+          onCancel={() => setIsSplitting(false)}
+          onComplete={onClose}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsSplitting(true)}
+            disabled={
+              isEditingTime ||
+              isEditingDesc ||
+              isConfirmingDelete ||
+              Date.parse(session.endedAt) <= Date.parse(session.startedAt)
+            }
+          >
+            Split session
+          </Button>
+          {!isAuto && (
             <Button variant="ghost" size="sm" onClick={startEditDesc} disabled={isEditingDesc}>
               <Pencil className="mr-1 h-3 w-3" />
               Edit Description
             </Button>
-            {isConfirmingDelete ? (
-              <div className="flex items-center gap-1">
-                <span className="text-[12px] text-[var(--text-muted)]">Delete this session?</span>
-                <Button variant="destructive" size="xs" onClick={handleDelete}>
-                  Confirm
-                </Button>
-                <Button variant="ghost" size="xs" onClick={() => setIsConfirmingDelete(false)}>
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setIsConfirmingDelete(true)}>
-                <Trash2 className="mr-1 h-3 w-3" />
-                Delete
-              </Button>
-            )}
-          </>
-        )}
-        <div className="flex-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            updateSession.mutate(
-              { id: session.id, data: { billable: !session.billable } },
-              {
-                onSuccess: () =>
-                  toast.success(session.billable ? 'Marked as non-billable' : 'Marked as billable')
-              }
-            )
-          }}
-          className={cn(
-            'text-[11px]',
-            session.billable ? 'text-[var(--text-muted)]' : 'text-amber-400'
           )}
-        >
-          <DollarSign className="mr-1 h-3 w-3" />
-          {session.billable ? 'Billable' : 'Non-billable'}
-        </Button>
-      </div>
+          {isConfirmingDelete ? (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[12px] text-[var(--text-muted)]">
+                Delete from history? Rescans will keep it deleted. Saved invoices are preserved.
+              </span>
+              {session.source === 'auto' && (
+                <span className="text-[12px] text-[var(--text-muted)]">
+                  Older activity may need review if its logs return.
+                </span>
+              )}
+              <Button
+                variant="destructive"
+                size="xs"
+                onClick={handleDelete}
+                disabled={deleteSession.isPending}
+              >
+                Confirm
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => setIsConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setIsConfirmingDelete(true)}>
+              <Trash2 className="mr-1 h-3 w-3" />
+              Delete from history
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              updateSession.mutate(
+                { id: session.id, data: { billable: !session.billable } },
+                {
+                  onSuccess: () =>
+                    toast.success(
+                      session.billable ? 'Marked as non-billable' : 'Marked as billable'
+                    )
+                }
+              )
+            }}
+            className={cn(
+              'text-[11px]',
+              session.billable ? 'text-[var(--text-muted)]' : 'text-amber-400'
+            )}
+          >
+            <DollarSign className="mr-1 h-3 w-3" />
+            {session.billable ? 'Billable' : 'Non-billable'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

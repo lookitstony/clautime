@@ -162,6 +162,76 @@
       "when": 1784574587122,
       "tag": "0022_sessions_tool_index",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1789516800000,
+      "tag": "0023_session_derivations",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789516800001,
+      "tag": "0024_session_time_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1789516800002,
+      "tag": "0025_session_deletions",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1789603200000,
+      "tag": "0026_session_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1789603200001,
+      "tag": "0027_session_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1789603200002,
+      "tag": "0028_session_reconciliation_resolutions",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1789603200003,
+      "tag": "0029_session_legacy_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1789603200004,
+      "tag": "0030_session_billing_ranges",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1789603200005,
+      "tag": "0031_session_legacy_splits",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1789603200006,
+      "tag": "0032_session_replacements",
+      "breakpoints": true
     }
   ]
 }

@@ -52,6 +52,61 @@ export interface ScanResult {
   totalFiles: number
   durationMs: number
   attributedCount: number
+  /** Files whose saved history needs reconciliation; other files were committed. */
+  errors?: SessionScanError[]
+}
+
+export interface SessionScanError {
+  sourceFile: string
+  message: string
+}
+
+/** A comparison snapshot, never a second set of active sessions. */
+export interface ReconciliationPreview {
+  id?: number
+  /** Saved source association; absent in older comparison snapshots. */
+  sourceFile?: string | null
+  disposition: 'active' | 'deleted' | 'split' | 'replaced' | 'detected'
+  projectPath: string
+  clientId: number | null
+  projectId: number | null
+  startedAt: string
+  endedAt: string
+  durationMinutes: number
+  promptCount: number
+  inputTokens: number
+  outputTokens: number
+  modelUsage: SessionModelUsage[]
+  /** Saved values and eligible predecessors are absent on older stored comparisons. */
+  description?: string | null
+  billable?: boolean
+  status?: string
+  replacementCandidates?: number[]
+  requiresReplacementChoice?: boolean
+}
+
+export interface SessionReconciliationCase {
+  /** Null for pre-resolution migrations; recheck before approving. */
+  fingerprint: string | null
+  sourceFile: string
+  message: string
+  saved: ReconciliationPreview[]
+  detected: ReconciliationPreview[]
+  idleTimeoutMinutes: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Explicit pairing within a fingerprinted, one-to-one source comparison. */
+export interface SessionActivityMapping {
+  sessionId: number
+  detectedIndex: number
+}
+
+/** Choose the saved values to carry into a detected replacement interval. */
+export interface SessionReplacementChoice {
+  detectedIndex: number
+  sessionId: number
 }
 
 /** A project discovered during folder scanning */

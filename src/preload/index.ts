@@ -20,6 +20,27 @@ const api = {
     getAll: (): Promise<IpcResult<Record<string, string>>> => ipcRenderer.invoke('settings:getAll')
   },
   sessions: {
+    replaceSavedHistory: (
+      sourceFile: string,
+      fingerprint: string,
+      choices?: import('../shared/types/session').SessionReplacementChoice[]
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('session:replaceSavedHistory', sourceFile, fingerprint, choices),
+    mapSavedHistory: (
+      sourceFile: string,
+      fingerprint: string,
+      mappings: import('../shared/types/session').SessionActivityMapping[]
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('session:mapSavedHistory', sourceFile, fingerprint, mappings),
+    keepSavedHistory: (sourceFile: string, fingerprint: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('session:keepSavedHistory', sourceFile, fingerprint),
+    getReconciliationCases: (): Promise<
+      IpcResult<import('../shared/types/session').SessionReconciliationCase[]>
+    > => ipcRenderer.invoke('session:getReconciliationCases'),
+    recheckReconciliation: (
+      sourceFile: string
+    ): Promise<IpcResult<import('../shared/types/session').ScanResult>> =>
+      ipcRenderer.invoke('session:recheckReconciliation', sourceFile),
     scan: (
       claudeDir?: string,
       projectFilter?: string[]
@@ -196,8 +217,10 @@ const api = {
     getAvailableSounds: () => ipcRenderer.invoke('live:getAvailableSounds'),
     playTestSound: () => ipcRenderer.invoke('live:playTestSound'),
     selectCustomSound: () => ipcRenderer.invoke('live:selectCustomSound'),
-    onSessionsUpdated: (callback: () => void) => {
-      ipcRenderer.on('watcher:sessionsUpdated', () => callback())
+    onSessionsUpdated: (
+      callback: (errors?: import('../shared/types/session').SessionScanError[]) => void
+    ) => {
+      ipcRenderer.on('watcher:sessionsUpdated', (_event, data) => callback(data?.errors))
     },
     onNewProject: (
       callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void

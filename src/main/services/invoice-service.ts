@@ -1,8 +1,12 @@
-import { eq, and, desc, ne, lte, gte } from 'drizzle-orm'
+import { eq, and, desc, ne, lte, gte, or, inArray } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { invoices, invoiceLineItems } from '../db/schema/invoices'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
+import { billingRange, unbilledSessions, retainInvoiceBillingRefs } from './session-billing'
+import { sessionService } from './session-service'
+import { descendantSessionIds } from './session-history'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { gitCommits } from '../db/schema/git-commits'
@@ -21,7 +25,8 @@ import {
   type InvoiceStatus,
   type LocalInvoice,
   type LocalInvoiceDetail,
-  type InvoiceOverlap
+  type InvoiceOverlap,
+  type InvoiceBillingRange
 } from '../../shared/types/invoice'
 
 /** Map a Stripe Invoice object to local saveInvoice format */
@@ -105,7 +110,46 @@ export const invoiceService = {
     const db = getDb()
 
     // Query sessions for this client — fetch all completed, then filter by local date
+    // Include audit rows and the last comparison: deletion or reassignment must
+    // not hide an unresolved source from billing checks. Scope conservatively to
+    // dates present in that source; unrelated clients/projects remain usable.
+    for (const review of sessionService.getReconciliationCases()) {
+      const reviewedIds = [
+        ...descendantSessionIds(
+          db,
+          review.saved.flatMap((row) => (row.id == null ? [] : [row.id]))
+        )
+      ]
+      const current = db
+        .select()
+        .from(sessions)
+        .where(
+          or(
+            eq(sessions.sourceFile, review.sourceFile),
+            reviewedIds.length ? inArray(sessions.id, reviewedIds) : undefined
+          )
+        )
+        .all()
+      const saved = [...current, ...review.saved]
+      if (
+        !saved.some(
+          (row) => row.clientId === clientId && (projectId == null || row.projectId === projectId)
+        )
+      )
+        continue
+      const touchesPeriod = [...saved, ...review.detected].some(
+        (row) => toDateKey(row.startedAt) <= endDate && toDateKey(row.endedAt) >= startDate
+      )
+      if (touchesPeriod) {
+        throw new AppError(
+          'SESSION_RECONCILIATION_REQUIRED',
+          'Review unresolved history in Sessions before generating invoice items for this period.'
+        )
+      }
+    }
+
     const conditions = [
+      activeSessionCondition,
       eq(sessions.clientId, clientId),
       eq(sessions.status, 'completed'),
       eq(sessions.billable, 1)
@@ -122,10 +166,11 @@ export const invoiceService = {
       .all()
 
     // Filter by local date to handle UTC→local timezone differences
-    const sessionRows = allRows.filter((s) => {
+    const eligibleRows = allRows.filter((s) => {
       const localDate = toDateKey(s.startedAt)
       return localDate >= startDate && localDate <= endDate
     })
+    const sessionRows = unbilledSessions(db, eligibleRows, credentialService.isStripeTestMode())
 
     log.info(
       `Invoice generateLineItems: ${allRows.length} total sessions for client, ${sessionRows.length} in ${startDate} to ${endDate}`
@@ -269,7 +314,7 @@ export const invoiceService = {
 
       const hours = group.totalMinutes / 60
       const amountCents = Math.round(hours * client.billableRate! * 100)
-      const sessionIds = group.sessions.map((s) => s.id)
+      const sessionIds = [...new Set(group.sessions.map((s) => s.id))]
       const dateFormatted = formatDateShort(group.dateKey)
 
       // Get the attributed commit messages for this day+project
@@ -346,7 +391,7 @@ export const invoiceService = {
 
       // Fallback if AI unavailable or over cap (deterministic, always fits)
       if (!description) {
-        const count = group.sessions.length
+        const count = sessionIds.length
         description = `${header} Development work (${count} session${count > 1 ? 's' : ''}, ${hours.toFixed(1)}h)`
       }
 
@@ -356,6 +401,7 @@ export const invoiceService = {
         amountCents,
         durationMinutes: group.totalMinutes,
         sessionIds,
+        billedRanges: group.sessions.map(billingRange),
         projectNames: [group.projectName]
       })
     }
@@ -532,6 +578,7 @@ export const invoiceService = {
       amountCents: number
       durationMinutes?: number | null
       sessionIds?: number[] | null
+      billedRanges?: InvoiceBillingRange[]
       sortOrder: number
     }>
   }): number {
@@ -579,6 +626,17 @@ export const invoiceService = {
           })
           .run()
       }
+      const ranges = new Map<number, InvoiceBillingRange[]>()
+      for (const item of data.lineItems) {
+        if (!item.billedRanges) continue
+        for (const id of item.sessionIds ?? []) {
+          ranges.set(id, [
+            ...(ranges.get(id) ?? []),
+            ...item.billedRanges.filter((range) => range.sessionId === id)
+          ])
+        }
+      }
+      retainInvoiceBillingRefs(tx, { stripeInvoiceId: data.stripeInvoiceId, ranges })
     })
 
     log.info(`Saved invoice locally: id=${invoiceId}, stripe=${data.stripeInvoiceId}`)
@@ -779,6 +837,7 @@ export const invoiceService = {
     if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
 
     db.transaction((tx) => {
+      retainInvoiceBillingRefs(tx)
       tx.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, localId)).run()
       tx.delete(invoices).where(eq(invoices.id, localId)).run()
     })

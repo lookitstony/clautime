@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import type { Session } from '../../../../shared/types/session'
+import { toast } from 'sonner'
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 // Mock browser APIs for Radix components
 vi.stubGlobal(
@@ -26,6 +29,8 @@ Object.defineProperty(HtmlSelectProto, 'value', {
 vi.stubGlobal('HTMLSelectElement', { prototype: HtmlSelectProto })
 
 // Mock window.api
+const mockDelete = vi.fn().mockResolvedValue({ success: true })
+const mockSplit = vi.fn().mockResolvedValue({ success: true, data: [] })
 const mockUpdate = vi.fn().mockResolvedValue({ success: true, data: {} })
 
 vi.stubGlobal('window', {
@@ -33,7 +38,9 @@ vi.stubGlobal('window', {
   api: {
     sessions: {
       getPromptTimings: vi.fn().mockResolvedValue({ success: true, data: [] }),
-      update: mockUpdate
+      update: mockUpdate,
+      delete: mockDelete,
+      split: mockSplit
     },
     git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) },
     ai: {
@@ -117,12 +124,12 @@ describe('SessionDetailPanel', () => {
     expect(screen.queryByText('No description')).not.toBeInTheDocument()
   })
 
-  it('does not show action buttons for auto sessions', () => {
+  it('offers history deletion for auto sessions', () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
 
-    // Auto sessions have no Edit Description or Delete buttons
+    // Description editing remains manual-only.
     expect(screen.queryByRole('button', { name: /edit description/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^delete$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^delete from history$/i })).toBeEnabled()
   })
 
   it('shows enabled Edit Description and Delete buttons for manual sessions', () => {
@@ -130,7 +137,7 @@ describe('SessionDetailPanel', () => {
     render(<SessionDetailPanel {...defaultProps} session={session} />, { wrapper: createWrapper() })
 
     const editDescBtn = screen.getByRole('button', { name: /edit description/i })
-    const deleteBtn = screen.getByRole('button', { name: /^delete$/i })
+    const deleteBtn = screen.getByRole('button', { name: /^delete from history$/i })
     expect(editDescBtn).toBeInTheDocument()
     expect(editDescBtn).not.toBeDisabled()
     expect(deleteBtn).toBeInTheDocument()
@@ -160,9 +167,13 @@ describe('SessionDetailPanel', () => {
         wrapper: createWrapper()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+      fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
 
-      expect(screen.getByText('Delete this session?')).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          'Delete from history? Rescans will keep it deleted. Saved invoices are preserved.'
+        )
+      ).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /confirm/i })).toBeInTheDocument()
     })
 
@@ -172,11 +183,94 @@ describe('SessionDetailPanel', () => {
         wrapper: createWrapper()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+      fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
 
-      expect(screen.queryByText('Delete this session?')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(
+          'Delete from history? Rescans will keep it deleted. Saved invoices are preserved.'
+        )
+      ).not.toBeInTheDocument()
     })
+  })
+
+  it('requires confirmation before deleting automatic history', async () => {
+    const { container } = render(<SessionDetailPanel {...defaultProps} />, {
+      wrapper: createWrapper()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+    expect(mockDelete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith(baseSession.id), { container })
+    await waitFor(() => expect(defaultProps.onClose).toHaveBeenCalledTimes(1), { container })
+  })
+
+  it('shows a rejected deletion and keeps the session open', async () => {
+    mockDelete.mockResolvedValueOnce({
+      success: false,
+      error: { message: 'Resolve activity mapping first' }
+    })
+    const { container } = render(<SessionDetailPanel {...defaultProps} />, {
+      wrapper: createWrapper()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(
+      () => expect(toast.error).toHaveBeenCalledWith('Resolve activity mapping first'),
+      { container }
+    )
+    expect(defaultProps.onClose).not.toHaveBeenCalled()
+  })
+
+  it('previews and confirms a split using elapsed time from the session start', async () => {
+    const { container } = render(<SessionDetailPanel {...defaultProps} />, {
+      wrapper: createWrapper()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    expect(mockSplit).not.toHaveBeenCalled()
+    expect(screen.getByText(/Prompts and tokens are divided proportionally/)).toBeInTheDocument()
+    expect(screen.getByText(/Older sessions use saved history/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /confirm split/i }))
+    await waitFor(
+      () => expect(mockSplit).toHaveBeenCalledWith(baseSession.id, '2026-03-05T10:22:30.000Z'),
+      { container }
+    )
+    await waitFor(() => expect(defaultProps.onClose).toHaveBeenCalledTimes(1), { container })
+  })
+
+  it('rejects a split outside the interval before IPC', () => {
+    render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    fireEvent.change(screen.getByLabelText('Split after (minutes)'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: /confirm split/i }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose a point inside the session.')
+    expect(mockSplit).not.toHaveBeenCalled()
+  })
+
+  it('cancels a split with Escape without closing the session', () => {
+    render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    fireEvent.keyDown(screen.getByRole('region'), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: /^split session$/i })).toBeInTheDocument()
+    expect(mockSplit).not.toHaveBeenCalled()
+    expect(defaultProps.onClose).not.toHaveBeenCalled()
+  })
+
+  it('keeps split mapping failures visible without closing the session', async () => {
+    mockSplit.mockResolvedValueOnce({
+      success: false,
+      error: { message: 'Resolve activity mapping first' }
+    })
+    const { container } = render(<SessionDetailPanel {...defaultProps} />, {
+      wrapper: createWrapper()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm split/i }))
+    await waitFor(
+      () => expect(screen.getByRole('alert')).toHaveTextContent('Resolve activity mapping first'),
+      { container }
+    )
+    expect(defaultProps.onClose).not.toHaveBeenCalled()
   })
 
   it('calls onClose when Escape is pressed', () => {

@@ -48,6 +48,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useRescanStore } from '@/stores/use-rescan-store'
 import { cn } from '@/lib/utils'
+import { reportScanErrors } from '@/lib/scan-errors'
 
 /** Exact phrase the user must type to trigger a factory reset. */
 const FACTORY_RESET_PHRASE = 'delete all my data'
@@ -108,16 +109,19 @@ export function SettingsPage(): React.JSX.Element {
     const token = beginRescan()
     setIsRescanning(true)
     try {
-      await window.api.sessions.scanAndRebuild()
+      const result = await window.api.sessions.scanAndRebuild()
+      if (!result.success) throw new Error(result.error.message)
       await window.api.git.scan().catch(() => undefined)
-      completeRescan(token)
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
       queryClient.invalidateQueries({ queryKey: ['live'] })
       queryClient.invalidateQueries({ queryKey: ['git'] })
+      if (reportScanErrors(result.data.errors)) return false
+      completeRescan(token)
+      toast.dismiss('session-reconciliation-errors')
       toast.success('Sessions rescanned to match your settings')
       return true
-    } catch {
-      toast.error('Rescan failed')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Rescan failed')
       return false
     } finally {
       setIsRescanning(false)
@@ -396,8 +400,7 @@ export function SettingsPage(): React.JSX.Element {
   }, [settings])
   const [newExcludedPath, setNewExcludedPath] = useState('')
 
-  // Persist immediately; purging already-tracked sessions under a newly
-  // excluded folder is deferred to the shared rescan (marked pending here).
+  // Persist collection exclusions immediately; a rescan picks up newly included folders.
   const saveExcludedPaths = useCallback(
     async (list: string[]) => {
       try {
@@ -769,7 +772,7 @@ export function SettingsPage(): React.JSX.Element {
   const isProviderOn = (settingKey: string): boolean => settings?.[settingKey] !== 'false'
   const enabledProviderCount = PROVIDERS.filter((p) => isProviderOn(p.settingKey)).length
   // Toggling a provider persists immediately and marks a rescan pending — the
-  // shared rescan is what actually adds/purges that provider's sessions.
+  // shared rescan collects newly enabled providers. Existing history is retained.
   const toggleProvider = useCallback(
     async (provider: ProviderInfo, checked: boolean) => {
       if (!checked && enabledProviderCount <= 1) {
@@ -1338,6 +1341,9 @@ export function SettingsPage(): React.JSX.Element {
                 />
               </div>
 
+              <p className="pt-2 text-[11px] text-[var(--text-muted)]">
+                Turning off tracking preserves previously imported history.
+              </p>
               {PROVIDERS.map((provider) => {
                 const enabled = isProviderOn(provider.settingKey)
                 const isLastOn = enabled && enabledProviderCount <= 1
@@ -1367,8 +1373,9 @@ export function SettingsPage(): React.JSX.Element {
             <SectionHeader title="Excluded Folders" />
             <SectionCard>
               <p className="mb-3 text-[11px] text-[var(--text-muted)]">
-                Sessions from these folders (and everything under them) are never tracked. Transient
-                agent workspaces (<span className="font-mono">pipes</span>,{' '}
+                New activity from these folders (and everything under them) is not collected.
+                Previously imported history is retained. Transient agent workspaces (
+                <span className="font-mono">pipes</span>,{' '}
                 <span className="font-mono">piped\scratch</span>, Claude worktrees) are always
                 excluded automatically.
               </p>

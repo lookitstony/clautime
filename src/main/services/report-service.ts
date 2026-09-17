@@ -2,6 +2,7 @@ import { eq, and, gte, lte, or, isNull, notInArray, type SQL } from 'drizzle-orm
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { getProjectName } from '../../shared/paths'
@@ -45,6 +46,7 @@ export const reportService = {
     // Include any session that overlaps the date range
     // (started before range end AND ended after range start)
     const conditions: SQL[] = [
+      activeSessionCondition,
       lte(sessions.startedAt, filters.endDate),
       gte(sessions.endedAt, filters.startDate)
     ]
@@ -133,9 +135,7 @@ export const reportService = {
       if (row.projectId != null) {
         const proj = projectMap.get(row.projectId)
         const rawName = proj?.name ?? getProjectName(row.projectPath)
-        const projName = presentationMode
-          ? proj?.stageName || projectAlias(row.projectId)
-          : rawName
+        const projName = presentationMode ? proj?.stageName || projectAlias(row.projectId) : rawName
         const clientName = row.clientId != null ? (clientMap.get(row.clientId) ?? null) : null
         return { projectName: projName, clientName }
       }

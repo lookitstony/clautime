@@ -10,6 +10,10 @@ import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
+import { sessionDeletions } from '../db/schema/session-deletions'
+import { sessionRevisions, sessionBillingRefs } from '../db/schema/session-history'
+import { sessionReconciliationCases } from '../db/schema/session-reconciliation'
+import { sessionLegacyRecords } from '../db/schema/session-legacy'
 import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type {
   Session,
@@ -29,6 +33,63 @@ function mapSession(row: Record<string, unknown>): Session {
 }
 
 export function registerSessionHandlers(): void {
+  ipcMain.handle(
+    'session:replaceSavedHistory',
+    async (
+      _event,
+      sourceFile: string,
+      fingerprint: string,
+      choices?: import('../../shared/types/session').SessionReplacementChoice[]
+    ) => {
+      try {
+        sessionService.replaceSavedHistory(sourceFile, fingerprint, choices)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        return ipcError('SESSION_REPLACEMENT_ERROR', String(error))
+      }
+    }
+  )
+  ipcMain.handle(
+    'session:mapSavedHistory',
+    async (
+      _event,
+      sourceFile: string,
+      fingerprint: string,
+      mappings: import('../../shared/types/session').SessionActivityMapping[]
+    ) => {
+      try {
+        sessionService.mapSavedHistory(sourceFile, fingerprint, mappings)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        return ipcError('SESSION_MAPPING_ERROR', String(error))
+      }
+    }
+  )
+  ipcMain.handle(
+    'session:keepSavedHistory',
+    async (_event, sourceFile: string, fingerprint: string) => {
+      try {
+        sessionService.keepSavedHistory(sourceFile, fingerprint)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        return ipcError('SESSION_RESOLUTION_ERROR', String(error))
+      }
+    }
+  )
+  ipcMain.handle('session:getReconciliationCases', async () => {
+    try {
+      return ipcSuccess(sessionService.getReconciliationCases())
+    } catch (error) {
+      return ipcError('SESSION_REVIEW_ERROR', String(error))
+    }
+  })
+  ipcMain.handle('session:recheckReconciliation', async (_event, sourceFile: string) => {
+    try {
+      return ipcSuccess(await sessionService.recheckReconciliation(sourceFile))
+    } catch (error) {
+      return ipcError('SESSION_RECHECK_ERROR', String(error))
+    }
+  })
   ipcMain.handle(
     'session:scan',
     async (
@@ -75,6 +136,29 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('session:reset', async (): Promise<IpcResult<void>> => {
     try {
       const db = getDb()
+      if (db.select().from(sessionLegacyRecords).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while legacy history is retained. Use Rescan to refresh activity.'
+        )
+      }
+      if (db.select().from(sessionReconciliationCases).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while reconciliation history is retained. Use Rescan to refresh activity.'
+        )
+      }
+      if (db.select().from(sessionDeletions).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while history deletions are retained. Use Rescan to refresh activity without restoring deleted history.'
+        )
+      }
+      if (
+        db.select().from(sessionRevisions).limit(1).get() ||
+        db.select().from(sessionBillingRefs).limit(1).get()
+      ) {
+        throw new Error(
+          'Reset is unavailable while session revisions or billed-work audit records are retained. Use Rescan to refresh activity.'
+        )
+      }
       db.delete(aiSummaries).run()
       db.delete(sessionModelUsage).run()
       db.update(gitCommits).set({ sessionId: null }).run()

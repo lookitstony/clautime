@@ -2,17 +2,22 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access, constants } from 'node:fs/promises'
 import { join } from 'node:path'
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, or, sql } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { gitCommits } from '../db/schema/git-commits'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
+import { sessionDerivations } from '../db/schema/session-derivations'
+import { sessionReplacements, sessionSplits } from '../db/schema/session-history'
 import { settingsService } from './settings-service'
 import type { UnconfiguredAuthor } from '../../shared/types/git'
 
 const execFileAsync = promisify(execFile)
 const BATCH_SIZE = 100
+// Commits often happen shortly after a session ends.
+const COMMIT_BUFFER_MS = 5 * 60 * 1000
 
 interface ParsedCommit {
   hash: string
@@ -370,6 +375,7 @@ export const gitService = {
 
     // Build a set of valid session IDs for stale detection
     const validSessionIds = new Set(allSessions.map((s) => s.id))
+    const activeSessions = db.select().from(sessions).where(activeSessionCondition).all()
 
     // Reset stale correlations (sessionId points to a deleted/recreated session)
     const allCommits = db.select().from(gitCommits).all()
@@ -387,16 +393,13 @@ export const gitService = {
       .filter((c) => c.sessionId == null)
     let correlated = 0
 
-    // 5-minute buffer: commits often happen shortly after a session ends
-    const BUFFER_MS = 5 * 60 * 1000
-
     for (const commit of uncorrelated) {
       const commitTime = new Date(commit.committedAt).getTime()
 
-      const matchingSession = allSessions.find((s) => {
+      const matchingSession = activeSessions.find((s) => {
         if (s.projectId !== commit.projectId) return false
         const startMs = new Date(s.startedAt).getTime()
-        const endMs = new Date(s.endedAt).getTime() + BUFFER_MS
+        const endMs = new Date(s.endedAt).getTime() + COMMIT_BUFFER_MS
         return commitTime >= startMs && commitTime <= endMs
       })
 
@@ -413,16 +416,49 @@ export const gitService = {
   },
 
   /**
-   * Get commits correlated with a specific session.
+   * Read direct and applicable predecessor commits without moving their audit links.
    */
   getCommitsForSession(sessionId: number) {
     const db = getDb()
+    const session = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()
+    const relatedIds = new Set([sessionId])
+    if (session) {
+      // Set iteration visits newly discovered ancestors once, including merge diamonds.
+      for (const id of relatedIds) {
+        for (const edge of db
+          .select()
+          .from(sessionReplacements)
+          .where(eq(sessionReplacements.successorSessionId, id))
+          .all()) {
+          relatedIds.add(edge.predecessorSessionId)
+        }
+        const split = db
+          .select()
+          .from(sessionSplits)
+          .where(or(eq(sessionSplits.firstSessionId, id), eq(sessionSplits.secondSessionId, id)))
+          .get()
+        if (split) relatedIds.add(split.parentSessionId)
+      }
+    }
+    const range =
+      db
+        .select()
+        .from(sessionDerivations)
+        .where(eq(sessionDerivations.sessionId, sessionId))
+        .get() ?? session
+    const startMs = Date.parse(range?.startedAt ?? '')
+    const endMs = Date.parse(range?.endedAt ?? '') + COMMIT_BUFFER_MS
     return db
       .select()
       .from(gitCommits)
-      .where(eq(gitCommits.sessionId, sessionId))
+      .where(inArray(gitCommits.sessionId, [...relatedIds]))
       .orderBy(gitCommits.committedAt)
       .all()
+      .filter((commit) => {
+        if (commit.sessionId === sessionId) return true
+        const timestamp = Date.parse(commit.committedAt)
+        return commit.projectId === session?.projectId && timestamp >= startMs && timestamp <= endMs
+      })
   },
 
   /**

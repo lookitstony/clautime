@@ -4,6 +4,7 @@ import { join, basename, dirname } from 'node:path'
 import log from 'electron-log/main.js'
 import { isExcludedProjectDir } from '../../shared/paths'
 import { mainProjectEncoded } from '../services/worktree-paths'
+import { claudeActivityIdentity } from './claude-activity-identity'
 import type {
   ParsedSessionData,
   ParsedMessage,
@@ -35,7 +36,7 @@ function parseJsonlLine(line: string): Record<string, unknown> | null {
   }
 }
 
-function extractMessage(raw: Record<string, unknown>): ParsedMessage {
+function extractMessage(raw: Record<string, unknown>, isSubagent = false): ParsedMessage {
   const message = raw.message as Record<string, unknown> | undefined
   const usage = message?.usage as Record<string, number> | undefined
 
@@ -64,7 +65,8 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
     parentUuid: (raw.parentUuid as string) || null,
     isToolResult: !!raw.toolUseResult,
     hasToolUse,
-    toolNames
+    toolNames,
+    activityIdentity: claudeActivityIdentity(raw, isSubagent)
   }
 }
 
@@ -317,7 +319,7 @@ async function collectSubagentData(
 
         if (!RELEVANT_TYPES.has(type)) continue
 
-        const msg = extractMessage(raw)
+        const msg = extractMessage(raw, true)
         // Tag with the subagent's own source file for dedup
         ;(msg as ParsedMessage & { sourceFile?: string }).sourceFile = subagentFilePath
         messages.push(msg)

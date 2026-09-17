@@ -25,6 +25,7 @@ interface EditableLineItem {
   amount: string
   durationMinutes: number
   sessionIds: number[]
+  billedRanges?: GeneratedLineItem['billedRanges']
 }
 
 let nextId = 1
@@ -124,7 +125,8 @@ export function InvoiceCreateFlow({
       hours: (item.durationMinutes / 60).toFixed(2),
       amount: (item.amountCents / 100).toFixed(2),
       durationMinutes: item.durationMinutes,
-      sessionIds: item.sessionIds
+      sessionIds: item.sessionIds,
+      billedRanges: item.billedRanges
     }))
     setLineItems(items)
     if (generatedMemo) setMemo(generatedMemo)
@@ -235,7 +237,8 @@ export function InvoiceCreateFlow({
       const lineMeta = lineItems.map((item) => ({
         lineDate: item.lineDate || undefined,
         durationMinutes: item.durationMinutes || undefined,
-        sessionIds: item.sessionIds.length > 0 ? item.sessionIds : undefined
+        sessionIds: item.sessionIds.length > 0 ? item.sessionIds : undefined,
+        billedRanges: item.billedRanges
       }))
 
       const draftResult = await window.api.invoice.createDraftInvoice({

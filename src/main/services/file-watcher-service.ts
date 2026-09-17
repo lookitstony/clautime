@@ -109,7 +109,7 @@ export const fileWatcherService = {
   async _runStartupScan(): Promise<void> {
     try {
       log.info('File watcher: running startup scan to catch missed changes')
-      await sessionService.scanSessions()
+      const result = await sessionService.scanSessions()
 
       // Auto-create projects for all unregistered directories
       let autoCreated = 0
@@ -132,7 +132,7 @@ export const fileWatcherService = {
         .catch((err) => {
           log.warn('Startup git scan failed (non-critical):', err)
         })
-      this._notifyRenderer()
+      this._notifyRenderer(result.errors)
       log.info('File watcher: startup scan complete')
     } catch (err) {
       log.warn('File watcher: startup scan failed:', err)
@@ -220,7 +220,7 @@ export const fileWatcherService = {
       log.info(`File watcher: incremental scan for project ${decodedPath}`)
 
       // Run incremental scan filtered to just this project's files
-      await sessionService.scanSessions(undefined, [projectDirName])
+      const result = await sessionService.scanSessions(undefined, [projectDirName])
       clientProjectService.attributeSessions()
 
       // Pick up any new git commits for THIS project only, then correlate.
@@ -240,7 +240,7 @@ export const fileWatcherService = {
       }
 
       // Notify renderer to refresh data
-      this._notifyRenderer()
+      this._notifyRenderer(result.errors)
     } catch (err) {
       log.warn('File watcher: incremental scan failed:', err)
     }
@@ -260,8 +260,8 @@ export const fileWatcherService = {
     }
   },
 
-  _notifyRenderer(): void {
-    this._sendToRenderer('watcher:sessionsUpdated', {})
+  _notifyRenderer(errors?: import('../../shared/types/session').SessionScanError[]): void {
+    this._sendToRenderer('watcher:sessionsUpdated', { errors })
   },
 
   _sendToRenderer(channel: string, data: unknown): void {

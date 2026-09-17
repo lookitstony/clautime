@@ -21,6 +21,7 @@ import { SessionRow } from './SessionRow'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import { SessionFilterBar } from './SessionFilterBar'
 import { ManualBlockForm } from './ManualBlockForm'
+import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { useSessions, useSessionStats, useGroupedSessions, type GroupSort } from './use-sessions'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
@@ -29,7 +30,13 @@ import { useUIStore } from '@/stores/use-ui-store'
 import { useFilterStore } from '@/stores/use-filter-store'
 import { cn } from '@/lib/utils'
 import { computeBucketedHumanMinutes } from '../../../../shared/earnings'
-import { getProjectColor, getDateKey, formatDateLabel, formatDuration, formatUsd } from '@/lib/format'
+import {
+  getProjectColor,
+  getDateKey,
+  formatDateLabel,
+  formatDuration,
+  formatUsd
+} from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
 import type { Session } from '../../../../shared/types/session'
 import { estimateCostUsd } from '../../../../shared/pricing'
@@ -46,17 +53,28 @@ function SessionListSkeleton(): React.JSX.Element {
 }
 
 export function SessionsPage(): React.JSX.Element {
-  const datePreset = useFilterStore((s) => s.datePreset)
-  const startDate = useFilterStore((s) => s.startDate)
-  const endDate = useFilterStore((s) => s.endDate)
-  const filterClientId = useFilterStore((s) => s.clientId)
-  const filterProjectId = useFilterStore((s) => s.projectId)
-  const filterTool = useFilterStore((s) => s.tool)
-  const storeWeekStartDay = useFilterStore((s) => s.weekStartDay)
-  const filters = useMemo(
-    () => useFilterStore.getState().toSessionFilters(),
-    [datePreset, startDate, endDate, filterClientId, filterProjectId, filterTool, storeWeekStartDay]
-  )
+  const { toSessionFilters } = useFilterStore()
+  const [, setCurrentDate] = useState(() => getDateKey(new Date().toISOString()))
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const refreshDate = (): void => {
+      const now = new Date()
+      setCurrentDate(getDateKey(now.toISOString()))
+      clearTimeout(timer)
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+      timer = setTimeout(refreshDate, midnight.getTime() - now.getTime())
+    }
+    refreshDate()
+    // Focus/visibility also catch a suspended window waking on a later day.
+    window.addEventListener('focus', refreshDate)
+    document.addEventListener('visibilitychange', refreshDate)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('focus', refreshDate)
+      document.removeEventListener('visibilitychange', refreshDate)
+    }
+  }, [])
+  const filters = toSessionFilters()
   const { data: rawSessions, isLoading, error } = useSessions(filters)
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
@@ -238,6 +256,7 @@ export function SessionsPage(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
+      <HistoryReviewPanel />
       <StatsBar
         humanHours={stats.humanHours}
         totalHours={stats.totalHours}

@@ -4,6 +4,10 @@ import type {
   Session,
   SessionFilters,
   ScanResult,
+  SessionScanError,
+  SessionReconciliationCase,
+  SessionActivityMapping,
+  SessionReplacementChoice,
   DiscoveredProject,
   PromptTiming,
   UpdateSession,
@@ -12,12 +16,7 @@ import type {
   ModelUsageAggregate,
   ModelUsageFilters
 } from '../shared/types/session'
-import type {
-  GitCommit,
-  GitScanResult,
-  GitIdentity,
-  UnconfiguredAuthor
-} from '../shared/types/git'
+import type { GitCommit, GitScanResult, GitIdentity, UnconfiguredAuthor } from '../shared/types/git'
 import type {
   Client,
   NewClient,
@@ -58,6 +57,19 @@ interface SettingsApi {
 }
 
 interface SessionsApi {
+  replaceSavedHistory(
+    sourceFile: string,
+    fingerprint: string,
+    choices?: SessionReplacementChoice[]
+  ): Promise<IpcResult<void>>
+  mapSavedHistory(
+    sourceFile: string,
+    fingerprint: string,
+    mappings: SessionActivityMapping[]
+  ): Promise<IpcResult<void>>
+  keepSavedHistory(sourceFile: string, fingerprint: string): Promise<IpcResult<void>>
+  getReconciliationCases(): Promise<IpcResult<SessionReconciliationCase[]>>
+  recheckReconciliation(sourceFile: string): Promise<IpcResult<ScanResult>>
   scan(claudeDir?: string, projectFilter?: string[]): Promise<IpcResult<ScanResult>>
   reset(): Promise<IpcResult<void>>
   rebuild(): Promise<IpcResult<ScanResult>>
@@ -160,7 +172,7 @@ interface LiveApi {
   getAvailableSounds(): Promise<IpcResult<{ name: string; filename: string }[]>>
   playTestSound(): Promise<IpcResult<void>>
   selectCustomSound(): Promise<IpcResult<string | null>>
-  onSessionsUpdated(callback: () => void): void
+  onSessionsUpdated(callback: (errors?: SessionScanError[]) => void): void
   onNewProject(
     callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void
   ): void

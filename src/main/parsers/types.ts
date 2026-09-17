@@ -3,6 +3,10 @@
  * Abstracts the .claude JSONL format behind clean interfaces (NFR11).
  */
 
+import type { ClaudeActivityIdentity } from './claude-activity-identity'
+import type { CodexActivityIdentity, CodexActivityEvidence } from './codex-activity-identity'
+import type { GeminiActivityIdentity, GeminiActivityEvidence } from './gemini-activity-identity'
+
 export interface TokenUsage {
   inputTokens: number
   outputTokens: number
@@ -24,6 +28,8 @@ export interface ParsedMessage {
   isToolResult: boolean
   hasToolUse: boolean
   toolNames: string[]
+  /** Captured before payloads are discarded; absent on legacy/unsupported parsers. */
+  activityIdentity?: ClaudeActivityIdentity | CodexActivityIdentity | GeminiActivityIdentity | null
 }
 
 /** Aggregated data from one session JSONL file. */
@@ -57,6 +63,10 @@ export interface ParsedSessionData {
    * for parsers that don't support incremental reads yet.
    */
   fileOffsets?: Record<string, number>
+  /** Identity/checkpoint evidence awaiting the shared ledger; not used for local totals. */
+  codexActivityEvidence?: CodexActivityEvidence
+  /** Ordered Gemini snapshot identities, including non-message progress records. */
+  geminiActivityEvidence?: GeminiActivityEvidence
 }
 
 export interface SessionParserOptions {

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { SessionsPage } from './SessionsPage'
@@ -133,6 +133,7 @@ function stubApi(
 ) {
   vi.stubGlobal('api', {
     sessions: {
+      getReconciliationCases: vi.fn().mockResolvedValue({ success: true, data: [] }),
       getAll: vi.fn().mockResolvedValue({ success: true, data: sessionsData }),
       scan: vi.fn().mockResolvedValue({
         success: true,
@@ -178,6 +179,83 @@ beforeEach(() => {
 })
 
 describe('SessionsPage', () => {
+  describe('date rollover', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+      vi.setSystemTime(new Date(2026, 8, 13, 23, 59, 59))
+      useFilterStore.getState().setWeekStartDay(1)
+    })
+
+    afterEach(() => {
+      cleanup()
+      vi.useRealTimers()
+    })
+
+    it('refreshes This Week at local midnight without changing the selected filters', async () => {
+      useFilterStore.getState().setDatePreset('this-week')
+      useFilterStore.getState().setClientId(7)
+      useFilterStore.getState().setProjectId(9)
+      useFilterStore.getState().setTool('codex')
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: new Date(2026, 8, 7).toISOString(),
+        endDate: new Date(2026, 8, 13, 23, 59, 59, 999).toISOString(),
+        clientId: 7,
+        projectId: 9,
+        tool: 'codex'
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: new Date(2026, 8, 14).toISOString(),
+        endDate: new Date(2026, 8, 14, 23, 59, 59, 999).toISOString(),
+        clientId: 7,
+        projectId: 9,
+        tool: 'codex'
+      })
+    })
+
+    it('refreshes Today on focus after sleeping past midnight', async () => {
+      useFilterStore.getState().setDatePreset('today')
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      vi.setSystemTime(new Date(2026, 8, 15, 9))
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: new Date(2026, 8, 15).toISOString(),
+        endDate: new Date(2026, 8, 15, 23, 59, 59, 999).toISOString()
+      })
+    })
+
+    it('keeps custom dates unchanged across midnight', async () => {
+      const start = new Date(2026, 8, 1).toISOString()
+      const end = new Date(2026, 8, 2, 23, 59, 59, 999).toISOString()
+      useFilterStore.getState().setCustomRange(start, end)
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: start,
+        endDate: end
+      })
+    })
+  })
+
   it('shows empty state when no sessions', async () => {
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {

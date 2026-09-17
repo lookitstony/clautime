@@ -5,9 +5,15 @@ vi.mock('electron-log/main.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() }
 }))
 vi.mock('./settings-service', () => ({ settingsService: {} }))
-vi.mock('./session-service', () => ({ sessionService: { _scanInProgress: false } }))
+vi.mock('./session-service', () => ({
+  sessionService: { _scanInProgress: false, scanSessions: vi.fn() }
+}))
 vi.mock('./client-project-service', () => ({
-  clientProjectService: { autoCreateProject: vi.fn() }
+  clientProjectService: {
+    autoCreateProject: vi.fn(),
+    attributeSessions: vi.fn(),
+    findProjectByDirectory: vi.fn()
+  }
 }))
 vi.mock('./git-service', () => ({ gitService: {} }))
 vi.mock('./discovery-service', () => ({ getClaudeConfigDirs: vi.fn() }))
@@ -50,4 +56,20 @@ it('retries Codex updates when another scan is running', async () => {
   sessionService._scanInProgress = false
   await vi.advanceTimersByTimeAsync(20_000)
   expect(fileWatcherService._runIncrementalScan).toHaveBeenCalledOnce()
+})
+
+it('notifies the renderer of committed work and unresolved files after a partial background scan', async () => {
+  vi.mocked(fileWatcherService._runIncrementalScan).mockRestore()
+  const errors = [{ sourceFile: 'legacy.jsonl', message: 'Legacy history needs review' }]
+  vi.mocked(sessionService.scanSessions).mockResolvedValue({
+    newSessions: 1,
+    updatedFiles: 1,
+    totalFiles: 2,
+    durationMs: 1,
+    attributedCount: 0,
+    errors
+  })
+  const send = vi.spyOn(fileWatcherService, '_sendToRenderer').mockImplementation(() => {})
+  await fileWatcherService._runIncrementalScan('C--repo', 'C:\\repo')
+  expect(send).toHaveBeenCalledWith('watcher:sessionsUpdated', { errors })
 })

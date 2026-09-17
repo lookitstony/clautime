@@ -18,6 +18,11 @@ import * as rawMessagesSchema from './schema/raw-messages'
 import * as secretFindingsSchema from './schema/secret-findings'
 import * as invoicesSchema from './schema/invoices'
 import * as sessionModelUsageSchema from './schema/session-model-usage'
+import * as sessionDerivationsSchema from './schema/session-derivations'
+import * as sessionDeletionsSchema from './schema/session-deletions'
+import * as sessionHistorySchema from './schema/session-history'
+import * as sessionReconciliationSchema from './schema/session-reconciliation'
+import * as sessionLegacySchema from './schema/session-legacy'
 
 const schema = {
   ...sessionsSchema,
@@ -31,7 +36,12 @@ const schema = {
   ...rawMessagesSchema,
   ...secretFindingsSchema,
   ...invoicesSchema,
-  ...sessionModelUsageSchema
+  ...sessionModelUsageSchema,
+  ...sessionDerivationsSchema,
+  ...sessionDeletionsSchema,
+  ...sessionHistorySchema,
+  ...sessionReconciliationSchema,
+  ...sessionLegacySchema
 }
 
 let db: BetterSQLite3Database<typeof schema>

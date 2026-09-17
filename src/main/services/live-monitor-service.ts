@@ -6,6 +6,7 @@ import { eq, gte, and, count, or, isNull, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { projectAlertConfig } from '../db/schema/project-alert-config'
@@ -134,7 +135,7 @@ export const liveMonitorService = {
     let todaySessions = db
       .select()
       .from(sessions)
-      .where(excludeCondition ? and(todayFilter, excludeCondition) : todayFilter)
+      .where(and(activeSessionCondition, todayFilter, excludeCondition))
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
@@ -236,7 +237,12 @@ export const liveMonitorService = {
     let todaySessions = db
       .select()
       .from(sessions)
-      .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
+      .where(
+        and(
+          activeSessionCondition,
+          or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight))
+        )
+      )
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
@@ -686,7 +692,12 @@ export const liveMonitorService = {
         const todaySessionRows = syncDb
           .select({ projectId: sessions.projectId })
           .from(sessions)
-          .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
+          .where(
+            and(
+              activeSessionCondition,
+              or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight))
+            )
+          )
           .all()
         const activeProjectIds = new Set(
           todaySessionRows.map((s) => s.projectId).filter((id): id is number => id != null)
