@@ -30,16 +30,28 @@ function getDateKey(isoString: string): string {
   return currentReportingDateKey(isoString)
 }
 
+// One formatter per time zone: toLocaleDateString with options builds a new one per call.
+const dateLabelFormats = new Map<string, Intl.DateTimeFormat>()
+
 function formatDateLabel(isoString: string): string {
   const calendarKey = /^\d{4}-\d{2}-\d{2}$/.test(isoString)
-  const d = calendarKey ? new Date(isoString + 'T12:00:00Z') : currentReportingDate(isoString)
-  return d.toLocaleDateString([], {
-    ...(calendarKey ? { timeZone: 'UTC' } : {}),
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+  // Same as formatting currentReportingDate(), which applies the reporting zone.
+  const timeZone = calendarKey ? 'UTC' : currentReportingTimeZone()
+  const d = new Date(calendarKey ? isoString + 'T12:00:00Z' : isoString)
+  // A host zone change through TZ must not reuse a formatter bound to the previous zone.
+  const key = `${timeZone ?? ''}|${process.env.TZ ?? ''}`
+  let format = dateLabelFormats.get(key)
+  if (!format) {
+    format = new Intl.DateTimeFormat([], {
+      ...(timeZone ? { timeZone } : {}),
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+    dateLabelFormats.set(key, format)
+  }
+  return format.format(d)
 }
 
 export const reportService = {

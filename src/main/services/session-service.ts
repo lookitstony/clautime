@@ -1377,33 +1377,41 @@ export const sessionService = {
       { workMinutes: number; idleMinutes: number; totalMinutes: number }
     >()
 
+    // Built once and reused for every session: rebuilding the query per row dominated the cost.
+    const messagesIn = (withFile: boolean) =>
+      db
+        .select({ timestamp: rawMessages.timestamp })
+        .from(rawMessages)
+        .where(
+          and(
+            gte(rawMessages.timestamp, sql.placeholder('start')),
+            lte(rawMessages.timestamp, sql.placeholder('end')),
+            ...(withFile ? [eq(rawMessages.sourceFile, sql.placeholder('file'))] : [])
+          )
+        )
+        .orderBy(rawMessages.timestamp)
+        .prepare()
+    const fileMessages = messagesIn(true)
+    const windowMessages = messagesIn(false)
+
     for (const session of sessionRows) {
       const date = localDateKey(session.startedAt)
 
       // Get messages for this session's time window and source file
-      const conditions: SQL[] = [
-        gte(rawMessages.timestamp, session.startedAt),
-        lte(rawMessages.timestamp, session.endedAt)
-      ]
-      if (session.sourceFile) {
-        conditions.push(eq(rawMessages.sourceFile, session.sourceFile))
-      }
-
-      const msgs = db
-        .select({ timestamp: rawMessages.timestamp })
-        .from(rawMessages)
-        .where(and(...conditions))
-        .orderBy(rawMessages.timestamp)
-        .all()
+      const window = { start: session.startedAt, end: session.endedAt }
+      const msgs = session.sourceFile
+        ? fileMessages.all({ ...window, file: session.sourceFile })
+        : windowMessages.all(window)
 
       let workMin = 0
       let idleMin = 0
 
       if (msgs.length >= 2) {
+        let previous = Date.parse(msgs[0].timestamp)
         for (let i = 1; i < msgs.length; i++) {
-          const gap =
-            (new Date(msgs[i].timestamp).getTime() - new Date(msgs[i - 1].timestamp).getTime()) /
-            60_000
+          const current = Date.parse(msgs[i].timestamp)
+          const gap = (current - previous) / 60_000
+          previous = current
           if (gap > 0 && gap <= idleTimeout) {
             if (gap < WORK_THRESHOLD) {
               workMin += gap
