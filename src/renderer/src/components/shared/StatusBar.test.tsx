@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StatusBar } from './StatusBar'
 
@@ -52,6 +52,14 @@ describe('StatusBar', () => {
   it('has status role for accessibility', () => {
     render(<StatusBar />, { wrapper: createWrapper() })
     expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('loads every session only while all-time totals are shown', async () => {
+    render(<StatusBar />, { wrapper: createWrapper() })
+    await screen.findByText(/5 sessions/)
+    expect(window.api.sessions.getAll).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('status'))
+    await waitFor(() => expect(window.api.sessions.getAll).toHaveBeenCalledTimes(1))
   })
 
   it('toggles between today and all-time when clicked', async () => {

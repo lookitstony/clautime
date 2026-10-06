@@ -12,12 +12,14 @@ function formatTokens(n: number): string {
 }
 
 export function StatusBar(): React.JSX.Element {
+  const [showAllTime, setShowAllTime] = useState(false)
   const { data: todayStats } = useTodayStats()
-  const { data: allSessions } = useSessions()
+  // Every session (with provenance) is a heavy main-process read repeated after each scan;
+  // fetch it only while the all-time totals are shown.
+  const { data: allSessions } = useSessions(undefined, { enabled: showAllTime })
   const { data: clients } = useClients()
   const { data: sessionIdsWithCommits } = useSessionIdsWithCommits()
   const allStats = useSessionStats(allSessions, clients, sessionIdsWithCommits)
-  const [showAllTime, setShowAllTime] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {

@@ -38,10 +38,11 @@ export function usePromptTimings(sessionId: number | null) {
   })
 }
 
-export function useSessions(filters?: SessionFilters) {
+export function useSessions(filters?: SessionFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['sessions', 'list', filters],
-    queryFn: () => fetchSessions(filters)
+    queryFn: () => fetchSessions(filters),
+    enabled: options?.enabled
   })
 }
 
