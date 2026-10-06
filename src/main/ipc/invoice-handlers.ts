@@ -6,11 +6,25 @@ import { invoiceService } from '../services/invoice-service'
 import { getDb } from '../db'
 import { invoices } from '../db/schema/invoices'
 import { eq } from 'drizzle-orm'
-import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
+import { retainInvoiceBillingRefs } from '../services/session-billing'
+import { requireProviderAccount } from '../services/provider-operation-store'
+import { pendingInvoiceOperations } from '../services/pending-invoice-operations'
+import { AppError, ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
+import {
+  localInvoiceFromOperation,
+  type CreatedDraft,
+  type ProviderStatusRead
+} from '../services/stripe-operation-service'
+import { localBillingForSave } from '../services/invoice-portable-billing'
+import {
+  journalInvoiceRecordsSafely,
+  recordProviderObservation
+} from '../services/folder-sync-invoice-records'
 import type {
   StripeCustomerInfo,
   CreateInvoiceRequest,
   DraftInvoice,
+  InvoiceBillingRange,
   InvoiceStatus,
   GenerateLineItemsResult,
   LocalInvoice,
@@ -18,7 +32,157 @@ import type {
   InvoiceOverlap
 } from '../../shared/types/invoice'
 
+/** Keep operation codes (e.g. PROVIDER_OPERATION_UNCERTAIN) so the UI can explain them. */
+function providerError(fallback: string, error: unknown): IpcResult<never> {
+  return error instanceof AppError
+    ? ipcError(error.code, error.message)
+    : ipcError(fallback, String(error))
+}
+
+/**
+ * Save the draft once. A retry after Stripe succeeded but local saving failed resumes the
+ * same operation, receives the same invoice ID, and saves (or finds) it here. Billing is
+ * resolved from the frozen portable request inside the transaction; the retrieved status
+ * (amount paid included) is then recorded as a monotonic observation.
+ */
+export function persistDraft(clientId: number, created: CreatedDraft, operationId: string): number {
+  const { draft, frozen, account, observation } = created
+  if (observation.status.invoiceId !== draft.invoiceId)
+    throw new AppError('PROVIDER_RESULT_CONFLICT', 'The Stripe status belongs to another invoice.')
+  const db = getDb()
+  const localId = db.transaction((tx) => {
+    const existing = tx
+      .select()
+      .from(invoices)
+      .where(eq(invoices.stripeInvoiceId, draft.invoiceId))
+      .get()
+    const localBilling = localBillingForSave(tx, frozen.billing, created.localBilling)
+    if (!existing) {
+      const status = observation.status
+      return invoiceService.saveInvoice(
+        {
+          ...localInvoiceFromOperation(frozen, draft, clientId, account.testMode, localBilling),
+          // A resumed invoice may already be open or paid: save what Stripe returned.
+          status: status.status,
+          amountDueCents: status.amountDueCents,
+          amountPaidCents: status.amountPaidCents,
+          currency: status.currency,
+          hostedUrl: status.hostedUrl,
+          invoicePdf: status.invoicePdf,
+          dueDate: status.dueDate,
+          paidAt: status.paidAt,
+          providerAccountId: account.accountId,
+          operationId
+        },
+        tx as unknown as ReturnType<typeof getDb>
+      )
+    }
+    if (
+      existing.clientId !== clientId ||
+      (existing.operationId && existing.operationId !== operationId)
+    )
+      throw new AppError(
+        'INVOICE_CLIENT_CONFLICT',
+        'This Stripe invoice is already saved for a different client or operation.'
+      )
+    requireProviderAccount(account, {
+      accountId: existing.providerAccountId ?? account.accountId,
+      testMode: !!existing.testMode
+    })
+    // A Stripe or folder import may have arrived before the original local save. Attach the
+    // frozen billed-work references without replacing the imported or issued line snapshots.
+    const ranges = new Map<number, InvoiceBillingRange[]>()
+    for (const line of localBilling.lines)
+      for (const range of line.billedRanges ?? [])
+        if (range.sessionId > 0)
+          ranges.set(range.sessionId, [...(ranges.get(range.sessionId) ?? []), range])
+    retainInvoiceBillingRefs(tx, {
+      stripeInvoiceId: draft.invoiceId,
+      ranges,
+      testMode: account.testMode
+    })
+    const binding: { providerAccountId?: string; operationId?: string } = {}
+    if (!existing.providerAccountId) binding.providerAccountId = account.accountId
+    if (
+      !existing.operationId &&
+      !tx
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(eq(invoices.operationId, operationId))
+        .get()
+    )
+      binding.operationId = operationId
+    if (Object.keys(binding).length)
+      tx.update(invoices).set(binding).where(eq(invoices.id, existing.id)).run()
+    journalInvoiceRecordsSafely(tx as unknown as ReturnType<typeof getDb>, existing.id)
+    return existing.id
+  })
+  try {
+    recordProviderObservation(db, {
+      providerInvoiceId: draft.invoiceId,
+      account,
+      providerDate: observation.providerDate,
+      status: observation.status
+    })
+  } catch (error) {
+    // The invoice and its billing are saved; the next status refresh records the observation.
+    log.warn(`Could not record Stripe status for ${draft.invoiceId}:`, error)
+  }
+  return localId
+}
+
+/** Record a successful read, then return only the renderer's status shape. */
+function observed(read: ProviderStatusRead): InvoiceStatus {
+  recordProviderObservation(getDb(), {
+    providerInvoiceId: read.status.invoiceId,
+    account: read.account,
+    providerDate: read.providerDate,
+    status: read.status
+  })
+  return read.status
+}
+
 export function registerInvoiceHandlers(): void {
+  ipcMain.handle('invoice:getPendingOperations', () => {
+    try {
+      return ipcSuccess(pendingInvoiceOperations(getDb()))
+    } catch (error) {
+      return providerError('INVOICE_PENDING_ERROR', error)
+    }
+  })
+  ipcMain.handle(
+    'invoice:resumeDraftInvoice',
+    async (_event, operationId: string): Promise<IpcResult<DraftInvoice>> => {
+      try {
+        const { clientId, ...created } = await stripeService.resumeDraftInvoice(operationId)
+        const localId = persistDraft(clientId, created, operationId)
+        return ipcSuccess({ ...created.draft, localId })
+      } catch (error) {
+        return providerError('INVOICE_RESUME_ERROR', error)
+      }
+    }
+  )
+  // Proof-gated; never a Stripe write.
+  ipcMain.handle(
+    'invoice:cancelInvoiceOperation',
+    async (
+      _event,
+      operationId: string
+    ): Promise<IpcResult<{ basis: 'rejected-before-invoice' | 'draft-deleted' }>> => {
+      try {
+        if (typeof operationId !== 'string')
+          return ipcError(
+            'INVOICE_OPERATION_NOT_FOUND',
+            'This saved invoice operation is unavailable.'
+          )
+        const proof = await stripeService.cancelInvoiceOperation(operationId)
+        return ipcSuccess({ basis: proof.basis })
+      } catch (error) {
+        log.error('IPC invoice:cancelInvoiceOperation failed:', error)
+        return providerError('INVOICE_CANCEL_ERROR', error)
+      }
+    }
+  )
   // ── Stripe Key Management ──
 
   ipcMain.handle('invoice:hasStripeKey', async (): Promise<IpcResult<boolean>> => {
@@ -159,13 +323,17 @@ export function registerInvoiceHandlers(): void {
 
   ipcMain.handle(
     'invoice:syncCustomer',
-    async (_event, clientId: number): Promise<IpcResult<StripeCustomerInfo>> => {
+    async (
+      _event,
+      clientId: number,
+      operationId: string
+    ): Promise<IpcResult<StripeCustomerInfo>> => {
       try {
-        const result = await stripeService.syncCustomer(clientId)
+        const result = await stripeService.syncCustomer(clientId, operationId)
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC invoice:syncCustomer failed:', error)
-        return ipcError('STRIPE_SYNC_CUSTOMER_ERROR', String(error))
+        return providerError('STRIPE_SYNC_CUSTOMER_ERROR', error)
       }
     }
   )
@@ -174,39 +342,12 @@ export function registerInvoiceHandlers(): void {
     'invoice:createDraftInvoice',
     async (_event, request: CreateInvoiceRequest): Promise<IpcResult<DraftInvoice>> => {
       try {
-        const result = await stripeService.createDraftInvoice(request)
-
-        // Persist locally
-        const localId = invoiceService.saveInvoice({
-          clientId: request.clientId,
-          stripeInvoiceId: result.invoiceId,
-          status: result.status,
-          amountDueCents: result.amountDueCents,
-          amountPaidCents: 0,
-          currency: result.currency,
-          memo: request.memo,
-          hostedUrl: result.hostedUrl,
-          periodStart: request.periodStart,
-          periodEnd: request.periodEnd,
-          testMode: credentialService.isStripeTestMode(),
-          lineItems: request.lineItems.map((item, i) => ({
-            lineDate: request.lineMeta?.[i]?.lineDate,
-            description: item.description,
-            amountCents:
-              item.hours && item.rateCents
-                ? Math.round(item.hours * item.rateCents)
-                : item.amountCents,
-            durationMinutes: request.lineMeta?.[i]?.durationMinutes,
-            sessionIds: request.lineMeta?.[i]?.sessionIds,
-            billedRanges: request.lineMeta?.[i]?.billedRanges,
-            sortOrder: i
-          }))
-        })
-
-        return ipcSuccess({ ...result, localId })
+        const created = await stripeService.createDraftInvoice(request)
+        const localId = persistDraft(request.clientId, created, request.operationId)
+        return ipcSuccess({ ...created.draft, localId })
       } catch (error) {
         log.error('IPC invoice:createDraftInvoice failed:', error)
-        return ipcError('STRIPE_CREATE_INVOICE_ERROR', String(error))
+        return providerError('STRIPE_CREATE_INVOICE_ERROR', error)
       }
     }
   )
@@ -215,25 +356,11 @@ export function registerInvoiceHandlers(): void {
     'invoice:sendInvoice',
     async (_event, invoiceId: string): Promise<IpcResult<InvoiceStatus>> => {
       try {
-        const result = await stripeService.sendInvoice(invoiceId)
-
-        // Update local status
-        getDb()
-          .update(invoices)
-          .set({
-            status: result.status,
-            hostedUrl: result.hostedUrl,
-            invoicePdf: result.invoicePdf,
-            dueDate: result.dueDate,
-            updatedAt: new Date().toISOString()
-          })
-          .where(eq(invoices.stripeInvoiceId, invoiceId))
-          .run()
-
-        return ipcSuccess(result)
+        // Monotonic observation: never a raw overwrite of an imported paid/void status.
+        return ipcSuccess(observed(await stripeService.sendInvoice(invoiceId)))
       } catch (error) {
         log.error('IPC invoice:sendInvoice failed:', error)
-        return ipcError('STRIPE_SEND_INVOICE_ERROR', String(error))
+        return providerError('STRIPE_SEND_INVOICE_ERROR', error)
       }
     }
   )
@@ -242,11 +369,10 @@ export function registerInvoiceHandlers(): void {
     'invoice:getInvoiceStatus',
     async (_event, invoiceId: string): Promise<IpcResult<InvoiceStatus>> => {
       try {
-        const result = await stripeService.getInvoiceStatus(invoiceId)
-        return ipcSuccess(result)
+        return ipcSuccess(observed(await stripeService.getInvoiceStatus(invoiceId)))
       } catch (error) {
         log.error('IPC invoice:getInvoiceStatus failed:', error)
-        return ipcError('STRIPE_GET_STATUS_ERROR', String(error))
+        return providerError('STRIPE_GET_STATUS_ERROR', error)
       }
     }
   )
@@ -255,19 +381,10 @@ export function registerInvoiceHandlers(): void {
     'invoice:voidInvoice',
     async (_event, invoiceId: string): Promise<IpcResult<InvoiceStatus>> => {
       try {
-        const result = await stripeService.voidInvoice(invoiceId)
-
-        // Update local status
-        getDb()
-          .update(invoices)
-          .set({ status: result.status, updatedAt: new Date().toISOString() })
-          .where(eq(invoices.stripeInvoiceId, invoiceId))
-          .run()
-
-        return ipcSuccess(result)
+        return ipcSuccess(observed(await stripeService.voidInvoice(invoiceId)))
       } catch (error) {
         log.error('IPC invoice:voidInvoice failed:', error)
-        return ipcError('STRIPE_VOID_INVOICE_ERROR', String(error))
+        return providerError('STRIPE_VOID_INVOICE_ERROR', error)
       }
     }
   )

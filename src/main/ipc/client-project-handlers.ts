@@ -1,7 +1,15 @@
+import { getDb } from '../db'
+import { assertFreshSyncEdit } from '../services/folder-sync-edit-version'
 import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { clientProjectService } from '../services/client-project-service'
-import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
+import {
+  getLocalProjectSetupStatus,
+  completeLocalProjectSetup
+} from '../services/local-project-setup'
+import { fileWatcherService } from '../services/file-watcher-service'
+import type { LegacyFolderSelection } from '../../shared/types/local-project-setup'
+import { AppError, ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import type {
   Client,
   NewClient,
@@ -12,6 +20,25 @@ import type {
 } from '../../shared/types/client-project'
 
 export function registerClientProjectHandlers(): void {
+  ipcMain.handle('project:getLocalSetup', async () => {
+    try {
+      return ipcSuccess(getLocalProjectSetupStatus())
+    } catch (error) {
+      return ipcError('LOCAL_SETUP_ERROR', String(error))
+    }
+  })
+  ipcMain.handle(
+    'project:completeLocalSetup',
+    async (_event, selections: LegacyFolderSelection[]) => {
+      try {
+        completeLocalProjectSetup(selections)
+        await fileWatcherService._runStartupScan()
+        return ipcSuccess(getLocalProjectSetupStatus())
+      } catch (error) {
+        return ipcError('LOCAL_SETUP_ERROR', String(error))
+      }
+    }
+  )
   // ── Client handlers ──
 
   ipcMain.handle('client:getAll', async (): Promise<IpcResult<Client[]>> => {
@@ -36,23 +63,30 @@ export function registerClientProjectHandlers(): void {
     'client:update',
     async (_event, id: number, data: UpdateClient): Promise<IpcResult<Client>> => {
       try {
-        return ipcSuccess(clientProjectService.updateClient(id, data))
+        return ipcSuccess(clientProjectService.updateClient(id, data, { requireSyncVersion: true }))
       } catch (error) {
         log.error('IPC client:update failed:', error)
-        return ipcError('CLIENT_UPDATE_ERROR', String(error))
+        return ipcError(
+          error instanceof AppError ? error.code : 'CLIENT_UPDATE_ERROR',
+          error instanceof Error ? error.message : String(error)
+        )
       }
     }
   )
 
-  ipcMain.handle('client:delete', async (_event, id: number): Promise<IpcResult<void>> => {
-    try {
-      clientProjectService.deleteClient(id)
-      return ipcSuccess(undefined)
-    } catch (error) {
-      log.error('IPC client:delete failed:', error)
-      return ipcError('CLIENT_DELETE_ERROR', String(error))
+  ipcMain.handle(
+    'client:delete',
+    async (_event, id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> => {
+      try {
+        assertFreshSyncEdit(getDb(), { kind: 'client', id }, expectedSyncVersion, true)
+        clientProjectService.deleteClient(id)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC client:delete failed:', error)
+        return ipcError('CLIENT_DELETE_ERROR', String(error))
+      }
     }
-  })
+  )
 
   // ── Project handlers ──
 
@@ -84,23 +118,32 @@ export function registerClientProjectHandlers(): void {
     'project:update',
     async (_event, id: number, data: UpdateProject): Promise<IpcResult<Project>> => {
       try {
-        return ipcSuccess(clientProjectService.updateProject(id, data))
+        return ipcSuccess(
+          clientProjectService.updateProject(id, data, { requireSyncVersion: true })
+        )
       } catch (error) {
         log.error('IPC project:update failed:', error)
-        return ipcError('PROJECT_UPDATE_ERROR', String(error))
+        return ipcError(
+          error instanceof AppError ? error.code : 'PROJECT_UPDATE_ERROR',
+          error instanceof Error ? error.message : String(error)
+        )
       }
     }
   )
 
-  ipcMain.handle('project:delete', async (_event, id: number): Promise<IpcResult<void>> => {
-    try {
-      clientProjectService.deleteProject(id)
-      return ipcSuccess(undefined)
-    } catch (error) {
-      log.error('IPC project:delete failed:', error)
-      return ipcError('PROJECT_DELETE_ERROR', String(error))
+  ipcMain.handle(
+    'project:delete',
+    async (_event, id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> => {
+      try {
+        assertFreshSyncEdit(getDb(), { kind: 'project', id }, expectedSyncVersion, true)
+        clientProjectService.deleteProject(id)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC project:delete failed:', error)
+        return ipcError('PROJECT_DELETE_ERROR', String(error))
+      }
     }
-  })
+  )
 
   ipcMain.handle('project:attributeSessions', async (): Promise<IpcResult<number>> => {
     try {

@@ -1,10 +1,21 @@
 import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
+import { randomUUID } from 'node:crypto'
 
 export const clients = sqliteTable(
   'clients',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
+    /** Portable identity; local foreign keys continue to use id. */
+    syncId: text('sync_id')
+      .notNull()
+      .unique()
+      .$defaultFn(() => randomUUID()),
     name: text('name').notNull().unique(),
+    /**
+     * Marks the built-in client auto-captured projects land in. At most one row holds a role,
+     * and the role (not the name) identifies it; ordinary clients are null.
+     */
+    systemRole: text('system_role', { enum: ['unassigned'] }).unique(),
     /** Optional display name used while presentation mode is on (streaming/demos). */
     stageName: text('stage_name'),
     color: text('color').notNull(),

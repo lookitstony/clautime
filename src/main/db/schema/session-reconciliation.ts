@@ -22,7 +22,8 @@ export const sessionReconciliationCases = sqliteTable('session_reconciliation_ca
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   resolvedAt: text('resolved_at'),
-  fingerprint: text('fingerprint')
+  fingerprint: text('fingerprint'),
+  mappingReview: integer('mapping_review').notNull().default(0)
 })
 
 /** Append-only explicit choices, linked by source-local revision sequence. */

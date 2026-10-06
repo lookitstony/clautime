@@ -10,6 +10,11 @@ import { computeEarnings, computeBucketedHumanMinutes } from '../../shared/earni
 import { clientAlias, projectAlias } from '../../shared/presentation-alias'
 import { clientProjectService } from './client-project-service'
 import { settingsService } from './settings-service'
+import {
+  currentReportingDate,
+  currentReportingDateKey,
+  currentReportingTimeZone
+} from './reporting-calendar'
 import type {
   ReportFilters,
   ReportFormat,
@@ -22,13 +27,14 @@ import type {
 } from '../../shared/types/report'
 
 function getDateKey(isoString: string): string {
-  const d = new Date(isoString)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return currentReportingDateKey(isoString)
 }
 
 function formatDateLabel(isoString: string): string {
-  const d = new Date(isoString)
+  const calendarKey = /^\d{4}-\d{2}-\d{2}$/.test(isoString)
+  const d = calendarKey ? new Date(isoString + 'T12:00:00Z') : currentReportingDate(isoString)
   return d.toLocaleDateString([], {
+    ...(calendarKey ? { timeZone: 'UTC' } : {}),
     weekday: 'short',
     year: 'numeric',
     month: 'short',
@@ -102,7 +108,7 @@ export const reportService = {
     // After-hours filter: exclude sessions starting between 7am–6pm
     if (filters.afterHoursOnly) {
       rows = rows.filter((row) => {
-        const hour = new Date(row.startedAt).getHours()
+        const hour = currentReportingDate(row.startedAt).getHours()
         return hour < 7 || hour >= 18
       })
     }
@@ -146,6 +152,7 @@ export const reportService = {
       format,
       filters,
       generatedAt: new Date().toISOString(),
+      ...(currentReportingTimeZone() ? { reportingTimeZone: currentReportingTimeZone() } : {}),
       summary: null as unknown as ReportSummary // computed after format switch
     }
 
@@ -238,7 +245,7 @@ export const reportService = {
         const items: DailySummaryItem[] = Array.from(dayMap.entries())
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([date, data]) => ({
-            date: formatDateLabel(date + 'T12:00:00'),
+            date: formatDateLabel(date),
             sessionCount: data.sessionCount,
             totalDurationMinutes: computeBucketedHumanMinutes(data.durationRows),
             totalPrompts: data.totalPrompts,

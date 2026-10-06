@@ -21,7 +21,7 @@ function mulberry32(seed: number): () => number {
   }
 }
 const rand = mulberry32(20260710)
-const pick = <T,>(arr: T[]): T => arr[Math.floor(rand() * arr.length)]
+const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)]
 const randInt = (min: number, max: number): number => min + Math.floor(rand() * (max - min + 1))
 
 const now = new Date()
@@ -180,15 +180,21 @@ const manualDescriptions = [
 ]
 
 let sessionId = 1
-function addSession(start: Date, durationMinutes: number, projectId: number, source: 'auto' | 'manual' = 'auto'): Session {
+function addSession(
+  start: Date,
+  durationMinutes: number,
+  projectId: number,
+  source: 'auto' | 'manual' = 'auto'
+): Session {
   const project = projects.find((p) => p.id === projectId)!
   const end = new Date(start.getTime() + durationMinutes * 60000)
-  const promptCount = source === 'manual' ? 0 : Math.max(2, Math.round(durationMinutes / randInt(3, 6)))
+  const promptCount =
+    source === 'manual' ? 0 : Math.max(2, Math.round(durationMinutes / randInt(3, 6)))
   const inputTokens = source === 'manual' ? 0 : promptCount * randInt(700, 1600)
   const outputTokens = source === 'manual' ? 0 : promptCount * randInt(1800, 3400)
   const s: Session = {
     id: sessionId++,
-    projectPath: project.directoryPath,
+    projectPath: project.directoryPath ?? '',
     startedAt: iso(start),
     endedAt: iso(end),
     durationMinutes,
@@ -196,11 +202,15 @@ function addSession(start: Date, durationMinutes: number, projectId: number, sou
     description: source === 'manual' ? pick(manualDescriptions) : null,
     status: 'completed',
     tool: 'claude',
-    claudeSessionId: source === 'auto' ? `demo-${s36(sessionId)}-${s36(Math.floor(rand() * 1e9))}` : null,
+    claudeSessionId:
+      source === 'auto' ? `demo-${s36(sessionId)}-${s36(Math.floor(rand() * 1e9))}` : null,
     promptCount,
     inputTokens,
     outputTokens,
-    sourceFile: source === 'auto' ? `~/.claude/projects/${project.directoryPath.replace(/[/\\.]/g, '-')}/session.jsonl` : null,
+    sourceFile:
+      source === 'auto'
+        ? `~/.claude/projects/${(project.directoryPath ?? '').replace(/[/\\.]/g, '-')}/session.jsonl`
+        : null,
     billable: project.isBillable,
     projectId: project.id,
     clientId: project.clientId,

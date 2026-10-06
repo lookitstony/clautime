@@ -437,6 +437,33 @@ it('keeps rejected replacements visible and masks errors in presentation mode', 
   expect(document.body.textContent).not.toContain('private')
 })
 
+it('offers only recheck and policy direction for mapping-managed history', async () => {
+  getReviews.mockResolvedValue({ success: true, data: [{ ...review, mappingManaged: true }] })
+  mount()
+  fireEvent.click(await screen.findByText(review.sourceFile))
+  expect(screen.getByText(/managed by linked activity/)).toHaveTextContent(
+    /review the shared tracking policy/
+  )
+  expect(screen.getByRole('button', { name: 'Recheck retained activity' })).toBeEnabled()
+  for (const name of ['Keep saved history', 'Map detected activity', 'Use detected intervals'])
+    expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+})
+
+it('closes open legacy actions when a refreshed review becomes mapping-managed', async () => {
+  const client = mount()
+  fireEvent.click(await screen.findByText(review.sourceFile))
+  fireEvent.click(screen.getByRole('button', { name: 'Keep saved history' }))
+  expect(screen.getByRole('button', { name: 'Confirm keep saved history' })).toBeInTheDocument()
+  client.setQueryData(['sessions', 'reconciliation'], [{ ...review, mappingManaged: true }])
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('button', { name: 'Confirm keep saved history' })
+    ).not.toBeInTheDocument()
+  )
+  expect(screen.getByRole('button', { name: 'Recheck retained activity' })).toBeEnabled()
+  expect(keep).not.toHaveBeenCalled()
+})
+
 it('shows replaced predecessors as audit history while mapping only active sessions', async () => {
   getReviews.mockResolvedValue({
     success: true,

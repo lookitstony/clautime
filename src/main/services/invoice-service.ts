@@ -1,10 +1,15 @@
 import { eq, and, desc, ne, lte, gte, or, inArray } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
-import { invoices, invoiceLineItems } from '../db/schema/invoices'
+import { invoices, invoiceLineItems, clientProviderReferences } from '../db/schema/invoices'
 import { sessions } from '../db/schema/sessions'
 import { activeSessionCondition } from '../db/schema/session-deletions'
 import { billingRange, unbilledSessions, retainInvoiceBillingRefs } from './session-billing'
+import {
+  importStripeInvoice,
+  saveLocalInvoice,
+  type LocalInvoiceInput
+} from './invoice-stripe-import'
 import { sessionService } from './session-service'
 import { descendantSessionIds } from './session-history'
 import { clients } from '../db/schema/clients'
@@ -13,68 +18,40 @@ import { gitCommits } from '../db/schema/git-commits'
 import { clientProjectService } from './client-project-service'
 import { credentialService } from './credential-service'
 import { settingsService } from './settings-service'
+import { currentReportingDateKey } from './reporting-calendar'
 import { stripeService } from './stripe-service'
+import type { ProviderStatusRead } from './stripe-operation-service'
+import { recordProviderObservation } from './folder-sync-invoice-records'
+import { retainCustomerReference, scopedCustomerReference } from './invoice-provider-scope'
+import { assertSharedBillingReady } from './folder-sync-billing-guard'
 import { aiService } from './ai-service'
 import { AppError } from '../../shared/types/ipc'
 import { clientAlias } from '../../shared/presentation-alias'
 import { computeBucketedHumanMinutes } from '../../shared/earnings'
-import {
-  INVOICE_STATUSES,
-  type GeneratedLineItem,
-  type GenerateLineItemsResult,
-  type InvoiceStatus,
-  type LocalInvoice,
-  type LocalInvoiceDetail,
-  type InvoiceOverlap,
-  type InvoiceBillingRange
+import type {
+  GeneratedLineItem,
+  GenerateLineItemsResult,
+  LocalInvoice,
+  LocalInvoiceDetail,
+  InvoiceOverlap
 } from '../../shared/types/invoice'
 
-/** Map a Stripe Invoice object to local saveInvoice format */
-function mapStripeInvoiceToLocal(
-  inv: import('stripe').Stripe.Invoice,
-  clientId: number,
-  isTest: boolean
-) {
-  const status = INVOICE_STATUSES.has(inv.status as InvoiceStatus['status'])
-    ? (inv.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible')
-    : 'draft'
+type InvoiceDb = ReturnType<typeof getDb>
 
-  const lineItems = (inv.lines?.data ?? []).map((line, i) => ({
-    description: line.description ?? 'Line item',
-    amountCents: line.amount,
-    sortOrder: i
-  }))
-
-  // Derive period from line item date ranges
-  let periodStart: string | null = null
-  let periodEnd: string | null = null
-  if (inv.lines?.data?.length) {
-    const starts = inv.lines.data.map((l) => l.period?.start).filter((s): s is number => !!s)
-    const ends = inv.lines.data.map((l) => l.period?.end).filter((e): e is number => !!e)
-    if (starts.length > 0)
-      periodStart = new Date(Math.min(...starts) * 1000).toISOString().split('T')[0]
-    if (ends.length > 0) periodEnd = new Date(Math.max(...ends) * 1000).toISOString().split('T')[0]
-  }
-
-  return {
-    clientId,
-    stripeInvoiceId: inv.id,
-    status,
-    amountDueCents: inv.amount_due,
-    amountPaidCents: inv.amount_paid,
-    currency: inv.currency,
-    memo: inv.description ?? null,
-    hostedUrl: inv.hosted_invoice_url ?? null,
-    invoicePdf: inv.invoice_pdf ?? null,
-    dueDate: inv.due_date ? new Date(inv.due_date * 1000).toISOString() : null,
-    paidAt: inv.status_transitions?.paid_at
-      ? new Date(inv.status_transitions.paid_at * 1000).toISOString()
-      : null,
-    periodStart,
-    periodEnd,
-    testMode: isTest,
-    lineItems
-  }
+/**
+ * Persist a successful Stripe read: monotonic status update plus, with a workspace, a journaled
+ * observation carrying the reading account and Stripe's Date. Never a raw status overwrite.
+ */
+export function recordStatusRead(
+  db: InvoiceDb,
+  read: ProviderStatusRead
+): { changed: boolean; changeId: string | null } {
+  return recordProviderObservation(db, {
+    providerInvoiceId: read.status.invoiceId,
+    account: read.account,
+    providerDate: read.providerDate,
+    status: read.status
+  })
 }
 
 /** Format a date string (YYYY-MM-DD) as MM/DD/YY */
@@ -86,8 +63,7 @@ function formatDateShort(dateStr: string): string {
 
 /** Extract YYYY-MM-DD from an ISO timestamp in LOCAL time */
 function toDateKey(isoTimestamp: string): string {
-  const d = new Date(isoTimestamp)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return currentReportingDateKey(isoTimestamp)
 }
 
 export const invoiceService = {
@@ -108,6 +84,8 @@ export const invoiceService = {
     }
 
     const db = getDb()
+
+    assertSharedBillingReady(db, { clientId, projectId, startDate, endDate })
 
     // Query sessions for this client — fetch all completed, then filter by local date
     // Include audit rows and the last comparison: deletion or reassignment must
@@ -557,88 +535,9 @@ export const invoiceService = {
   /**
    * Save a sent invoice and its line items to the local DB.
    */
-  saveInvoice(data: {
-    clientId: number
-    stripeInvoiceId: string
-    status: string
-    amountDueCents: number
-    amountPaidCents: number
-    currency: string
-    memo?: string | null
-    hostedUrl?: string | null
-    invoicePdf?: string | null
-    dueDate?: string | null
-    paidAt?: string | null
-    periodStart?: string | null
-    periodEnd?: string | null
-    testMode?: boolean
-    lineItems: Array<{
-      lineDate?: string | null
-      description: string
-      amountCents: number
-      durationMinutes?: number | null
-      sessionIds?: number[] | null
-      billedRanges?: InvoiceBillingRange[]
-      sortOrder: number
-    }>
-  }): number {
-    const db = getDb()
-    const now = new Date().toISOString()
-
-    let invoiceId = 0
-    db.transaction((tx) => {
-      const invoice = tx
-        .insert(invoices)
-        .values({
-          clientId: data.clientId,
-          stripeInvoiceId: data.stripeInvoiceId,
-          status: data.status as 'draft' | 'open' | 'paid' | 'void' | 'uncollectible',
-          amountDueCents: data.amountDueCents,
-          amountPaidCents: data.amountPaidCents,
-          currency: data.currency,
-          memo: data.memo ?? null,
-          hostedUrl: data.hostedUrl ?? null,
-          invoicePdf: data.invoicePdf ?? null,
-          dueDate: data.dueDate ?? null,
-          paidAt: data.paidAt ?? null,
-          periodStart: data.periodStart ?? null,
-          periodEnd: data.periodEnd ?? null,
-          testMode: data.testMode ? 1 : 0,
-          createdAt: now,
-          updatedAt: now
-        })
-        .returning()
-        .get()
-
-      invoiceId = invoice.id
-
-      for (const item of data.lineItems) {
-        tx.insert(invoiceLineItems)
-          .values({
-            invoiceId: invoice.id,
-            lineDate: item.lineDate ?? null,
-            description: item.description,
-            amountCents: item.amountCents,
-            durationMinutes: item.durationMinutes ?? null,
-            sessionIds: item.sessionIds ? item.sessionIds.join(',') : null,
-            sortOrder: item.sortOrder,
-            createdAt: now
-          })
-          .run()
-      }
-      const ranges = new Map<number, InvoiceBillingRange[]>()
-      for (const item of data.lineItems) {
-        if (!item.billedRanges) continue
-        for (const id of item.sessionIds ?? []) {
-          ranges.set(id, [
-            ...(ranges.get(id) ?? []),
-            ...item.billedRanges.filter((range) => range.sessionId === id)
-          ])
-        }
-      }
-      retainInvoiceBillingRefs(tx, { stripeInvoiceId: data.stripeInvoiceId, ranges })
-    })
-
+  saveInvoice(data: LocalInvoiceInput, executor?: InvoiceDb): number {
+    // With an executor this is a savepoint inside the caller's transaction (persistDraft).
+    const invoiceId = saveLocalInvoice(executor ?? getDb(), data)
     log.info(`Saved invoice locally: id=${invoiceId}, stripe=${data.stripeInvoiceId}`)
     return invoiceId
   },
@@ -648,7 +547,7 @@ export const invoiceService = {
    */
   getAll(filters?: { clientId?: number; status?: string; testMode?: boolean }): LocalInvoice[] {
     const db = getDb()
-    const conditions: ReturnType<typeof eq>[] = []
+    const conditions: ReturnType<typeof eq>[] = [eq(invoices.hidden, 0)]
 
     if (filters?.clientId != null) {
       conditions.push(eq(invoices.clientId, filters.clientId))
@@ -760,21 +659,8 @@ export const invoiceService = {
     const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
     if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
 
-    const stripeStatus = await stripeService.getInvoiceStatus(row.stripeInvoiceId)
-
-    db.update(invoices)
-      .set({
-        status: stripeStatus.status,
-        amountDueCents: stripeStatus.amountDueCents,
-        amountPaidCents: stripeStatus.amountPaidCents,
-        hostedUrl: stripeStatus.hostedUrl,
-        invoicePdf: stripeStatus.invoicePdf,
-        dueDate: stripeStatus.dueDate,
-        paidAt: stripeStatus.paidAt,
-        updatedAt: new Date().toISOString()
-      })
-      .where(eq(invoices.id, localId))
-      .run()
+    // Monotonic: a stale read never regresses a paid/void status imported from another computer.
+    recordStatusRead(db, await stripeService.getInvoiceStatus(row.stripeInvoiceId))
 
     const all = this.getAll()
     return all.find((inv) => inv.id === localId)!
@@ -802,23 +688,8 @@ export const invoiceService = {
     const batch = openInvoices.slice(0, 20)
     for (const inv of batch) {
       try {
-        const stripeStatus = await stripeService.getInvoiceStatus(inv.stripeInvoiceId)
-        if (stripeStatus.status !== inv.status) {
-          db.update(invoices)
-            .set({
-              status: stripeStatus.status,
-              amountDueCents: stripeStatus.amountDueCents,
-              amountPaidCents: stripeStatus.amountPaidCents,
-              hostedUrl: stripeStatus.hostedUrl,
-              invoicePdf: stripeStatus.invoicePdf,
-              dueDate: stripeStatus.dueDate,
-              paidAt: stripeStatus.paidAt,
-              updatedAt: new Date().toISOString()
-            })
-            .where(eq(invoices.id, inv.id))
-            .run()
-          updated++
-        }
+        const read = await stripeService.getInvoiceStatus(inv.stripeInvoiceId)
+        if (recordStatusRead(db, read).changed) updated++
       } catch (err) {
         log.warn(`Failed to sync invoice ${inv.stripeInvoiceId}:`, err)
       }
@@ -829,7 +700,7 @@ export const invoiceService = {
   },
 
   /**
-   * Delete a local invoice and its line items. Does NOT affect Stripe.
+   * Hide a local invoice. Its saved lines and billed-work audit remain intact.
    */
   deleteInvoice(localId: number): void {
     const db = getDb()
@@ -838,10 +709,9 @@ export const invoiceService = {
 
     db.transaction((tx) => {
       retainInvoiceBillingRefs(tx)
-      tx.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, localId)).run()
-      tx.delete(invoices).where(eq(invoices.id, localId)).run()
+      tx.update(invoices).set({ hidden: 1 }).where(eq(invoices.id, localId)).run()
     })
-    log.info(`Deleted local invoice id=${localId}, stripe=${row.stripeInvoiceId}`)
+    log.info(`Hid local invoice id=${localId}, stripe=${row.stripeInvoiceId}`)
   },
 
   /**
@@ -850,31 +720,48 @@ export const invoiceService = {
    */
   async importFromStripe(): Promise<number> {
     const db = getDb()
-
-    const existingIds = new Set(
-      db
-        .select({ sid: invoices.stripeInvoiceId })
-        .from(invoices)
-        .all()
-        .map((r) => r.sid)
-    )
-
-    // Build client lookup by stripeCustomerId
-    const clientRows = db.select().from(clients).all()
+    const { account, providerDate, invoices: stripeInvoices } = await stripeService.listInvoices()
+    // Account-scoped references first. A legacy (account-less) reference matches only when this
+    // account's authenticated list returns an invoice of that customer, which proves the
+    // customer is in this account; it never replaces a verified reference.
     const clientByStripeId = new Map<string, number>()
-    for (const c of clientRows) {
-      if (c.stripeCustomerId) clientByStripeId.set(c.stripeCustomerId, c.id)
-    }
-
-    const stripeInvoices = await stripeService.listInvoices()
-    const isTest = credentialService.isStripeTestMode()
+    for (const reference of db
+      .select()
+      .from(clientProviderReferences)
+      .where(
+        and(
+          eq(clientProviderReferences.accountId, account.accountId),
+          eq(clientProviderReferences.testMode, Number(account.testMode))
+        )
+      )
+      .all())
+      clientByStripeId.set(reference.customerId, reference.clientId)
+    const legacyByStripeId = new Map<string, number>()
+    for (const c of db.select().from(clients).all())
+      if (c.stripeCustomerId && !clientByStripeId.has(c.stripeCustomerId))
+        legacyByStripeId.set(c.stripeCustomerId, c.id)
     let imported = 0
 
     for (const inv of stripeInvoices) {
-      if (existingIds.has(inv.id)) continue
+      const saved = db.select().from(invoices).where(eq(invoices.stripeInvoiceId, inv.id)).get()
+      if (saved) {
+        // A successful read by this account: a monotonic observation, never a raw overwrite.
+        // Reads only; no Stripe writes happen here.
+        try {
+          importStripeInvoice(db, inv, saved.clientId, account, providerDate)
+        } catch (err) {
+          log.warn(`Failed to record Stripe status for ${inv.id}:`, err)
+        }
+        continue
+      }
 
       const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id
-      const clientId = customerId ? clientByStripeId.get(customerId) : undefined
+      let clientId = customerId ? clientByStripeId.get(customerId) : undefined
+      if (!clientId && customerId && legacyByStripeId.has(customerId)) {
+        clientId = legacyByStripeId.get(customerId)!
+        if (!scopedCustomerReference(db, clientId, account))
+          retainCustomerReference(db, clientId, account, customerId)
+      }
       if (!clientId) {
         log.info(
           `Skipping Stripe invoice ${inv.id} — no matching local client for customer ${customerId}`
@@ -882,7 +769,8 @@ export const invoiceService = {
         continue
       }
 
-      this.saveInvoice(mapStripeInvoiceToLocal(inv, clientId, isTest))
+      // Saves Stripe's lines, the lineage of the operation that created it, and the observation.
+      importStripeInvoice(db, inv, clientId, account, providerDate)
       imported++
       log.info(`Imported Stripe invoice ${inv.id} for client ${clientId}`)
     }

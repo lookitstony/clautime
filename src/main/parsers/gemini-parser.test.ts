@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 // Mock electron-log before importing parser
-vi.mock('electron-log/main.js', () => ({
+vi.mock('electron-log', () => ({
   default: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -105,6 +105,28 @@ describe('gemini-parser', () => {
       const files = await discoverGeminiSessionFiles(tempDir)
       expect(files).toEqual([])
     })
+  })
+
+  it('orders offset timestamps by instant before detecting sessions', async () => {
+    const file = await writeChat(
+      chatFile([
+        userMessage('2026-07-19T14:00:00-04:00'),
+        geminiMessage('2026-07-19T18:10:00Z', {
+          thoughts: [
+            { timestamp: '2026-07-19T18:05:00Z' },
+            { timestamp: '2026-07-19T14:06:00-04:00' }
+          ]
+        }),
+        userMessage('2026-07-19T14:11:00-04:00')
+      ])
+    )
+    const parsed = (await parseGeminiSessionFile(file))!
+    expect(parsed.messages.map((row) => row.type)).toEqual(['user', 'assistant', 'user'])
+    expect(parsed.progressTimestamps.map(Date.parse)).toEqual([
+      Date.parse('2026-07-19T18:05:00Z'),
+      Date.parse('2026-07-19T18:06:00Z')
+    ])
+    expect(Date.parse(parsed.lastTimestamp!)).toBe(Date.parse('2026-07-19T18:11:00Z'))
   })
 
   describe('readGeminiSessionMeta', () => {

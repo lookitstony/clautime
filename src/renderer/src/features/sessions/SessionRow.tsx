@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { formatTimeRange, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { providerInfo } from '../../../../shared/providers'
+import { sourceMachineText } from './source-machine-label'
 import type { Session } from '../../../../shared/types/session'
 
 interface SessionRowProps {
@@ -11,6 +12,7 @@ interface SessionRowProps {
   projectColor: string
   isSelected: boolean
   hasCommits?: boolean
+  timeZone?: string
   onSelect: (e?: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => void
 }
 
@@ -19,6 +21,7 @@ export function SessionRow({
   projectColor,
   isSelected,
   hasCommits,
+  timeZone,
   onSelect
 }: SessionRowProps): React.JSX.Element {
   const handleKeyDown = useCallback(
@@ -30,13 +33,15 @@ export function SessionRow({
     },
     [onSelect]
   )
+  // Absent on paths that do not read provenance; empty means the origin was never recorded.
+  const machineText = session.sourceMachines ? sourceMachineText(session.sourceMachines) : ''
 
   return (
     <div
       role="button"
       tabIndex={0}
       aria-expanded={isSelected}
-      aria-label={`Session ${formatTimeRange(session.startedAt, session.endedAt)}, ${formatDuration(session.durationMinutes)}`}
+      aria-label={`Session ${formatTimeRange(session.startedAt, session.endedAt, timeZone)}, ${formatDuration(session.durationMinutes)}`}
       onClick={onSelect}
       onKeyDown={handleKeyDown}
       className={cn(
@@ -48,7 +53,7 @@ export function SessionRow({
       style={{ borderLeft: `2px solid ${projectColor}` }}
     >
       <span className="shrink-0 font-mono text-[13px] text-[var(--text-secondary)]">
-        {formatTimeRange(session.startedAt, session.endedAt)}
+        {formatTimeRange(session.startedAt, session.endedAt, timeZone)}
       </span>
       <Badge
         variant="secondary"
@@ -77,7 +82,12 @@ export function SessionRow({
           aria-label="Has git commits"
         />
       )}
-      <span className="min-w-0 flex-1" />
+      <span
+        className="min-w-0 flex-1 truncate text-right text-[11px] text-[var(--text-muted)]"
+        title={machineText || undefined}
+      >
+        {machineText}
+      </span>
       <span className="w-[5.5rem] shrink-0" />
       <span className="w-[5.5rem] shrink-0 text-right text-[11px] text-[var(--text-muted)]">
         {session.promptCount > 0

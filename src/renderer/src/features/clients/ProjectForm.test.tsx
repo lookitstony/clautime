@@ -52,6 +52,40 @@ beforeEach(() => {
 })
 
 describe('ProjectForm', () => {
+  it('edits a project without requiring a folder on this computer', async () => {
+    const user = userEvent.setup()
+    render(
+      <ProjectForm
+        open={true}
+        onClose={vi.fn()}
+        clientId={1}
+        project={{ ...mockProject, directoryPath: null }}
+      />,
+      { wrapper: createWrapper() }
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(window.api.projects.update).toHaveBeenCalled())
+    expect(vi.mocked(window.api.projects.update).mock.calls[0][1]).not.toHaveProperty(
+      'directoryPath'
+    )
+  })
+
+  it('disconnects the local folder without deleting the project', async () => {
+    const user = userEvent.setup()
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={mockProject} />, {
+      wrapper: createWrapper()
+    })
+    await user.clear(screen.getByLabelText('Folder on this computer'))
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(window.api.projects.update).toHaveBeenCalledWith(
+        mockProject.id,
+        expect.objectContaining({ directoryPath: null })
+      )
+    )
+    expect(window.api.projects.delete).not.toHaveBeenCalled()
+  })
+
   it('renders create mode with empty fields', () => {
     render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />, {
       wrapper: createWrapper()

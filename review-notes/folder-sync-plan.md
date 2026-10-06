@@ -55,7 +55,7 @@ Edits and explicit session splits are separate revisioned records referencing th
 
 ### E. Projects and concurrent edits
 
-Clients/projects receive permanent sync UUIDs. Move project locations into a per-device path mapping so the same project can be at different paths, and remote projects can exist without any local path. Users link a local repository to an existing shared project during setup. Names are suggestions, not automatic identity; ambiguous matches require selection.
+Clients/projects receive permanent sync UUIDs. Move project locations into a per-device path mapping so the same project can be at different paths, and remote projects can exist without any local path. Setup automatically matches unique client names and unique project names within the matched client. Shared projects without an existing local folder match prompt for a local project or folder, with an option to keep history without a local checkout. Ambiguous matches require selection. Unmatched projects already discovered by ClauTime are added to shared history automatically.
 
 Project settings expose **Change folder on this computer**. After moving or renaming a repository, the user selects its new location for the same project UUID; the project name can be edited independently. Changing the location preserves all history, assignments, rates, and invoice references and does not change another computer's mapping. Keep historical source paths as provenance without permanently claiming a vacated path if a different project later occupies it. If a mapped folder disappears, offer to locate it; do not delete its project/history or assume an unrelated newly discovered folder is its replacement. Support explicitly linking already-discovered unassigned activity at the new location to the existing project, with duplicate detection.
 
@@ -63,7 +63,7 @@ Each user change carries a unique change ID and the field revisions it was based
 
 ### F. Workspace and writer identity
 
-Setup distinguishes Create shared history from Join existing history. Each workspace lives under its own random UUID directory with an immutable creation record. Concurrent offline creation yields two identifiable workspaces, not an accidental merge; joining selects one explicitly if multiple exist.
+Setup starts with one shared-folder picker: an empty folder creates shared history and a folder containing one history joins it automatically. Each workspace lives under its own random UUID directory with an immutable creation record. Concurrent offline creation yields two identifiable workspaces, not an accidental merge; joining selects one explicitly if multiple exist.
 
 Device registration is stored outside the portable database. Each app launch also creates a fresh random writer epoch, with its own sequence and immutable batch IDs. Pending committed changes keep their original change IDs on retry. Consequently, even cloned installations cannot overwrite one another's new batch files, and replayed pre-clone changes remain duplicates. Restores/new-machine setup register a new device; duplicated historical machine labels can be corrected without changing activity identity. Do not rely solely on comparing sequence counters to detect a clone.
 
@@ -90,6 +90,22 @@ Importing folder data never calls Stripe create/finalize/send/void, creates cust
 **Confirmed usage assumption:** one person invoices from one computer at a time and switches between computers. Concurrent independent invoice creation is outside v1; no distributed lock, billing-owner assignment, or handoff approval workflow is required. On either computer, import available folder changes, refresh Stripe, and check known billed activity before creating an invoice. Keep durable operation IDs and safe retries to handle crashes, double-clicks, delayed responses, and resuming an existing operation. Existing sync gaps/conflicts remain visible; this design does not claim cross-device mutual exclusion.
 
 Technical references checked during planning: [Stripe invoice retrieval](https://docs.stripe.com/api/invoices/retrieve) and [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests). Idempotency keys may be removed after at least 24 hours, so durable operation records and result reconciliation remain necessary.
+
+### I. Project folder marker
+
+A moved folder or a fresh clone should link to its project without manual selection. No existing per-folder identifier is both unique and stable: git remotes change on rename/transfer and are shared by forks, root commits are shared by forks/templates and absent in new repos and non-git folders, and manifest names (`package.json`, `Cargo.toml`) are language-specific. ClauTime therefore owns a small marker file, `.clautime`, in the project's main folder.
+
+- **Contents:** versioned JSON `{ "version": 1, "projectSyncId": "<uuid>" }`. No client/project names, paths, rates, or device data. A sync ID unknown to this installation is ignored.
+- **Written** only to a main folder (`mainProjectPath(dir) === dir`), never to a worktree, when a project is created with a folder, **Change folder on this computer** is used, or activity is explicitly linked to a project. Automatically discovered Unassigned projects get no marker, so ClauTime does not litter every folder an agent touches. An existing marker naming a different project is never overwritten; it becomes a prompt. A failed write (read-only, permissions) is a warning; the local mapping is still saved.
+- **Keep ID file in git** (shared project setting, default off). Off: add `/.clautime` to the repository's `.git/info/exclude` (the common git dir, so it covers every worktree), and nothing appears in client history. On: leave it unexcluded so the user can commit it, and every clone carries the project identity to other computers. ClauTime never runs `git add`/`git rm`; turning the setting off for a tracked file explains how to untrack it. No effect for non-git folders.
+- **Lookup:** when a scan meets an unmapped main folder (after worktree resolution), read its marker before auto-creating a project. Read once per newly seen path; do not add filesystem walks to the scan loop.
+  - Project has no folder on this computer (new machine, fresh clone): map it automatically and notify.
+  - Project's mapped folder no longer exists: treat as a move. Remap it, block the old path from rediscovery, and notify. History, assignments and invoice references are untouched (decision E).
+  - Mapped folder still exists with the same marker: it is a copy or second clone. Do not remap; prompt to use this folder instead or keep it separate (a local per-folder block, without rewriting a possibly committed file).
+  - A worktree outside the main folder whose git link broke after the main folder moved: if its committed marker matches a mapped project, do not create a separate Unassigned project; leave its activity unassigned and suggest `git worktree repair`.
+- **Fallback for folders without a marker:** record each mapped git project's root commit (`git rev-list --max-parents=0 HEAD`) as a shared field. A new unmarked folder whose root commit matches exactly one project gets a link suggestion, never an automatic link. Multiple matches (forks/templates) produce no suggestion.
+
+The marker only proposes or creates device-local mappings. It never moves history, changes another computer's mapping, or overrides an explicit user choice.
 
 ## Implementation order
 
@@ -131,6 +147,10 @@ All-project Human Hours continue merging overlapping intervals across machines; 
 
 Implement decision H with saved invoice migration, portable billed-activity links, account/environment matching, status reconciliation, durable provider-operation intents, and explicit-action boundaries. Test entirely with mocked Stripe and then a separately approved test account/environment. Verify normal sequential invoicing while switching machines. Do not ship the first sync release as tracking-only: invoice history and sequential invoicing from either computer are now part of the required scope.
 
+### 6. Add the project folder marker
+
+Implement decision I: shared project fields for the git setting and root commit (migration), a marker read/write service, `.git/info/exclude` handling, lookup in new-folder discovery and the join review, the **Keep ID file in git** toggle in the project form, and the move/copy/clone notifications and prompts. Discovery stays in the existing scan paths; the marker read is cached per path.
+
 ## Required verification
 
 Use two independent test databases and separate folders with a simulated file-transfer layer. Prove:
@@ -156,6 +176,11 @@ Use two independent test databases and separate folders with a simulated file-tr
 19. Create an invoice on A, sync, then switch to B: B shows the invoice and its billed-work links and can invoice new work without re-billing the old activity. Test delayed folder delivery, double-clicks/retries of the same operation, retry beyond the provider's idempotency retention window, stale status observations, and amount changes with unchanged status. Concurrent independent invoice creation is outside the confirmed v1 usage assumption.
 20. Rescan, split/merge, rename folders, and delete source logs after invoicing: saved invoice amounts and billed-activity exclusions remain stable on both machines. Hiding an invoice locally or receiving old records cannot silently make billed work eligible again.
 
+21. Move a marked project folder (C: to D:) and restart: the project remaps automatically, prior totals stay on the same project, and no Unassigned project appears for the old or new path. Copy the folder instead: neither copy is remapped automatically and a prompt appears.
+22. With **Keep ID file in git** on, commit the marker, clone on a blank synced installation: the clone links to the project without the join-review folder picker. With it off: `.clautime` is listed in `.git/info/exclude`, `git status` is clean, and no worktree gets a marker.
+23. Worktrees inside and outside the main folder resolve to the marked project; after moving the main folder, an outside worktree with a broken link does not create an Unassigned project.
+24. An unmarked clone whose root commit matches one project gets a suggestion only; a root commit matching two projects gets none. A marker naming an unknown sync ID or another project is never overwritten or trusted silently.
+
 Then test a real transfer through Google Drive using disposable QA data. Assess storage growth and import performance before exporting the user's history.
 
 ## Live rollout
@@ -164,6 +189,10 @@ Prepare migrations, implementation, and verification locally/with QA data first.
 
 ## Current status
 
-Implementation update, September 15, 2026: Step 0 has begun locally. See [folder-sync-step0.md](folder-sync-step0.md) for the tested retention/one-to-one reconciliation slice, local migration, and remaining Step 0 requirements. No live migration or sync transport has been applied. The following paragraph records the design status at handoff.
+September 28, 2026: local implementation is complete, including retained canonical activity, automatic identity matching with prompts for unmatched project folders on join, manual and legacy lifecycle conflicts, machine provenance, snapshot recovery, and sequential invoicing with portable billed-work anchors. Claude contributed design, code and reviews; review findings were fixed with regression coverage.
 
-Revised after Claude's review and the user's explicit source-file retention, editable per-machine folder mapping, and cross-machine invoicing requirements. The user confirmed a single operator invoicing sequentially, resolving the earlier billing concurrency question. Decisions A–H define the design; provider identity fixtures and the local reconciliation tests are the first implementation gates. The expanded plan has not yet been re-reviewed by Claude. No sync code, sync migration, live export, cloud configuration, or Stripe action has been applied. Previously completed local date-filter fixes remain separate.
+The final full local regression passed 1,721 tests with zero failures (one Windows file-symlink test skipped); all 81 focused billing tests also passed. The QA handoff links the reports. Final type checks, lint (zero errors; existing warnings) and Electron/Vite build passed. Isolated renderer smoke and 5,000-entry performance/restore checks passed.
+
+October 6, 2026: decision I (project folder marker), implementation step 6 and verification items 21–24 added. Not yet implemented.
+
+See [folder-sync-qa-handoff.md](folder-sync-qa-handoff.md) for final evidence, acceptance coverage and the remaining real two-computer Drive/Stripe test-account QA. No production database, cloud folder or Stripe account was changed; no build was deployed. Production rollout remains subject to the explicit confirmation rule above.

@@ -48,7 +48,7 @@ export function descendantSessionIds(
 export function recordSessionRevision(
   tx: HistoryTransaction,
   session: Session,
-  kind: 'edit' | 'split' | 'reconcile',
+  kind: 'edit' | 'split' | 'reconcile' | 'policy',
   before: unknown,
   after: unknown
 ): string {

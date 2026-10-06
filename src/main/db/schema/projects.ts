@@ -1,15 +1,22 @@
 import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
 import { clients } from './clients'
+import { randomUUID } from 'node:crypto'
 
 export const projects = sqliteTable(
   'projects',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
+    /** Portable identity, independent of this computer's directory path. */
+    syncId: text('sync_id')
+      .notNull()
+      .unique()
+      .$defaultFn(() => randomUUID()),
     clientId: integer('client_id')
       .notNull()
       .references(() => clients.id),
     name: text('name').notNull(),
-    directoryPath: text('directory_path').notNull().unique(),
+    /** Legacy setup suggestion only. Local folders live in project_folder_mappings. */
+    directoryPath: text('directory_path'),
     invoiceName: text('invoice_name'),
     /** Optional display name used while presentation mode is on (streaming/demos). */
     stageName: text('stage_name'),

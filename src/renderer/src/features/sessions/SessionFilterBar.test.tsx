@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionFilterBar } from './SessionFilterBar'
+import { sourceMachineOptionLabel } from '@/lib/source-machine'
 import { useFilterStore } from '@/stores/use-filter-store'
 
 // SessionFilterBar reads presentation mode via a react-query hook, so every
@@ -78,6 +79,62 @@ beforeEach(() => {
     }
   })
   useFilterStore.getState().clearFilters()
+})
+
+const machine = (deviceId: string, label: string, extra: Record<string, unknown> = {}) => ({
+  deviceId,
+  label,
+  originalName: label,
+  labelBasis: 'original' as const,
+  alternatives: [],
+  labelHeads: {},
+  duplicateLabel: false,
+  isThisComputer: false,
+  ...extra
+})
+
+describe('SessionFilterBar source machines', () => {
+  it('hides the machine filter until there is more than one machine', () => {
+    render(
+      <SessionFilterBar
+        clients={[]}
+        projects={[]}
+        machines={[machine('9b95ec41-b3b6-4cbb-b1b6-e7ce607ef222', 'Desk')]}
+      />
+    )
+    expect(screen.queryByLabelText('Filter by source machine')).not.toBeInTheDocument()
+  })
+
+  it('shows the machine filter for several machines and keeps it clearable', () => {
+    useFilterStore.getState().setSourceMachine('7c8f7eab-af58-4cbb-9e74-d1e47f80d600')
+    render(
+      <SessionFilterBar
+        clients={[]}
+        projects={[]}
+        machines={[
+          machine('9b95ec41-b3b6-4cbb-b1b6-e7ce607ef222', 'Desk'),
+          machine('7c8f7eab-af58-4cbb-9e74-d1e47f80d600', 'Laptop')
+        ]}
+      />
+    )
+    expect(screen.getByLabelText('Filter by source machine')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }))
+    expect(useFilterStore.getState().sourceMachine).toBeNull()
+  })
+
+  it('distinguishes duplicate labels by device ID and marks this computer', () => {
+    expect(
+      sourceMachineOptionLabel(
+        machine('9b95ec41-b3b6-4cbb-b1b6-e7ce607ef222', 'PC', {
+          duplicateLabel: true,
+          isThisComputer: true
+        })
+      )
+    ).toBe('PC (this computer, 9b95ec41)')
+    expect(sourceMachineOptionLabel(machine('7c8f7eab-af58-4cbb-9e74-d1e47f80d600', 'PC'))).toBe(
+      'PC'
+    )
+  })
 })
 
 describe('SessionFilterBar', () => {

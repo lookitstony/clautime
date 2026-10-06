@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import type { Session } from '../../../../shared/types/session'
@@ -32,20 +32,19 @@ vi.stubGlobal('HTMLSelectElement', { prototype: HtmlSelectProto })
 const mockDelete = vi.fn().mockResolvedValue({ success: true })
 const mockSplit = vi.fn().mockResolvedValue({ success: true, data: [] })
 const mockUpdate = vi.fn().mockResolvedValue({ success: true, data: {} })
+const mockGetById = vi.fn().mockResolvedValue({ success: true, data: null })
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    sessions: {
-      getPromptTimings: vi.fn().mockResolvedValue({ success: true, data: [] }),
-      update: mockUpdate,
-      delete: mockDelete,
-      split: mockSplit
-    },
-    git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) },
-    ai: {
-      getSummary: vi.fn().mockResolvedValue({ success: true, data: { summary: '', tier: 'none' } })
-    }
+vi.stubGlobal('api', {
+  sessions: {
+    getPromptTimings: vi.fn().mockResolvedValue({ success: true, data: [] }),
+    update: mockUpdate,
+    getById: mockGetById,
+    delete: mockDelete,
+    split: mockSplit
+  },
+  git: { getCommitsForSession: vi.fn().mockResolvedValue({ success: true, data: [] }) },
+  ai: {
+    getSummary: vi.fn().mockResolvedValue({ success: true, data: { summary: '', tier: 'none' } })
   }
 })
 
@@ -90,6 +89,7 @@ function createWrapper() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockGetById.mockReset().mockResolvedValue({ success: true, data: baseSession })
 })
 
 describe('SessionDetailPanel', () => {
@@ -161,13 +161,15 @@ describe('SessionDetailPanel', () => {
       expect(textarea).toHaveValue('Test desc')
     })
 
-    it('shows delete confirmation when Delete is clicked', () => {
+    it('shows delete confirmation when Delete is clicked', async () => {
       const session = { ...baseSession, source: 'manual' as const }
       render(<SessionDetailPanel {...defaultProps} session={session} />, {
         wrapper: createWrapper()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+      })
 
       expect(
         screen.getByText(
@@ -177,13 +179,15 @@ describe('SessionDetailPanel', () => {
       expect(screen.getByRole('button', { name: /confirm/i })).toBeInTheDocument()
     })
 
-    it('cancels delete confirmation', () => {
+    it('cancels delete confirmation', async () => {
       const session = { ...baseSession, source: 'manual' as const }
       render(<SessionDetailPanel {...defaultProps} session={session} />, {
         wrapper: createWrapper()
       })
 
-      fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+      })
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
 
       expect(
@@ -194,14 +198,93 @@ describe('SessionDetailPanel', () => {
     })
   })
 
+  describe('folder sync freshness', () => {
+    const manual = { ...baseSession, source: 'manual' as const, description: 'Seen text' }
+
+    it('saves with the version captured at open, keeping the draft across list refreshes', async () => {
+      mockGetById.mockResolvedValueOnce({
+        success: true,
+        data: { ...manual, syncVersion: 'version-at-open' }
+      })
+      const { rerender } = render(<SessionDetailPanel {...defaultProps} session={manual} />, {
+        wrapper: createWrapper()
+      })
+      fireEvent.click(screen.getByRole('button', { name: /edit description/i }))
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'My draft' } })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+
+      rerender(<SessionDetailPanel {...defaultProps} session={{ ...manual, updatedAt: 'later' }} />)
+      expect(screen.getByRole('textbox')).toHaveValue('My draft')
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() =>
+        expect(mockUpdate).toHaveBeenCalledWith(manual.id, {
+          description: 'My draft',
+          expectedSyncVersion: 'version-at-open'
+        })
+      )
+    })
+
+    it('keeps the draft after a stale save and shows the latest value before saving again', async () => {
+      mockGetById
+        .mockResolvedValueOnce({ success: true, data: { ...manual, syncVersion: 'v1' } })
+        .mockResolvedValueOnce({
+          success: true,
+          data: { ...manual, description: 'Arrived text', syncVersion: 'v2' }
+        })
+      mockUpdate.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'SYNC_STALE_EDIT', message: 'SYNC_STALE_EDIT: changed' }
+      })
+      render(<SessionDetailPanel {...defaultProps} session={manual} />, {
+        wrapper: createWrapper()
+      })
+      fireEvent.click(screen.getByRole('button', { name: /edit description/i }))
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'My draft' } })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      expect(await screen.findByText(/Your text is kept/)).toBeInTheDocument()
+      expect(screen.getByRole('textbox')).toHaveValue('My draft')
+      fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+      expect(await screen.findByText('Latest saved: Arrived text')).toBeInTheDocument()
+      expect(screen.getByRole('textbox')).toHaveValue('My draft')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() =>
+        expect(mockUpdate).toHaveBeenLastCalledWith(manual.id, {
+          description: 'My draft',
+          expectedSyncVersion: 'v2'
+        })
+      )
+    })
+
+    it('does not capture a version the list never showed', async () => {
+      mockGetById.mockResolvedValueOnce({
+        success: true,
+        data: { ...manual, description: 'Arrived text', syncVersion: 'v2' }
+      })
+      render(<SessionDetailPanel {...defaultProps} session={manual} />, {
+        wrapper: createWrapper()
+      })
+      fireEvent.click(screen.getByRole('button', { name: /edit description/i }))
+      expect(await screen.findByText(/Your text is kept/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+      expect(mockUpdate).not.toHaveBeenCalled()
+    })
+  })
+
   it('requires confirmation before deleting automatic history', async () => {
     const { container } = render(<SessionDetailPanel {...defaultProps} />, {
       wrapper: createWrapper()
     })
-    fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+    })
     expect(mockDelete).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
-    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith(baseSession.id), { container })
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith(baseSession.id, undefined), {
+      container
+    })
     await waitFor(() => expect(defaultProps.onClose).toHaveBeenCalledTimes(1), { container })
   })
 
@@ -213,7 +296,9 @@ describe('SessionDetailPanel', () => {
     const { container } = render(<SessionDetailPanel {...defaultProps} />, {
       wrapper: createWrapper()
     })
-    fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+    })
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
     await waitFor(
       () => expect(toast.error).toHaveBeenCalledWith('Resolve activity mapping first'),
@@ -226,30 +311,41 @@ describe('SessionDetailPanel', () => {
     const { container } = render(<SessionDetailPanel {...defaultProps} />, {
       wrapper: createWrapper()
     })
-    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    })
     expect(mockSplit).not.toHaveBeenCalled()
     expect(screen.getByText(/Prompts and tokens are divided proportionally/)).toBeInTheDocument()
     expect(screen.getByText(/Older sessions use saved history/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /confirm split/i }))
     await waitFor(
-      () => expect(mockSplit).toHaveBeenCalledWith(baseSession.id, '2026-03-05T10:22:30.000Z'),
+      () =>
+        expect(mockSplit).toHaveBeenCalledWith(
+          baseSession.id,
+          '2026-03-05T10:22:30.000Z',
+          undefined
+        ),
       { container }
     )
     await waitFor(() => expect(defaultProps.onClose).toHaveBeenCalledTimes(1), { container })
   })
 
-  it('rejects a split outside the interval before IPC', () => {
+  it('rejects a split outside the interval before IPC', async () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    })
     fireEvent.change(screen.getByLabelText('Split after (minutes)'), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: /confirm split/i }))
     expect(screen.getByRole('alert')).toHaveTextContent('Choose a point inside the session.')
     expect(mockSplit).not.toHaveBeenCalled()
   })
 
-  it('cancels a split with Escape without closing the session', () => {
+  it('cancels a split with Escape without closing the session', async () => {
     render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
-    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    })
     fireEvent.keyDown(screen.getByRole('region'), { key: 'Escape' })
     expect(screen.getByRole('button', { name: /^split session$/i })).toBeInTheDocument()
     expect(mockSplit).not.toHaveBeenCalled()
@@ -264,7 +360,9 @@ describe('SessionDetailPanel', () => {
     const { container } = render(<SessionDetailPanel {...defaultProps} />, {
       wrapper: createWrapper()
     })
-    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+    })
     fireEvent.click(screen.getByRole('button', { name: /confirm split/i }))
     await waitFor(
       () => expect(screen.getByRole('alert')).toHaveTextContent('Resolve activity mapping first'),
@@ -332,4 +430,40 @@ describe('SessionDetailPanel', () => {
       expect(screen.getByText('Loading timings...')).toBeInTheDocument()
     })
   })
+})
+
+it('keeps the delete version captured at confirmation even if the session refreshes', async () => {
+  mockGetById.mockResolvedValueOnce({
+    success: true,
+    data: { ...baseSession, syncVersion: 'seen-version' }
+  })
+  const { rerender } = render(<SessionDetailPanel {...defaultProps} />, {
+    wrapper: createWrapper()
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /^delete from history$/i }))
+  })
+  rerender(
+    <SessionDetailPanel
+      {...defaultProps}
+      session={{ ...baseSession, description: 'Remote edit' }}
+    />
+  )
+  fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }))
+  await waitFor(() => expect(mockDelete).toHaveBeenCalledWith(baseSession.id, 'seen-version'))
+})
+it('requires reviewing a newly arrived session before opening a split', async () => {
+  mockGetById.mockResolvedValueOnce({
+    success: true,
+    data: { ...baseSession, description: 'Remote edit', syncVersion: 'unseen-version' }
+  })
+  render(<SessionDetailPanel {...defaultProps} />, { wrapper: createWrapper() })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /^split session$/i }))
+  })
+  expect(toast.error).toHaveBeenCalledWith(
+    'This session changed. Review the latest values before continuing.'
+  )
+  expect(screen.queryByRole('button', { name: /confirm split/i })).not.toBeInTheDocument()
+  expect(mockSplit).not.toHaveBeenCalled()
 })

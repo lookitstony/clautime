@@ -32,7 +32,11 @@ export function SplitSessionForm({
         }
         setError(null)
         mutation.mutate(
-          { id: session.id, splitAt: new Date(cut).toISOString() },
+          {
+            id: session.id,
+            splitAt: new Date(cut).toISOString(),
+            expectedSyncVersion: session.syncVersion
+          },
           {
             onSuccess: () => {
               toast.success('Session split')

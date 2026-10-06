@@ -49,6 +49,9 @@ import {
 import { useRescanStore } from '@/stores/use-rescan-store'
 import { cn } from '@/lib/utils'
 import { reportScanErrors } from '@/lib/scan-errors'
+import { FolderSyncSettings } from './FolderSyncSettings'
+import { LocalFoldersSettings } from './LocalFoldersSettings'
+import { WorkspacePolicySettings } from './WorkspacePolicySettings'
 
 /** Exact phrase the user must type to trigger a factory reset. */
 const FACTORY_RESET_PHRASE = 'delete all my data'
@@ -86,6 +89,14 @@ export function SettingsPage(): React.JSX.Element {
   const queryClient = useQueryClient()
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState<string>('general')
+  const { data: workspacePolicy } = useQuery({
+    queryKey: ['workspace-policy'],
+    queryFn: async () => {
+      const result = await window.api.workspace.getPolicy()
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    }
+  })
 
   // ============= Rescan coordination =============
   // Detection settings persist immediately, but re-deriving sessions to match
@@ -364,7 +375,8 @@ export function SettingsPage(): React.JSX.Element {
   const saveIdleTimeout = useCallback(async () => {
     setIsSavingIdle(true)
     try {
-      await window.api.settings.set('idle_timeout_minutes', String(idleTimeout))
+      const result = await window.api.settings.set('idle_timeout_minutes', String(idleTimeout))
+      if (!result.success) throw new Error(result.error.message)
       setSavedIdleTimeout(idleTimeout)
       queryClient.invalidateQueries({ queryKey: ['settings'] })
       markRescanPending()
@@ -1195,6 +1207,13 @@ export function SettingsPage(): React.JSX.Element {
           </section>
         )}
 
+        {activeCategory === 'general' && (
+          <>
+            <FolderSyncSettings />
+            <LocalFoldersSettings />
+          </>
+        )}
+
         {/* Date & Time */}
         {activeCategory === 'general' && (
           <section>
@@ -1273,39 +1292,46 @@ export function SettingsPage(): React.JSX.Element {
           <section>
             <SectionHeader title="Session Detection" />
             <SectionCard>
-              <div className="mb-4">
-                <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
-                  Human Time Allowance (minutes)
-                </label>
-                <p className="mb-2 text-[11px] text-[var(--text-muted)]">
-                  Max time between prompts before a new session starts. Covers reading responses,
-                  testing, and thinking.
-                </p>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min={1}
-                    max={15}
-                    value={idleTimeout}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      setIdleTimeout(parseInt(e.target.value, 10))
-                    }
-                    className="flex-1"
-                  />
-                  <span className="w-12 text-right font-mono text-[13px] text-[var(--text-primary)]">
-                    {idleTimeout}m
-                  </span>
-                  <Button
-                    size="sm"
-                    disabled={!idleTimeoutChanged || isSavingIdle}
-                    className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
-                    onClick={saveIdleTimeout}
-                  >
-                    {isSavingIdle && <LoaderCircle size={14} className="mr-1 animate-spin" />}
-                    Save
-                  </Button>
+              {workspacePolicy ? (
+                <WorkspacePolicySettings
+                  key={workspacePolicy.revisionId}
+                  workspace={workspacePolicy}
+                />
+              ) : (
+                <div className="mb-4">
+                  <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
+                    Human Time Allowance (minutes)
+                  </label>
+                  <p className="mb-2 text-[11px] text-[var(--text-muted)]">
+                    Max time between prompts before a new session starts. Covers reading responses,
+                    testing, and thinking.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={1}
+                      max={15}
+                      value={idleTimeout}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                        setIdleTimeout(parseInt(e.target.value, 10))
+                      }
+                      className="flex-1"
+                    />
+                    <span className="w-12 text-right font-mono text-[13px] text-[var(--text-primary)]">
+                      {idleTimeout}m
+                    </span>
+                    <Button
+                      size="sm"
+                      disabled={!idleTimeoutChanged || isSavingIdle}
+                      className="bg-[var(--accent)] text-white hover:brightness-[1.15]"
+                      onClick={saveIdleTimeout}
+                    >
+                      {isSavingIdle && <LoaderCircle size={14} className="mr-1 animate-spin" />}
+                      Save
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">
@@ -2566,15 +2592,17 @@ export function SettingsPage(): React.JSX.Element {
           onConfirm={async () => {
             setIsResetting(true)
             try {
-              await window.api.sessions.reset()
-              await window.api.sessions.scan()
+              const resetResult = await window.api.sessions.reset()
+              if (!resetResult.success) throw new Error(resetResult.error.message)
+              const scanResult = await window.api.sessions.scan()
+              if (!scanResult.success) throw new Error(scanResult.error.message)
               clearRescanPending()
               queryClient.invalidateQueries({ queryKey: ['sessions'] })
               queryClient.invalidateQueries({ queryKey: ['live'] })
               queryClient.invalidateQueries({ queryKey: ['git'] })
               toast.success('Factory reset complete — sessions re-imported')
-            } catch {
-              toast.error('Reset failed')
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : 'Reset failed')
             } finally {
               setIsResetting(false)
               setConfirmReset(false)

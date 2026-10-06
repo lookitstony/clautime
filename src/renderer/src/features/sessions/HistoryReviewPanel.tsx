@@ -115,7 +115,8 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
   const mappingOpen =
     reviews.data?.some(
       (review) =>
-        review.sourceFile === mappingSource || review.sourceFile === replacement?.sourceFile
+        !review.mappingManaged &&
+        (review.sourceFile === mappingSource || review.sourceFile === replacement?.sourceFile)
     ) ?? false
   if (reviews.error)
     return (
@@ -165,11 +166,18 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
           <summary className="cursor-pointer break-all">
             {presentationMode ? `Source ${index + 1}` : review.sourceFile}
           </summary>
-          <p className="my-2 break-words">
+          <p className="my-2 whitespace-pre-line break-words">
             {presentationMode
               ? 'Saved history could not be matched to retained activity.'
               : review.message}
           </p>
+          {review.mappingManaged && (
+            <p className="mb-2">
+              This history is managed by linked activity. Recheck it after activity or policy
+              changes, or open Settings and review the shared tracking policy. Keeping, mapping or
+              replacing it here is unavailable.
+            </p>
+          )}
           <p className="mb-2 text-[var(--text-muted)]">
             Last compared {new Date(review.updatedAt).toLocaleString()} with a{' '}
             {review.idleTimeoutMinutes}-minute idle timeout. Values below are from that comparison.
@@ -190,19 +198,22 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
               ? 'Rechecking…'
               : 'Recheck retained activity'}
           </Button>
-          <Button
-            className="ml-2 mt-2"
-            size="xs"
-            variant="ghost"
-            disabled={!review.fingerprint || recheck.isPending || keep.isPending || mappingOpen}
-            onClick={() => {
-              keep.reset()
-              setConfirmation({ sourceFile: review.sourceFile, fingerprint: review.fingerprint! })
-            }}
-          >
-            Keep saved history
-          </Button>
-          {review.saved.some((row) => row.disposition === 'active') &&
+          {!review.mappingManaged && (
+            <Button
+              className="ml-2 mt-2"
+              size="xs"
+              variant="ghost"
+              disabled={!review.fingerprint || recheck.isPending || keep.isPending || mappingOpen}
+              onClick={() => {
+                keep.reset()
+                setConfirmation({ sourceFile: review.sourceFile, fingerprint: review.fingerprint! })
+              }}
+            >
+              Keep saved history
+            </Button>
+          )}
+          {!review.mappingManaged &&
+            review.saved.some((row) => row.disposition === 'active') &&
             review.saved.filter((row) => row.disposition === 'active').length ===
               review.detected.length &&
             review.saved.every(
@@ -222,7 +233,8 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
                 Map detected activity
               </Button>
             )}
-          {review.saved.some((row) => row.disposition === 'active') &&
+          {!review.mappingManaged &&
+            review.saved.some((row) => row.disposition === 'active') &&
             review.detected.length > 0 &&
             review.saved.every(
               (row) => row.disposition === 'active' || row.disposition === 'replaced'
@@ -243,7 +255,7 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
                 Use detected intervals
               </Button>
             )}
-          {replacement?.sourceFile === review.sourceFile && (
+          {!review.mappingManaged && replacement?.sourceFile === review.sourceFile && (
             <HistoryReplacementForm
               review={review}
               fingerprint={replacement.fingerprint}
@@ -251,7 +263,7 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
               onClose={() => setReplacement(null)}
             />
           )}
-          {mappingSource === review.sourceFile && (
+          {!review.mappingManaged && mappingSource === review.sourceFile && (
             <ActivityMappingForm
               key={`${review.sourceFile}:${review.fingerprint}`}
               review={review}
@@ -262,7 +274,7 @@ export function HistoryReviewPanel(): React.JSX.Element | null {
           {!review.fingerprint && (
             <p>Recheck this older comparison before choosing a resolution.</p>
           )}
-          {confirmation?.sourceFile === review.sourceFile && (
+          {!review.mappingManaged && confirmation?.sourceFile === review.sourceFile && (
             <div className="mt-2 space-y-2 rounded border border-[var(--surface-border)] p-3">
               <p>
                 Keep the saved values shown above, including existing splits and deletions. Detected

@@ -6,9 +6,15 @@ import { join, resolve, sep } from 'node:path'
 import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { removeClientProjectSyncIds } from '../db/migration-test-helpers'
 import { sessions } from '../db/schema/sessions'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
-import { rawMessages } from '../db/schema/raw-messages'
+import { rawMessages, progressEvents } from '../db/schema/raw-messages'
+import {
+  activityIdentities,
+  activityObservations,
+  activitySources
+} from '../db/schema/activity-evidence'
 import { scanState } from '../db/schema/scan-state'
 import { sessionDerivations, sessionTimeOverrides } from '../db/schema/session-derivations'
 import { sessionLegacyRecords } from '../db/schema/session-legacy'
@@ -100,6 +106,123 @@ afterEach(async () => {
 })
 
 describe('retention with real source files and a restarted database', () => {
+  it('persists progress-only scan tails from main and subagent logs without adding messages', async () => {
+    const directory = join(fixture, 'projects', 'C--projects-retained')
+    await mkdir(directory, { recursive: true })
+    const sourceFile = join(directory, 'fixture-session.jsonl')
+    await writeFile(sourceFile, event('first', '2026-03-04T10:00:00.000Z'))
+    expect((await sessionService.scanAndRebuild()).errors).toBeUndefined()
+    const savedMessages = db.select().from(rawMessages).all()
+    const progress = (uuid: string) =>
+      JSON.stringify({
+        type: 'progress',
+        sessionId: 'fixture-session',
+        uuid,
+        parentUuid: 'first',
+        timestamp: '2026-03-04T10:00:01.000Z',
+        data: { type: 'bash_progress', output: 'PRIVATE' }
+      }) + '\n'
+    const subdir = join(directory, 'fixture-session', 'subagents')
+    await mkdir(subdir, { recursive: true })
+    const agent = join(subdir, 'agent-progress.jsonl')
+    await writeFile(agent, progress('agent-tick'))
+    await appendFile(sourceFile, progress('main-tick'))
+    expect((await sessionService.scanSessions()).errors).toBeUndefined()
+    expect(db.select().from(rawMessages).all()).toEqual(savedMessages)
+    expect(db.select().from(progressEvents).all()).toHaveLength(2)
+    expect(db.select().from(activityIdentities).all()).toHaveLength(3)
+    const observations = db
+      .select()
+      .from(activityObservations)
+      .orderBy(activityObservations.id)
+      .all()
+    expect(observations.filter((row) => row.kind === 'activity')).toHaveLength(2)
+    expect(JSON.stringify(observations)).not.toContain('PRIVATE')
+    const sources = db.select().from(activitySources).all()
+    expect(sources.some((source) => source.sourceFile === agent && source.isSubagent === 1)).toBe(
+      true
+    )
+    await sessionService.scanSessions()
+    expect(db.select().from(activityObservations).orderBy(activityObservations.id).all()).toEqual(
+      observations
+    )
+    await rm(agent)
+    await rm(sourceFile)
+    sqlite.close()
+    openFixture()
+    await sessionService.scanAndRebuild()
+    expect(db.select().from(activityObservations).orderBy(activityObservations.id).all()).toEqual(
+      observations
+    )
+    expect(db.select().from(rawMessages).all()).toEqual(savedMessages)
+  })
+
+  it('captures existing source identities after migration resets consumed offsets', async () => {
+    const directory = join(fixture, 'projects', 'C--projects-retained')
+    await mkdir(directory, { recursive: true })
+    const sourceFile = join(directory, 'identity-upgrade.jsonl')
+    await writeFile(
+      sourceFile,
+      event('first', '2026-03-04T10:00:00.000Z') + event('reply', '2026-03-04T10:10:00.000Z', 20)
+    )
+    expect((await sessionService.scanAndRebuild()).errors).toBeUndefined()
+    const before = sessionService.getAllSessions()
+    expect(before).toHaveLength(1)
+    expect(db.select().from(activityIdentities).all()).toHaveLength(2)
+    // Simulate upgrading an installation whose raw history predates identity capture.
+    removeClientProjectSyncIds(sqlite)
+    sqlite.exec(
+      'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+    )
+    sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at = ?').run(1789603200007)
+    migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
+    expect(db.select().from(activityIdentities).all()).toHaveLength(0)
+    const scan = await sessionService.scanSessions(fixture)
+    expect(scan.errors).toBeUndefined()
+    expect(scan.updatedFiles).toBe(1)
+    expect(db.select().from(activityIdentities).all()).toHaveLength(2)
+    expect(sessionService.getAllSessions()[0]).toMatchObject({
+      id: before[0].id,
+      durationMinutes: before[0].durationMinutes,
+      inputTokens: before[0].inputTokens,
+      outputTokens: before[0].outputTokens
+    })
+    const observations = db.select().from(activityObservations).all()
+    await rm(sourceFile)
+    sqlite.close()
+    openFixture()
+    expect((await sessionService.scanAndRebuild()).errors).toBeUndefined()
+    expect(db.select().from(activityObservations).all()).toEqual(observations)
+    expect(sessionService.getAllSessions()[0].id).toBe(before[0].id)
+  })
+
+  it('rolls identity evidence back when raw-message storage fails and captures it on retry', async () => {
+    const directory = join(fixture, 'projects', 'C--projects-retained')
+    await mkdir(directory, { recursive: true })
+    const sourceFile = join(directory, 'identity-atomic.jsonl')
+    await writeFile(
+      sourceFile,
+      event('first', '2026-03-04T10:00:00.000Z') + event('reply', '2026-03-04T10:10:00.000Z', 20)
+    )
+    expect((await sessionService.scanAndRebuild()).errors).toBeUndefined()
+    const observations = db.select().from(activityObservations).all()
+    const sources = db.select().from(activitySources).all()
+    const offsets = db.select().from(scanState).all()
+    await appendFile(sourceFile, event('fail-write', '2026-03-04T10:11:00.000Z', 30))
+    sqlite.exec(
+      "CREATE TRIGGER fail_raw_write BEFORE INSERT ON raw_messages WHEN NEW.uuid = 'fail-write' BEGIN SELECT RAISE(ABORT, 'fixture-write-failed'); END"
+    )
+    await expect(sessionService.scanSessions(fixture)).rejects.toThrow()
+    expect(db.select().from(activityObservations).all()).toEqual(observations)
+    expect(db.select().from(activitySources).all()).toEqual(sources)
+    expect(db.select().from(activityIdentities).all()).toHaveLength(2)
+    expect(db.select().from(scanState).all()).toEqual(offsets)
+    sqlite.exec('DROP TRIGGER fail_raw_write')
+    expect((await sessionService.scanSessions(fixture)).errors).toBeUndefined()
+    expect(db.select().from(activityIdentities).all()).toHaveLength(3)
+    expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
   it('adopts source-less legacy history from real logs and retains the mapping after source removal', async () => {
     const directory = join(fixture, 'projects', 'C--projects-retained')
     await mkdir(directory, { recursive: true })
@@ -173,18 +296,22 @@ describe('retention with real source files and a restarted database', () => {
   it.each([true, false])(
     'migrates legacy snapshots and preserves deletion, usage and invoice audit across restart (source path: %s)',
     async (hasSourcePath) => {
+      const client = db
+        .insert(clients)
+        .values({ name: 'Legacy fixture', color: 'var(--project-1)' })
+        .returning()
+        .get()
       sqlite.exec('ALTER TABLE session_splits DROP COLUMN legacy_record_id')
       sqlite.exec(
         'ALTER TABLE session_deletions DROP COLUMN legacy_record_id; DROP TABLE session_legacy_records'
       )
       sqlite.exec('ALTER TABLE session_billing_refs DROP COLUMN billed_ranges')
       sqlite.exec('DROP TABLE session_replacements')
+      removeClientProjectSyncIds(sqlite)
+      sqlite.exec(
+        'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+      )
       sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at >= ?').run(1789603200003)
-      const client = db
-        .insert(clients)
-        .values({ name: 'Legacy fixture', color: 'var(--project-1)' })
-        .returning()
-        .get()
       const directory = join(fixture, 'projects', 'C--projects-retained')
       await mkdir(directory, { recursive: true })
       const file = join(directory, 'legacy.jsonl')
@@ -237,11 +364,13 @@ describe('retention with real source files and a restarted database', () => {
           cacheReadInputTokens: 82
         })
         .run()
-      const invoice = db
-        .insert(invoices)
-        .values({ clientId: client.id, stripeInvoiceId: 'in_legacy', amountDueCents: 10000 })
-        .returning()
-        .get()
+      const invoice = sqlite
+        .prepare(
+          'INSERT INTO invoices (client_id, stripe_invoice_id, amount_due_cents, created_at, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING id'
+        )
+        .get(client.id, 'in_legacy', 10000, new Date().toISOString(), new Date().toISOString()) as {
+        id: number
+      }
       db.insert(invoiceLineItems)
         .values({
           invoiceId: invoice.id,
@@ -253,6 +382,12 @@ describe('retention with real source files and a restarted database', () => {
       const lines = db.select().from(invoiceLineItems).all()
       const savedRows = db.select().from(sessions).all()
       migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
+      const invoiceAfterMigration = db.select().from(invoices).get()!
+      expect(invoiceAfterMigration).toMatchObject({
+        id: invoice.id,
+        stripeInvoiceId: 'in_legacy',
+        amountDueCents: 10000
+      })
       const snapshots = db.select().from(sessionLegacyRecords).all()
       expect(snapshots).toHaveLength(2)
       const retained = snapshots.find((row) => row.sessionId === original.id)!
@@ -285,7 +420,7 @@ describe('retention with real source files and a restarted database', () => {
       openFixture()
       expect(db.select().from(sessionLegacyRecords).all()).toEqual(snapshots)
       expect(db.select().from(invoiceLineItems).all()).toEqual(lines)
-      expect(db.select().from(invoices).get()).toEqual(invoice)
+      expect(db.select().from(invoices).get()).toEqual(invoiceAfterMigration)
       expect(sessionService.getSessionById(original.id)).toBeNull()
       await writeFile(
         file,
@@ -628,6 +763,10 @@ describe('Step 0 review regressions', () => {
     sqlite.exec('DROP TABLE session_deletions')
     sqlite.exec('DROP TABLE session_legacy_records')
     sqlite.exec('DROP TABLE session_replacements')
+    removeClientProjectSyncIds(sqlite)
+    sqlite.exec(
+      'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+    )
     sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at > ?').run(1789516800001)
     sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at = ?').run(1789516800001)
     const row = db

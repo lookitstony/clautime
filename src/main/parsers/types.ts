@@ -3,9 +3,13 @@
  * Abstracts the .claude JSONL format behind clean interfaces (NFR11).
  */
 
-import type { ClaudeActivityIdentity } from './claude-activity-identity'
+import type { ClaudeActivityIdentity, ClaudeProgressActivity } from './claude-activity-identity'
 import type { CodexActivityIdentity, CodexActivityEvidence } from './codex-activity-identity'
 import type { GeminiActivityIdentity, GeminiActivityEvidence } from './gemini-activity-identity'
+import type {
+  OpencodeActivityIdentity,
+  OpencodeActivityEvidence
+} from './opencode-activity-identity'
 
 export interface TokenUsage {
   inputTokens: number
@@ -18,6 +22,8 @@ export interface TokenUsage {
 export interface ParsedMessage {
   type: string
   timestamp: string
+  /** Recorded provider completion time, when supplied separately from creation. */
+  completedAt?: string
   sessionId: string
   cwd: string | null
   gitBranch: string | null
@@ -29,7 +35,12 @@ export interface ParsedMessage {
   hasToolUse: boolean
   toolNames: string[]
   /** Captured before payloads are discarded; absent on legacy/unsupported parsers. */
-  activityIdentity?: ClaudeActivityIdentity | CodexActivityIdentity | GeminiActivityIdentity | null
+  activityIdentity?:
+    | ClaudeActivityIdentity
+    | CodexActivityIdentity
+    | GeminiActivityIdentity
+    | OpencodeActivityIdentity
+    | null
 }
 
 /** Aggregated data from one session JSONL file. */
@@ -63,10 +74,16 @@ export interface ParsedSessionData {
    * for parsers that don't support incremental reads yet.
    */
   fileOffsets?: Record<string, number>
+  /** Native progress evidence with local source provenance, including subagents. */
+  claudeProgressEvidence?: Array<
+    ClaudeProgressActivity & { sourceFile: string; isSubagent: boolean }
+  >
   /** Identity/checkpoint evidence awaiting the shared ledger; not used for local totals. */
   codexActivityEvidence?: CodexActivityEvidence
   /** Ordered Gemini snapshot identities, including non-message progress records. */
   geminiActivityEvidence?: GeminiActivityEvidence
+  /** Native message/part identities and explicit ownership/reply links. */
+  opencodeActivityEvidence?: OpencodeActivityEvidence
 }
 
 export interface SessionParserOptions {

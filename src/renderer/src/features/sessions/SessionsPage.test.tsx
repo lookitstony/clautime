@@ -256,6 +256,51 @@ describe('SessionsPage', () => {
     })
   })
 
+  describe('Source Machine filter', () => {
+    const DESK = '9b95ec41-b3b6-4cbb-b1b6-e7ce607ef222'
+    const machines = [
+      {
+        deviceId: DESK,
+        label: 'Desk',
+        originalName: 'DESKTOP-1',
+        labelBasis: 'shared',
+        alternatives: [],
+        labelHeads: {},
+        duplicateLabel: false,
+        isThisComputer: true
+      },
+      {
+        deviceId: '7c8f7eab-af58-4cbb-9e74-d1e47f80d600',
+        label: 'Laptop',
+        originalName: 'Laptop',
+        labelBasis: 'original',
+        alternatives: [],
+        labelHeads: {},
+        duplicateLabel: false,
+        isThisComputer: false
+      }
+    ]
+
+    it('asks the server to filter before totals and offers every known machine', async () => {
+      stubApi([mockSessions[0]])
+      ;(window.api as unknown as Record<string, unknown>).machines = {
+        list: vi.fn().mockResolvedValue({ success: true, data: machines })
+      }
+      useFilterStore.getState().setSourceMachine(DESK)
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await waitFor(() =>
+        expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({ sourceMachine: DESK })
+      )
+      expect(await screen.findByLabelText('Filter by source machine')).toBeInTheDocument()
+    })
+
+    it('leaves the unfiltered session query without a machine key', async () => {
+      stubApi(mockSessions)
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await waitFor(() => expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({}))
+    })
+  })
+
   it('shows empty state when no sessions', async () => {
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {

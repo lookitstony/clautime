@@ -1,3 +1,4 @@
+import { clientProjectService } from './client-project-service'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access, constants } from 'node:fs/promises'
@@ -6,7 +7,6 @@ import { eq, inArray, or, sql } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { gitCommits } from '../db/schema/git-commits'
-import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
 import { activeSessionCondition } from '../db/schema/session-deletions'
 import { sessionDerivations } from '../db/schema/session-derivations'
@@ -215,8 +215,7 @@ export const gitService = {
         .filter((e) => e.length > 0)
     )
 
-    const db = getDb()
-    const allProjects = db.select().from(projects).all()
+    const allProjects = clientProjectService.getLocalProjects()
     const found = new Map<string, UnconfiguredAuthor>()
 
     for (const project of allProjects) {
@@ -289,7 +288,7 @@ export const gitService = {
       }
     }
 
-    const allProjects = db.select().from(projects).all()
+    const allProjects = clientProjectService.getLocalProjects()
     const targetProjects = projectFilter
       ? allProjects.filter((p) => projectFilter.includes(p.id))
       : allProjects
@@ -499,9 +498,8 @@ export const gitService = {
    * Get the remote URL for a project by its DB ID.
    */
   async getRemoteUrlForProject(projectId: number): Promise<string | null> {
-    const db = getDb()
-    const project = db.select().from(projects).where(eq(projects.id, projectId)).get()
-    if (!project) return null
+    const project = clientProjectService.getProjectById(projectId)
+    if (!project?.directoryPath) return null
     return this.getRemoteUrl(project.directoryPath)
   },
 

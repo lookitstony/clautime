@@ -45,8 +45,11 @@ export function useUpdateClient() {
 export function useDeleteClient() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id: number) => {
-      const result = await window.api.clients.delete(id)
+    mutationFn: async (input: number | { id: number; expectedSyncVersion?: string }) => {
+      const result =
+        typeof input === 'number'
+          ? await window.api.clients.delete(input)
+          : await window.api.clients.delete(input.id, input.expectedSyncVersion)
       if (!result.success) throw new Error(result.error.message)
     },
     onSuccess: () => {

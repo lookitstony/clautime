@@ -102,6 +102,9 @@ import { projects } from '../db/schema/projects'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { invoices, invoiceLineItems } from '../db/schema/invoices'
 import { sessionService } from './session-service'
+import { adoptInitialWorkspacePolicy } from './workspace-policy'
+import { workspacePolicy } from '../db/schema/workspace-policy'
+import { reconciliationFingerprint } from './session-reconciliation'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
 const schema = {
@@ -193,6 +196,102 @@ describe('sessionService', () => {
 
   afterEach(() => {
     if (testSqlite) testSqlite.close()
+  })
+
+  it('uses the saved workspace idle timeout and reporting midnight for scan and rebuild', async () => {
+    const policy = {
+      version: 1,
+      normalizationVersion: 1,
+      detectorVersion: 1,
+      idleTimeoutMinutes: 30,
+      reportingTimeZone: 'America/Halifax'
+    }
+    adoptInitialWorkspacePolicy(testDb, {
+      workspaceId: 'fb751832-c62e-4f27-bc3f-b6a7a8e31214',
+      revisionId: 'fbd24e8f-4aa9-4420-889a-574e83cdd267',
+      policy
+    })
+    mockSettings.idle_timeout_minutes = '1'
+    const file = '/fixtures/workspace-policy.jsonl'
+    mockDiscoverFiles.mockResolvedValue([file])
+    mockStat.mockResolvedValue({ mtime: new Date('2026-09-26T05:00:00Z'), size: 100 })
+    mockParseFile.mockResolvedValue(
+      makeParsedSession(file, [
+        makeMessage('2026-09-26T02:50:00Z'),
+        makeMessage('2026-09-26T03:10:00Z')
+      ])
+    )
+    expect((await sessionService.scanSessions()).errors).toBeUndefined()
+    const before = testDb.select().from(sessions).all()
+    expect(before.map((row) => [row.startedAt, row.endedAt, row.durationMinutes])).toEqual([
+      ['2026-09-26T02:50:00.000Z', '2026-09-26T03:00:00.000Z', 10],
+      ['2026-09-26T03:00:00.000Z', '2026-09-26T03:10:00.000Z', 10]
+    ])
+    mockSettings.idle_timeout_minutes = '50'
+    expect((await sessionService.rebuildSessionsFromRaw()).errors).toBeUndefined()
+    expect(testDb.select().from(sessions).all()).toEqual(before)
+    expect(sessionService._getIdleTimeout()).toBe(30)
+  })
+
+  it('uses a policy changed while asynchronous parsing was in flight', async () => {
+    const policy = {
+      version: 1,
+      normalizationVersion: 1,
+      detectorVersion: 1,
+      idleTimeoutMinutes: 5,
+      reportingTimeZone: 'UTC'
+    }
+    adoptInitialWorkspacePolicy(testDb, {
+      workspaceId: 'fb751832-c62e-4f27-bc3f-b6a7a8e31214',
+      revisionId: 'fbd24e8f-4aa9-4420-889a-574e83cdd267',
+      policy
+    })
+    const file = '/fixtures/policy-changed.jsonl'
+    mockDiscoverFiles.mockResolvedValue([file])
+    mockStat.mockResolvedValue({ mtime: new Date('2026-09-26T12:00:00Z'), size: 100 })
+    mockParseFile.mockImplementation(async () => {
+      testDb
+        .update(workspacePolicy)
+        .set({ policyJson: JSON.stringify({ ...policy, idleTimeoutMinutes: 20 }) })
+        .run()
+      return makeParsedSession(file, [
+        makeMessage('2026-09-26T11:00:00Z'),
+        makeMessage('2026-09-26T11:10:00Z')
+      ])
+    })
+    expect((await sessionService.scanSessions()).errors).toBeUndefined()
+    expect(testDb.select().from(sessions).all()).toMatchObject([
+      { durationMinutes: 10, promptCount: 2 }
+    ])
+  })
+
+  it('binds reconciliation receipts to workspace policy instead of host timezone', () => {
+    const policy = {
+      version: 1,
+      normalizationVersion: 1,
+      detectorVersion: 1,
+      idleTimeoutMinutes: 30,
+      reportingTimeZone: 'UTC'
+    }
+    adoptInitialWorkspacePolicy(testDb, {
+      workspaceId: 'fb751832-c62e-4f27-bc3f-b6a7a8e31214',
+      revisionId: 'fbd24e8f-4aa9-4420-889a-574e83cdd267',
+      policy
+    })
+    const before = reconciliationFingerprint(testDb, '/fixtures/policy', [], 30)
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ timeZone: 'Pacific/Honolulu' } as Intl.ResolvedDateTimeFormatOptions)
+    try {
+      expect(reconciliationFingerprint(testDb, '/fixtures/policy', [], 30)).toBe(before)
+      testDb
+        .update(workspacePolicy)
+        .set({ revisionId: 'bccccccc-cccc-4ccc-accc-cccccccccccc' })
+        .run()
+      expect(reconciliationFingerprint(testDb, '/fixtures/policy', [], 30)).not.toBe(before)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   describe('getPromptTimings', () => {
@@ -295,6 +394,72 @@ describe('sessionService', () => {
   })
 
   describe('scanSessions', () => {
+    it('uses indexed lookups for retained child history instead of scanning all history', async () => {
+      const queries: Array<{ query: string; params: unknown[] }> = []
+      testDb = drizzle(testSqlite, {
+        schema,
+        logger: {
+          logQuery(query, params) {
+            if (
+              /from "(raw_messages|progress_events)"/.test(query) &&
+              query.includes('order by') &&
+              query.includes(' or ')
+            )
+              queries.push({ query, params })
+          }
+        }
+      })
+      const file = '/fixtures/first.jsonl'
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [makeMessage('2026-03-04T10:00:00Z')])
+      )
+      await sessionService.scanSessions()
+      expect(queries).toHaveLength(2)
+      for (const { query, params } of queries) {
+        const plan = testSqlite.prepare(`EXPLAIN QUERY PLAN ${query}`).all(...params) as Array<{
+          detail: string
+        }>
+        expect(
+          plan.some((row) => /SEARCH (raw_messages|progress_events) USING/.test(row.detail))
+        ).toBe(true)
+        expect(plan.some((row) => /SCAN (raw_messages|progress_events)/.test(row.detail))).toBe(
+          false
+        )
+      }
+    })
+
+    it('serves event-loop callbacks between source commits without yielding inside a transaction', async () => {
+      const files = ['/fixtures/first.jsonl', '/fixtures/second.jsonl', '/fixtures/third.jsonl']
+      mockDiscoverFiles.mockResolvedValue(files)
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockImplementation(async (file: string) =>
+        makeParsedSession(file, [makeMessage('2026-03-04T10:00:00Z', { uuid: file })])
+      )
+      const turns: Array<{ raw: number; checkpoints: number; transaction: boolean }> = []
+      let heartbeat: NodeJS.Immediate
+      const tick = (): void => {
+        turns.push({
+          raw: testDb.select().from(rawMessages).all().length - 1,
+          checkpoints: testDb.select().from(scanState).all().length,
+          transaction: testSqlite.inTransaction
+        })
+        heartbeat = setImmediate(tick)
+      }
+      heartbeat = setImmediate(tick)
+      try {
+        const result = await sessionService.scanSessions()
+        expect(result.updatedFiles).toBe(3)
+        expect(result.newSessions).toBe(3)
+        expect(turns.some((turn) => turn.raw > 0 && turn.raw < 3)).toBe(true)
+        expect(turns.some((turn) => turn.checkpoints > 0 && turn.checkpoints < 3)).toBe(true)
+        expect(turns.every((turn) => !turn.transaction)).toBe(true)
+      } finally {
+        clearImmediate(heartbeat)
+      }
+    })
+
     it('preserves row identity, edits and invoice references as a transcript grows', async () => {
       const file = '/fixtures/growing.jsonl'
       mockDiscoverFiles.mockResolvedValue([file])

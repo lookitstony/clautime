@@ -22,7 +22,7 @@ export const sessionRevisions = sqliteTable(
     parentRevisionId: text('parent_revision_id').references(
       (): AnySQLiteColumn => sessionRevisions.id
     ),
-    kind: text('kind').notNull().$type<'edit' | 'split' | 'reconcile'>(),
+    kind: text('kind').notNull().$type<'edit' | 'split' | 'reconcile' | 'policy'>(),
     sourceFile: text('source_file'),
     tool: text('tool').notNull(),
     claudeSessionId: text('claude_session_id'),

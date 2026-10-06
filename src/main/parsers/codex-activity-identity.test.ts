@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-vi.mock('electron-log/main.js', () => ({
+vi.mock('electron-log', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }))
 import { parseCodexSessionFile } from './codex-parser'
@@ -119,11 +119,78 @@ it('pins native, fallback and checkpoint encodings before ledger adoption', asyn
           },
         },
       ],
+      "conversationId": "thread-a",
+      "progress": [],
       "reason": null,
       "status": "captured",
       "version": 1,
     }
   `)
+})
+
+const USER_ID =
+  'codex:v1:fingerprint:f801a1602d730bfe63e0d812b0b0d2a21c866974d443e54794691a7aee39aa5e'
+const NATIVE_ID = 'codex:v1:native:287e155279d7158813eb429053b07d3c3ab86db2baa571274fa6709f4f5d638c'
+const CHECKPOINT_ID =
+  'codex:v1:checkpoint:7e6d2c7c69f74bfcfcae2bca20897679b320aa89ca4e3d7e025a28229022a8ff'
+const event = (type: string, at: string, extra: Record<string, unknown> = {}) => ({
+  timestamp: at,
+  type: 'event_msg',
+  payload: { type, ...extra }
+})
+
+it('captures event and empty token_count progress as leaves without moving pinned identities', async () => {
+  const records = [
+    meta(),
+    context,
+    event('task_started', timestamp),
+    user,
+    event('agent_reasoning', '2026-07-19T18:07:00.500Z', { text: 'PRIVATE_REASONING' }),
+    native,
+    event('token_count', '2026-07-19T18:07:01.500Z', { info: null, rate_limits: null }),
+    checkpoint(),
+    event('task_complete', '2026-07-19T18:07:03.000Z')
+  ]
+  const parsed = await parse('progress.jsonl', records)
+  const evidence = parsed.codexActivityEvidence!
+  expect(evidence.status).toBe('captured')
+  // The golden encodings above are unchanged by interleaved progress.
+  expect(evidence.activities.map((a) => [a.identity.eventId, a.identity.parentEventId])).toEqual([
+    [USER_ID, null],
+    [NATIVE_ID, USER_ID]
+  ])
+  expect(evidence.checkpoints).toMatchObject([
+    { id: CHECKPOINT_ID, previousCheckpointId: null, activityEventId: NATIVE_ID }
+  ])
+  expect(evidence.progress.map((p) => [p.progressType, p.parentEventId, p.timestamp])).toEqual([
+    ['task_started', null, timestamp],
+    ['agent_reasoning', USER_ID, '2026-07-19T18:07:00.500Z'],
+    ['token_count', NATIVE_ID, '2026-07-19T18:07:01.500Z'],
+    ['task_complete', NATIVE_ID, '2026-07-19T18:07:03.000Z']
+  ])
+  expect(evidence.progress.every((p) => p.eventId.startsWith('codex:v1:progress:'))).toBe(true)
+  // A totals-bearing token_count is progress through its checkpoint only.
+  expect(evidence.progress.some((p) => p.timestamp === checkpoint().timestamp)).toBe(false)
+  expect(
+    [
+      ...evidence.progress.map((p) => p.timestamp),
+      ...evidence.checkpoints.map((c) => c.timestamp)
+    ].sort()
+  ).toEqual(parsed.progressTimestamps)
+  expect(JSON.stringify(evidence)).not.toContain('PRIVATE_REASONING')
+
+  // Copies (including a replayed line) converge; distinct events at one instant do not merge.
+  const copy = await parse('copy.jsonl', [...records.slice(0, 5), records[4], ...records.slice(5)])
+  expect(copy.codexActivityEvidence!.progress).toEqual(evidence.progress)
+  const other = await parse('other.jsonl', [
+    ...records.slice(0, 5),
+    event('agent_reasoning', '2026-07-19T18:07:00.500Z', { text: 'Other reasoning' }),
+    ...records.slice(5)
+  ])
+  expect(other.codexActivityEvidence!.progress).toHaveLength(5)
+  expect(other.messages.map((m) => m.activityIdentity)).toEqual(
+    parsed.messages.map((m) => m.activityIdentity)
+  )
 })
 
 it('converges copies despite file moves, metadata changes and shifted synthetic line IDs', async () => {
@@ -144,6 +211,10 @@ it('converges copies despite file moves, metadata changes and shifted synthetic 
     b.codexActivityEvidence!.checkpoints[0].id
   )
   expect(b.codexActivityEvidence!.checkpoints[0].model).toBe('changed-model')
+  // The extra lifecycle event is a root-anchored leaf, not an ancestor of the prompt.
+  expect(b.codexActivityEvidence!.progress).toMatchObject([
+    { progressType: 'task_started', parentEventId: null }
+  ])
   expect(a.totalTokenUsage).toEqual(b.totalTokenUsage)
   expect(JSON.stringify(a.codexActivityEvidence)).not.toContain('Inspect the code')
 })
@@ -344,7 +415,10 @@ it.each([
   'malformed',
   'changed header',
   'invalid timestamp',
-  'invalid usage'
+  'invalid usage',
+  'untyped event',
+  'untimed event',
+  'invalid event timestamp'
 ])('preserves local parsing while refusing incomplete identity evidence: %s', async (reason) => {
   const records: unknown[] =
     reason === 'missing header'
@@ -352,6 +426,12 @@ it.each([
       : [meta(reason === 'missing thread ID' ? { id: undefined } : {}), user]
   if (reason === 'malformed') records.push('{broken')
   if (reason === 'changed header') records.push(meta({ id: 'different-thread' }))
+  // An event the ledger cannot place must not leave a quietly thinner history.
+  if (reason === 'untyped event') records.push({ timestamp, type: 'event_msg', payload: {} })
+  if (reason === 'untimed event')
+    records.push({ type: 'event_msg', payload: { type: 'agent_reasoning' } })
+  if (reason === 'invalid event timestamp')
+    records.push(event('agent_reasoning', '2026-07-19T18:07:00'))
   records.push(
     reason === 'invalid timestamp' ? { ...assistant, timestamp: '2026-07-19T18:07:01' } : assistant
   )
@@ -379,4 +459,8 @@ it('retains counter drops as observations without guessing a reset or manufactur
     200, 100
   ])
   expect(parsed.codexActivityEvidence!.status).toBe('captured')
+  // The empty count is kept as progress only and does not link the two checkpoints.
+  expect(parsed.codexActivityEvidence!.progress).toMatchObject([{ progressType: 'token_count' }])
+  const [first, second] = parsed.codexActivityEvidence!.checkpoints
+  expect(second.previousCheckpointId).toBe(first.id)
 })

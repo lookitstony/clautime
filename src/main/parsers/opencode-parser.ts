@@ -1,8 +1,9 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
-import log from 'electron-log/main.js'
+import log from 'electron-log'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from './types'
+import { OpencodeIdentityCapture } from './opencode-activity-identity'
 
 /**
  * Parser for OpenCode (opencode.ai) session storage.
@@ -114,6 +115,7 @@ export async function discoverOpencodeTranscriptFiles(storageDir?: string): Prom
 
 interface OpencodeSessionInfo {
   id?: string
+  parentID?: string
   projectID?: string
   directory?: string
   title?: string
@@ -224,7 +226,9 @@ function usageFromTokens(tokens: NonNullable<OpencodeMessage['tokens']>): TokenU
  */
 async function readMessageParts(
   storageRoot: string,
-  messageId: string
+  messageId: string,
+  identityCapture: OpencodeIdentityCapture,
+  collectProgress: boolean
 ): Promise<{ toolNames: string[]; progressTimestamps: string[] }> {
   const toolNames: string[] = []
   const progressTimestamps: string[] = []
@@ -234,6 +238,7 @@ async function readMessageParts(
   try {
     entries = await readdir(partDir)
   } catch {
+    identityCapture.invalidate('unreadable-parts')
     return { toolNames, progressTimestamps }
   }
 
@@ -243,9 +248,12 @@ async function readMessageParts(
     try {
       part = JSON.parse(await readFile(join(partDir, name), 'utf-8'))
     } catch {
+      identityCapture.invalidate('malformed-part')
       continue
     }
-    if (part.type !== 'tool') continue
+    identityCapture.part(part, messageId)
+    if (!part || typeof part !== 'object') continue
+    if (!collectProgress || part.type !== 'tool') continue
     if (part.tool && !toolNames.includes(part.tool)) toolNames.push(part.tool)
     const start = toIso(part.state?.time?.start)
     const end = toIso(part.state?.time?.end)
@@ -270,6 +278,7 @@ export async function parseOpencodeSessionFile(
   }
 
   const sessionId = info.id || basename(sessionFile, '.json')
+  const identityCapture = new OpencodeIdentityCapture(info.id, info.parentID)
   const projectDirectory = await resolveSessionCwd(sessionFile, info)
   const storageRoot = storageRootFor(sessionFile)
   const messageDir = join(storageRoot, 'message', sessionId)
@@ -294,10 +303,20 @@ export async function parseOpencodeSessionFile(
       msg = JSON.parse(await readFile(join(messageDir, name), 'utf-8'))
     } catch {
       log.warn(`Malformed OpenCode message file ${name} in ${messageDir}, skipping`)
+      identityCapture.invalidate('malformed-message')
       continue
     }
+    const activityIdentity = identityCapture.message(msg)
+    if (!msg || typeof msg !== 'object') continue
     const timestamp = toIso(msg.time?.created)
     if (!timestamp) continue
+
+    // User text/compaction parts also carry native IDs, even though only assistant
+    // tool parts contribute to the existing local progress calculation.
+    const parts =
+      typeof msg.id === 'string' && msg.id && ['user', 'assistant'].includes(msg.role ?? '')
+        ? await readMessageParts(storageRoot, msg.id, identityCapture, msg.role === 'assistant')
+        : { toolNames: [], progressTimestamps: [] }
 
     if (msg.role === 'user') {
       messages.push({
@@ -309,6 +328,7 @@ export async function parseOpencodeSessionFile(
         model: null,
         usage: null,
         uuid: msg.id ?? null,
+        activityIdentity,
         parentUuid: msg.parentID ?? null,
         isToolResult: false,
         hasToolUse: false,
@@ -327,9 +347,6 @@ export async function parseOpencodeSessionFile(
       }
       if (msg.modelID) modelsSet.add(msg.modelID)
 
-      const parts = msg.id
-        ? await readMessageParts(storageRoot, msg.id)
-        : { toolNames: [], progressTimestamps: [] }
       progressTimestamps.push(...parts.progressTimestamps)
       const completed = toIso(msg.time?.completed)
       if (completed) progressTimestamps.push(completed)
@@ -337,12 +354,14 @@ export async function parseOpencodeSessionFile(
       messages.push({
         type: 'assistant',
         timestamp,
+        ...(completed ? { completedAt: completed } : {}),
         sessionId,
         cwd: projectDirectory,
         gitBranch: null,
         model: msg.modelID ?? null,
         usage,
         uuid: msg.id ?? null,
+        activityIdentity,
         parentUuid: msg.parentID ?? null,
         isToolResult: false,
         hasToolUse: parts.toolNames.length > 0,
@@ -353,6 +372,9 @@ export async function parseOpencodeSessionFile(
   }
 
   if (messages.length === 0) return null
+  const opencodeActivityEvidence = identityCapture.finish()
+  if (opencodeActivityEvidence.status === 'unavailable')
+    for (const message of messages) message.activityIdentity = null
 
   // Sort by timestamp, breaking ties on the sortable msg_ ULID id so a user
   // prompt and its assistant reply created in the same millisecond keep a
@@ -381,6 +403,7 @@ export async function parseOpencodeSessionFile(
     messageCount: messages.length,
     summary: info.title || null,
     subagentMessages: [],
-    subagentProgressTimestamps: []
+    subagentProgressTimestamps: [],
+    opencodeActivityEvidence
   }
 }

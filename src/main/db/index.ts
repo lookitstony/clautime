@@ -7,6 +7,8 @@ import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import log from 'electron-log/main.js'
 import * as sessionsSchema from './schema/sessions'
+import * as providerOperationsSchema from './schema/provider-operations'
+import * as folderSyncSchema from './schema/folder-sync'
 import * as appSettingsSchema from './schema/app-settings'
 import * as scanStateSchema from './schema/scan-state'
 import * as clientsSchema from './schema/clients'
@@ -23,8 +25,20 @@ import * as sessionDeletionsSchema from './schema/session-deletions'
 import * as sessionHistorySchema from './schema/session-history'
 import * as sessionReconciliationSchema from './schema/session-reconciliation'
 import * as sessionLegacySchema from './schema/session-legacy'
+import * as activityEvidenceSchema from './schema/activity-evidence'
+import * as projectFolderMappingsSchema from './schema/project-folder-mappings'
+import * as localProjectSetupSchema from './schema/local-project-setup'
+import * as manualTimeEntriesSchema from './schema/manual-time-entries'
+import * as workspacePolicySchema from './schema/workspace-policy'
+import * as sessionActivityMappingSchema from './schema/session-activity-mappings'
+import * as sessionMappingRevisionSchema from './schema/session-mapping-revisions'
+import * as activityObserversSchema from './schema/activity-observers'
+import * as localFolderDiscoveryBlocksSchema from './schema/local-folder-discovery-blocks'
+import * as syncLegacySchema from './schema/sync-legacy'
 
 const schema = {
+  ...providerOperationsSchema,
+  ...folderSyncSchema,
   ...sessionsSchema,
   ...appSettingsSchema,
   ...scanStateSchema,
@@ -41,7 +55,17 @@ const schema = {
   ...sessionDeletionsSchema,
   ...sessionHistorySchema,
   ...sessionReconciliationSchema,
-  ...sessionLegacySchema
+  ...sessionLegacySchema,
+  ...activityEvidenceSchema,
+  ...projectFolderMappingsSchema,
+  ...localProjectSetupSchema,
+  ...localFolderDiscoveryBlocksSchema,
+  ...activityObserversSchema,
+  ...manualTimeEntriesSchema,
+  ...workspacePolicySchema,
+  ...sessionActivityMappingSchema,
+  ...sessionMappingRevisionSchema,
+  ...syncLegacySchema
 }
 
 let db: BetterSQLite3Database<typeof schema>

@@ -1,3 +1,4 @@
+import { portableBilledRanges } from './folder-sync-invoice-records'
 import { eq } from 'drizzle-orm'
 import type { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
@@ -48,7 +49,11 @@ export function billingRange(session: Session): InvoiceBillingRange {
 /** Freeze new references once; hiding invoices or splitting cannot widen them. */
 export function retainInvoiceBillingRefs(
   tx: BillingDb,
-  captured?: { stripeInvoiceId: string; ranges: Map<number, InvoiceBillingRange[]> }
+  captured?: {
+    stripeInvoiceId: string
+    ranges: Map<number, InvoiceBillingRange[]>
+    testMode?: boolean
+  }
 ): void {
   const rows = new Map(
     tx
@@ -57,7 +62,15 @@ export function retainInvoiceBillingRefs(
       .all()
       .map((row) => [row.id, row])
   )
-  for (const ref of invoiceRefs(tx)) {
+  const refs = invoiceRefs(tx)
+  if (captured?.testMode !== undefined)
+    for (const sessionId of captured.ranges.keys())
+      refs.push({
+        sessionId,
+        stripeInvoiceId: captured.stripeInvoiceId,
+        testMode: Number(captured.testMode)
+      })
+  for (const ref of refs) {
     const row = rows.get(ref.sessionId)
     if (!row) continue
     const frozen =
@@ -80,6 +93,7 @@ export function unbilledSessions(db: BillingDb, rows: Session[], testMode: boole
     .where(eq(sessionBillingRefs.testMode, Number(testMode)))
     .all()
     .flatMap((ref) => ref.billedRanges ?? [])
+  ranges.push(...portableBilledRanges(db, testMode))
   const parents = new Map(
     db
       .select()

@@ -1,3 +1,7 @@
+import { configureInvoicePreflight } from './services/invoice-preflight'
+import { configureProviderOperationJournal } from './services/provider-operation-store'
+import { providerIntentJournal } from './services/folder-sync-invoice-records'
+import { getFolderSyncService, stopFolderSync } from './services/folder-sync-service'
 // electron-log MUST be initialized before any BrowserWindow creation
 import log from 'electron-log/main.js'
 log.initialize()
@@ -10,7 +14,7 @@ log.transports.console.level = 'debug'
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { initializeDatabase, closeDatabase } from './db'
+import { initializeDatabase, closeDatabase, getDb } from './db'
 import { registerIpcHandlers } from './ipc'
 import { updaterService } from './services/updater-service'
 import { trayService } from './services/tray-service'
@@ -19,6 +23,11 @@ import { fileWatcherService } from './services/file-watcher-service'
 import { widgetService } from './services/widget-service'
 import { secretScanService } from './services/secret-scan-service'
 import { settingsService } from './services/settings-service'
+import { hostname } from 'node:os'
+import { initializeLocalDevice, getLocalDeviceSession } from './services/device-context'
+import { initializeManualEntryProvenance } from './services/manual-time-entries'
+import { initializeActivityProvenance } from './services/activity-provenance'
+import { initializeEmptyLocalProjectSetup } from './services/local-project-setup'
 import { applyExcludedPaths } from './services/excluded-paths'
 
 // [DIAG] Temporary instrumentation to hunt main-thread stalls: log event-loop
@@ -45,6 +54,12 @@ import { applyExcludedPaths } from './services/excluded-paths'
       }
     })
   }
+
+  app.on('child-process-gone', (_event, details) => {
+    log.error(
+      `[DIAG] child process gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
+    )
+  })
 }
 
 // Single instance lock — prevent multiple instances
@@ -137,6 +152,18 @@ function createWindow(): void {
     isQuitting = true
   })
 
+  // [DIAG] The white title bar is the renderer failing to paint — record when
+  // Chromium considers it hung or gone. Remove with the other [DIAG] blocks.
+  mainWindow.webContents.on('unresponsive', () => {
+    log.warn('[DIAG] renderer became unresponsive')
+  })
+  mainWindow.webContents.on('responsive', () => {
+    log.warn('[DIAG] renderer responsive again')
+  })
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    log.error(`[DIAG] render process gone: reason=${details.reason} exitCode=${details.exitCode}`)
+  })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -154,13 +181,25 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.clautime.app')
 
   // Initialize database BEFORE any window is created
+  initializeLocalDevice(join(app.getPath('userData'), 'local-device'), hostname())
   initializeDatabase()
+  configureProviderOperationJournal(providerIntentJournal)
+  configureInvoicePreflight({
+    importAvailableChanges: async () => {
+      await getFolderSyncService().assertAvailableForBilling()
+      return getFolderSyncService().status()
+    }
+  })
+  initializeActivityProvenance(getDb(), getLocalDeviceSession())
+  initializeManualEntryProvenance(getDb(), getLocalDeviceSession())
+  initializeEmptyLocalProjectSetup()
 
   // Apply user-configured excluded folders before anything scans
   applyExcludedPaths()
 
   // Register IPC handlers after database is ready
   registerIpcHandlers()
+  getFolderSyncService().start()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -199,6 +238,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  stopFolderSync()
   secretScanService.stopDailyScanning()
   widgetService.destroy()
   fileWatcherService.stop()

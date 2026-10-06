@@ -19,8 +19,8 @@ export interface ParseWorkResponse {
  * Worker-thread entry: parses session files off the Electron main thread so a
  * large (multi-hundred-MB) JSONL can never freeze the window. Deliberately
  * imports only parsers — never providers/services, which would drag DB and
- * settings access into the worker. electron-log falls back to its console
- * transport here (no `electron` module in worker threads), which is fine.
+ * settings access into the worker. Parsers use electron-log's universal entry,
+ * which selects its Node logger here without requiring the Electron module.
  */
 const parserFor: Record<
   SessionTool,

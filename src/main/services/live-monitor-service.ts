@@ -1,3 +1,5 @@
+import { projectFolderMappings } from '../db/schema/project-folder-mappings'
+import { getLocalDeviceSession } from './device-context'
 import { open, stat, readdir } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
@@ -12,6 +14,7 @@ import { clients } from '../db/schema/clients'
 import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
+import { currentReportingDate } from './reporting-calendar'
 import { clientProjectService } from './client-project-service'
 import { getClaudeConfigDirs } from './discovery-service'
 import { encodeProjectPath } from './session-detector'
@@ -30,9 +33,9 @@ import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../sh
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
 
 function getTodayMidnightISO(): string {
-  const now = new Date()
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return midnight.toISOString()
+  const now = currentReportingDate(new Date())
+  now.setHours(0, 0, 0, 0)
+  return new Date(now.getTime()).toISOString()
 }
 
 function formatDuration(minutes: number): string {
@@ -141,7 +144,7 @@ export const liveMonitorService = {
     // Respect after-hours mode: only keep sessions outside 7am-6pm
     if (settingsService.getSetting('after_hours_mode') === 'true') {
       todaySessions = todaySessions.filter((s) => {
-        const hour = new Date(s.startedAt).getHours()
+        const hour = currentReportingDate(s.startedAt).getHours()
         return hour < 7 || hour >= 18
       })
     }
@@ -217,7 +220,7 @@ export const liveMonitorService = {
         projectId: projects.id,
         projectName: projects.name,
         stageName: projects.stageName,
-        projectPath: projects.directoryPath,
+        projectPath: projectFolderMappings.directoryPath,
         clientName: clients.name,
         clientStageName: clients.stageName,
         clientId: projects.clientId,
@@ -225,6 +228,13 @@ export const liveMonitorService = {
         isWatching: projectAlertConfig.isWatching
       })
       .from(projects)
+      .leftJoin(
+        projectFolderMappings,
+        and(
+          eq(projectFolderMappings.projectSyncId, projects.syncId),
+          eq(projectFolderMappings.deviceId, getLocalDeviceSession().deviceId)
+        )
+      )
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(projectAlertConfig, eq(projects.id, projectAlertConfig.projectId))
       .where(eq(projects.isActive, true))
@@ -248,7 +258,7 @@ export const liveMonitorService = {
     // Respect after-hours mode: only keep sessions outside 7am-6pm
     if (afterHoursOnly) {
       todaySessions = todaySessions.filter((s) => {
-        const hour = new Date(s.startedAt).getHours()
+        const hour = currentReportingDate(s.startedAt).getHours()
         return hour < 7 || hour >= 18
       })
     }
@@ -259,7 +269,9 @@ export const liveMonitorService = {
       const matched = todaySessions.filter(
         (s) =>
           s.projectId === p.projectId ||
-          (s.projectId == null && s.projectPath.toLowerCase() === p.projectPath.toLowerCase())
+          (s.projectId == null &&
+            p.projectPath !== null &&
+            s.projectPath.toLowerCase() === p.projectPath.toLowerCase())
       )
       if (matched.length > 0) {
         projectSessionMap.set(p.projectId, matched)
@@ -274,7 +286,7 @@ export const liveMonitorService = {
       // Match JSONL timestamp data by encoded project path
       let lastPromptAt: string | null = null
       let isProcessing = false
-      const encodedProjectPath = encodeProjectPath(p.projectPath)
+      const encodedProjectPath = p.projectPath ? encodeProjectPath(p.projectPath) : null
       for (const [key, value] of timestamps) {
         if (key === encodedProjectPath) {
           lastPromptAt = value.lastPromptAt
@@ -321,7 +333,7 @@ export const liveMonitorService = {
       results.push({
         projectId: p.projectId,
         projectName: presentationMode ? p.stageName || projectAlias(p.projectId) : p.projectName,
-        projectPath: p.projectPath,
+        projectPath: p.projectPath ?? '',
         clientName: presentationMode
           ? p.clientStageName || (p.clientId != null ? clientAlias(p.clientId) : p.clientName)
           : p.clientName,
@@ -720,8 +732,15 @@ export const liveMonitorService = {
           const notIdleIds = new Set<number>()
           const db2 = getDb()
           const allProjects = db2
-            .select({ id: projects.id, directoryPath: projects.directoryPath })
+            .select({ id: projects.id, directoryPath: projectFolderMappings.directoryPath })
             .from(projects)
+            .innerJoin(
+              projectFolderMappings,
+              and(
+                eq(projectFolderMappings.projectSyncId, projects.syncId),
+                eq(projectFolderMappings.deviceId, getLocalDeviceSession().deviceId)
+              )
+            )
             .where(eq(projects.isActive, true))
             .all()
           for (const p of allProjects) {
@@ -768,10 +787,17 @@ export const liveMonitorService = {
           .select({
             projectId: projectAlertConfig.projectId,
             alertSound: projectAlertConfig.alertSound,
-            directoryPath: projects.directoryPath
+            directoryPath: projectFolderMappings.directoryPath
           })
           .from(projectAlertConfig)
           .innerJoin(projects, eq(projectAlertConfig.projectId, projects.id))
+          .innerJoin(
+            projectFolderMappings,
+            and(
+              eq(projectFolderMappings.projectSyncId, projects.syncId),
+              eq(projectFolderMappings.deviceId, getLocalDeviceSession().deviceId)
+            )
+          )
           .where(eq(projectAlertConfig.isWatching, 1))
           .all()
 

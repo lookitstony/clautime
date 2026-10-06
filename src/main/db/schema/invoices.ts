@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core'
 import { clients } from './clients'
 
 export const invoices = sqliteTable(
@@ -9,6 +9,10 @@ export const invoices = sqliteTable(
       .notNull()
       .references(() => clients.id),
     stripeInvoiceId: text('stripe_invoice_id').notNull().unique(),
+    providerAccountId: text('provider_account_id'),
+    operationId: text('operation_id').unique(),
+    /** Visibility is local; retained invoices continue excluding their billed activity. */
+    hidden: integer('hidden').notNull().default(0),
     status: text('status')
       .notNull()
       .$type<'draft' | 'open' | 'paid' | 'void' | 'uncollectible'>()
@@ -62,3 +66,17 @@ export type InvoiceRow = typeof invoices.$inferSelect
 export type NewInvoiceRow = typeof invoices.$inferInsert
 export type InvoiceLineItemRow = typeof invoiceLineItems.$inferSelect
 export type NewInvoiceLineItemRow = typeof invoiceLineItems.$inferInsert
+
+/** A customer reference is usable only with its verified account and mode. */
+export const clientProviderReferences = sqliteTable(
+  'client_provider_references',
+  {
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    accountId: text('account_id').notNull(),
+    testMode: integer('test_mode').notNull(),
+    customerId: text('customer_id').notNull()
+  },
+  (table) => [primaryKey({ columns: [table.clientId, table.accountId, table.testMode] })]
+)

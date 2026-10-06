@@ -218,7 +218,7 @@ export function InvoiceDetailView({
               <XCircle className="mr-1 h-3 w-3" /> Void
             </Button>
           )}
-          {invoice.status !== 'void' && invoice.status !== 'paid' && (
+          {
             <Button
               size="sm"
               variant="ghost"
@@ -228,7 +228,7 @@ export function InvoiceDetailView({
               <RefreshCw className={cn('mr-1 h-3 w-3', syncStatus.isPending && 'animate-spin')} />{' '}
               Refresh
             </Button>
-          )}
+          }
           {invoice.hostedUrl ? (
             <Button
               size="sm"

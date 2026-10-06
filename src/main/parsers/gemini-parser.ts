@@ -2,7 +2,7 @@ import { open, readdir, readFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { join, dirname, basename } from 'node:path'
 import { homedir } from 'node:os'
-import log from 'electron-log/main.js'
+import log from 'electron-log'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from './types'
 import { geminiActivityEvidence } from './gemini-activity-identity'
 
@@ -296,8 +296,8 @@ export async function parseGeminiSessionFile(filePath: string): Promise<ParsedSe
 
   if (messages.length === 0) return null
 
-  messages.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-  progressTimestamps.sort()
+  messages.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
+  progressTimestamps.sort((a, b) => Date.parse(a) - Date.parse(b))
 
   const timestamps = messages.map((m) => m.timestamp)
 

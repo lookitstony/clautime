@@ -1,3 +1,4 @@
+import { SharedInvoiceCoverage } from './SharedInvoiceCoverage'
 import { useState, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -13,6 +14,12 @@ import {
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { getDateRangeForPreset, resolveClientName, type DatePreset } from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
+import { useWorkspacePolicy } from '../settings/use-reporting-time-zone'
+import {
+  calendarDate,
+  calendarDateKey,
+  calendarDayStart
+} from '../../../../shared/reporting-calendar'
 import { projectAlias } from '../../../../shared/presentation-alias'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import type { GeneratedLineItem, InvoiceOverlap } from '../../../../shared/types/invoice'
@@ -30,6 +37,18 @@ interface EditableLineItem {
 
 let nextId = 1
 
+/** Results where Stripe may hold the invoice; a new draft ID must not replace the operation. */
+const UNCERTAIN_CODES = new Set([
+  'PROVIDER_OPERATION_UNCERTAIN',
+  'INVOICE_OPERATION_PENDING',
+  'PROVIDER_RESULT_CONFLICT',
+  'PROVIDER_OPERATION_CONFLICT'
+])
+
+function codedError(error: { code: string; message: string }): Error {
+  return Object.assign(new Error(error.message), { code: error.code })
+}
+
 interface InvoiceCreateFlowProps {
   onBack: () => void
   onInvoiceCreated?: (draft: import('../../../../shared/types/invoice').DraftInvoice) => void
@@ -40,6 +59,55 @@ export function InvoiceCreateFlow({
   onInvoiceCreated
 }: InvoiceCreateFlowProps): React.JSX.Element {
   const queryClient = useQueryClient()
+  const pendingOperations = useQuery({
+    queryKey: ['invoices', 'pending-operations'],
+    queryFn: async () => {
+      const result = await window.api.invoice.getPendingOperations()
+      if (!result.success) throw new Error(result.error.message)
+      return result.data
+    }
+  })
+  const resumeDraft = useMutation({
+    mutationFn: async (operationId: string) => {
+      const result = await window.api.invoice.resumeDraftInvoice(operationId)
+      if (!result.success) throw codedError(result.error)
+      return result.data
+    },
+    onSuccess: (draft) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      onInvoiceCreated?.(draft)
+    },
+    onError: (error) => {
+      // A rejection is now listed with its reason and a Cancel action.
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'pending-operations'] })
+      toast.error(error instanceof Error ? error.message : 'Unable to resume invoice')
+    }
+  })
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  const cancelDraft = useMutation({
+    mutationFn: async (operationId: string) => {
+      const result = await window.api.invoice.cancelInvoiceOperation(operationId)
+      if (!result.success) throw codedError(result.error)
+      return { operationId, basis: result.data.basis }
+    },
+    onSuccess: ({ operationId, basis }) => {
+      // Only this cancelled operation's ID is released; any other draft keeps its ID.
+      for (const [fingerprint, id] of operationIds.current)
+        if (id === operationId) operationIds.current.delete(fingerprint)
+      setProviderNotice(null)
+      setCancelTarget(null)
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      toast.success(
+        basis === 'draft-deleted'
+          ? 'Draft cancelled: Stripe confirmed its draft invoice was deleted. You can create it again.'
+          : 'Draft cancelled: Stripe rejected it, so no invoice was created. You can edit and create it again.'
+      )
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Unable to cancel this draft')
+  })
+  const workspacePolicy = useWorkspacePolicy()
+  const timeZone = workspacePolicy.data?.policy.reportingTimeZone
   const { data: settingsData } = useQuery({
     queryKey: ['settings', 'all'],
     queryFn: async () => {
@@ -94,7 +162,13 @@ export function InvoiceCreateFlow({
     }, 0)
     .toFixed(2)
 
-  const isGenerateReady = selectedClientId !== null && startDate && endDate && startDate <= endDate
+  const isGenerateReady =
+    selectedClientId !== null &&
+    startDate &&
+    endDate &&
+    startDate <= endDate &&
+    !workspacePolicy.isPending &&
+    !workspacePolicy.isError
   const isSendReady =
     lineItems.length > 0 &&
     lineItems.every((item) => item.description.trim() && parseFloat(item.amount) > 0)
@@ -215,6 +289,19 @@ export function InvoiceCreateFlow({
     [selectedClient]
   )
 
+  // One operation ID per draft content: double-clicks and retries of an unchanged draft
+  // resume the same Stripe invoice; an edited draft is a new attempt.
+  const [providerNotice, setProviderNotice] = useState<string | null>(null)
+  const operationIds = useRef(new Map<string, string>())
+  const draftOperationId = (fingerprint: string): string => {
+    let id = operationIds.current.get(fingerprint)
+    if (!id) {
+      id = crypto.randomUUID()
+      operationIds.current.set(fingerprint, id)
+    }
+    return id
+  }
+
   // Create draft (for preview)
   const createDraft = useMutation({
     mutationFn: async () => {
@@ -241,7 +328,7 @@ export function InvoiceCreateFlow({
         billedRanges: item.billedRanges
       }))
 
-      const draftResult = await window.api.invoice.createDraftInvoice({
+      const request = {
         clientId: selectedClientId,
         lineItems: stripeLineItems,
         memo: memo.trim() || undefined,
@@ -250,17 +337,37 @@ export function InvoiceCreateFlow({
         periodEnd: endDate || undefined,
         achOnly: achOnly || undefined,
         lineMeta
+      }
+      const draftResult = await window.api.invoice.createDraftInvoice({
+        ...request,
+        operationId: draftOperationId(JSON.stringify(request))
       })
-      if (!draftResult.success) throw new Error(draftResult.error.message)
+      if (!draftResult.success) throw codedError(draftResult.error)
       return draftResult.data
     },
     onSuccess: (draft) => {
+      setProviderNotice(null)
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
       // Navigate to the detail view for review before sending
       if (onInvoiceCreated) onInvoiceCreated(draft)
     },
     onError: (err) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'pending-operations'] })
       const msg = err instanceof Error ? err.message : 'Failed to create draft'
+      const code = (err as { code?: string }).code
+      // Stripe may already hold this invoice: only Resume (same operation and keys) is safe.
+      if (code && UNCERTAIN_CODES.has(code)) {
+        setProviderNotice(msg)
+        return
+      }
+      if (code === 'PROVIDER_OPERATION_CANCELLED') {
+        // This content's operation was cancelled (maybe on another computer): a new attempt
+        // gets a new ID; the server still refuses it while any unfinished draft remains.
+        operationIds.current.clear()
+        toast.error(`${msg} Select Review Draft again to create a new one.`)
+        return
+      }
+      if (code === 'PROVIDER_OPERATION_REJECTED') setProviderNotice(null)
       if (
         msg.toLowerCase().includes('us_bank_account') ||
         msg.toLowerCase().includes('ach') ||
@@ -276,37 +383,29 @@ export function InvoiceCreateFlow({
   // Date presets
   const setPreset = useCallback(
     (preset: string) => {
+      if (workspacePolicy.isPending || workspacePolicy.isError) return
       const presetMap: Record<string, DatePreset> = {
         thisWeek: 'this-week',
         lastWeek: 'last-week',
         thisMonth: 'this-month'
       }
 
-      // Format a Date to YYYY-MM-DD using local components — avoids UTC drift
-      // that would bump end-of-day dates to the next calendar day in negative offsets.
-      const toLocalYmd = (d: Date): string => {
-        const y = d.getFullYear()
-        const m = String(d.getMonth() + 1).padStart(2, '0')
-        const day = String(d.getDate()).padStart(2, '0')
-        return `${y}-${m}-${day}`
-      }
-
       if (preset === 'lastMonth') {
-        const now = new Date()
-        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        const end = new Date(now.getFullYear(), now.getMonth(), 0)
-        setStartDate(toLocalYmd(start))
-        setEndDate(toLocalYmd(end))
+        const now = calendarDate(new Date(), timeZone)
+        const start = calendarDayStart(now.getFullYear(), now.getMonth() - 1, 1, timeZone)
+        const end = calendarDayStart(now.getFullYear(), now.getMonth(), 0, timeZone)
+        setStartDate(calendarDateKey(start, timeZone))
+        setEndDate(calendarDateKey(end, timeZone))
         return
       }
 
       const mapped = presetMap[preset]
       if (!mapped) return
-      const range = getDateRangeForPreset(mapped, weekStartDay)
-      setStartDate(toLocalYmd(new Date(range.startDate)))
-      setEndDate(toLocalYmd(new Date(range.endDate)))
+      const range = getDateRangeForPreset(mapped, weekStartDay, timeZone)
+      setStartDate(calendarDateKey(range.startDate, timeZone))
+      setEndDate(calendarDateKey(range.endDate, timeZone))
     },
-    [weekStartDay]
+    [weekStartDay, timeZone, workspacePolicy.isPending, workspacePolicy.isError]
   )
 
   return (
@@ -319,6 +418,86 @@ export function InvoiceCreateFlow({
       </div>
 
       {/* Client & Date Range */}
+      <SharedInvoiceCoverage />
+      {providerNotice && (
+        <p role="alert" className="text-sm">
+          Stripe may already have this invoice. {providerNotice} Use Resume draft under Unfinished
+          invoices; starting a new draft could create a duplicate.
+        </p>
+      )}
+      {pendingOperations.isError && (
+        <p role="alert">Unable to load unfinished invoices. Retry before creating another draft.</p>
+      )}
+      {!!pendingOperations.data?.length && (
+        <section
+          className="rounded-lg border border-[var(--surface-border)] p-4 space-y-2"
+          aria-label="Unfinished invoices"
+        >
+          <p className="text-sm">
+            Resume an unfinished invoice using its saved amounts. It will open for review before
+            sending. A draft Stripe rejected cannot change; cancel it, then create it again.
+          </p>
+          {pendingOperations.data.map((operation) => (
+            <div key={operation.operationId} className="space-y-1 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  {presentationMode ? 'Saved client' : operation.clientName} ·{' '}
+                  {operation.periodStart ?? 'Custom period'} · $
+                  {(operation.amountCents / 100).toFixed(2)}
+                  {operation.testMode ? ' · Test' : ''}
+                </span>
+                {operation.state === 'conflict' ? (
+                  <span className="text-sm">Needs review</span>
+                ) : operation.state === 'rejected' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancelDraft.isPending}
+                    onClick={() => setCancelTarget(operation.operationId)}
+                  >
+                    Cancel draft
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={resumeDraft.isPending}
+                    onClick={() => resumeDraft.mutate(operation.operationId)}
+                  >
+                    Resume draft
+                  </Button>
+                )}
+              </div>
+              {operation.state === 'conflict' && (
+                <p role="alert" className="text-sm">
+                  Shared records disagree about this draft. Sync your computers and review Shared
+                  history in Settings before invoicing this work.
+                </p>
+              )}
+              {operation.state === 'rejected' && (
+                <p className="text-[12px] text-[var(--text-secondary)]">
+                  Stripe rejected this draft: {operation.rejectionMessage}
+                  {operation.providerInvoiceId
+                    ? ` Its Stripe draft ${operation.providerInvoiceId} already exists: delete that draft (and any of its items) in Stripe before cancelling.`
+                    : ''}
+                </p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title="Cancel rejected draft"
+        description="ClauTime cancels this draft only if Stripe shows it created nothing that remains. Its work becomes available to invoice again."
+        confirmLabel="Cancel draft"
+        cancelLabel="Keep"
+        onConfirm={() => cancelTarget && cancelDraft.mutate(cancelTarget)}
+        onCancel={() => setCancelTarget(null)}
+      />
+      {workspacePolicy.isError && (
+        <p role="alert">Unable to load tracking policy. {workspacePolicy.error.message}</p>
+      )}
       <section className="rounded-lg border border-[var(--surface-border)] bg-[var(--background-elevated)] p-4 space-y-3">
         <div>
           <label className="mb-1 block text-[12px] font-semibold text-[var(--text-primary)]">

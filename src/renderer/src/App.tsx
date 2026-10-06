@@ -12,6 +12,7 @@ import { SessionsPage } from '@/features/sessions/SessionsPage'
 import { ClientsPage } from '@/features/clients/ClientsPage'
 import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
 import { SettingsPage } from '@/features/settings/SettingsPage'
+import { LocalFoldersSettings } from '@/features/settings/LocalFoldersSettings'
 import { ReportsPage } from '@/features/reports/ReportsPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { LivePage } from '@/features/live/LivePage'
@@ -140,6 +141,7 @@ function RootLayout(): React.JSX.Element {
         <div className="flex flex-1 overflow-hidden">
           <ActivityBar />
           <div className="flex flex-1 flex-col overflow-hidden">
+            <LocalFoldersSettings noticeOnly onConfigure={() => navigate('/settings')} />
             <main className="flex-1 overflow-auto">
               <ErrorBoundary>
                 <Outlet />

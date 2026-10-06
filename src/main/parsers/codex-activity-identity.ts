@@ -26,13 +26,30 @@ export interface CodexTokenCheckpoint {
   model: string | null
 }
 
+/**
+ * A non-message event_msg (or token_count without totals) the parser counts as progress.
+ * A leaf anchored to the activity head at that point: it never becomes a head, so
+ * message and checkpoint identities are the same with or without it.
+ */
+export interface CodexProgressRecord {
+  /** `codex:v1:progress:` key; basis 'progress'. */
+  eventId: string
+  /** Activity head when recorded; null before any activity. */
+  parentEventId: string | null
+  timestamp: string
+  progressType: string
+}
+
 export interface CodexActivityEvidence {
   version: 1
+  conversationId: string | null
   status: 'captured' | 'unavailable'
   reason: string | null
   activities: CodexActivityRecord[]
   /** Repeated IDs retain separate observations; no correction is silently selected. */
   checkpoints: CodexTokenCheckpoint[]
+  /** Token checkpoints are progress already; totals-bearing token_count is never repeated here. */
+  progress: CodexProgressRecord[]
 }
 
 function nonempty(value: unknown): value is string {
@@ -69,6 +86,16 @@ function timestamped(value: unknown): value is string {
   )
 }
 
+// Keep unknown payload fields rather than lose identity evidence. Only known
+// observation/location metadata is excluded; paths inside tool arguments remain payload.
+function stable(payload: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([field]) => !['usage', 'model', 'cwd', 'machine_id'].includes(field)
+    )
+  )
+}
+
 /** Parser evidence only. No file paths, line numbers or mutable counters enter event keys. */
 export class CodexIdentityCapture {
   private conversationId: string | null = null
@@ -79,6 +106,7 @@ export class CodexIdentityCapture {
   private activities = new Map<string, CodexActivityRecord>()
   private checkpointParents = new Map<string, string | null>()
   private checkpoints: CodexTokenCheckpoint[] = []
+  private progress = new Map<string, CodexProgressRecord>()
 
   invalidate(reason = 'incomplete-stream'): void {
     this.failure ??= reason
@@ -111,17 +139,27 @@ export class CodexIdentityCapture {
       if (nonempty(payload.model)) this.model = payload.model
       return null
     }
-    const checkpoint = raw.type === 'event_msg' && object(payload) && payload.type === 'token_count'
-    if (raw.type !== 'response_item' && raw.type !== 'compacted' && !checkpoint) return null
+    // Every event_msg is parser progress. One the ledger cannot capture makes the
+    // stream unavailable rather than leaving a quietly thinner history.
+    const event = raw.type === 'event_msg'
+    if (raw.type !== 'response_item' && raw.type !== 'compacted' && !event) return null
     if (!this.conversationId || !object(payload) || !timestamped(raw.timestamp)) {
       this.invalidate('incomplete-stream')
       return null
     }
-    if (checkpoint) {
+    if (event) {
+      if (!nonempty(payload.type)) {
+        this.invalidate()
+        return null
+      }
       const info = payload.info
-      const totals = object(info) ? info.total_token_usage : null
-      // An empty token_count is only progress evidence, not a zero usage observation.
-      if (totals == null) return null
+      const totals = payload.type === 'token_count' && object(info) ? info.total_token_usage : null
+      // Only a token_count with totals is a checkpoint, which is itself progress. Other
+      // events, and an empty token_count, are progress evidence, not a zero usage observation.
+      if (totals == null) {
+        this.recordProgress(this.conversationId, raw.timestamp, payload)
+        return null
+      }
       if (
         !object(totals) ||
         !['input_tokens', 'output_tokens', 'cached_input_tokens'].every((field) =>
@@ -156,17 +194,10 @@ export class CodexIdentityCapture {
     const kind = raw.type === 'compacted' ? 'compacted' : String(payload.type)
     const nativeEventId = raw.type === 'response_item' && nonempty(payload.id) ? payload.id : null
     const basis = nativeEventId ? 'native' : 'fingerprint'
-    // Keep unknown payload fields rather than lose identity evidence. Only known
-    // observation/location metadata is excluded; paths inside tool arguments remain payload.
-    const stablePayload = Object.fromEntries(
-      Object.entries(payload).filter(
-        ([field]) => !['usage', 'model', 'cwd', 'machine_id'].includes(field)
-      )
-    )
     const id = key(
       this.conversationId,
       basis,
-      nativeEventId ? [kind, nativeEventId] : [raw.type, this.head, raw.timestamp, stablePayload]
+      nativeEventId ? [kind, nativeEventId] : [raw.type, this.head, raw.timestamp, stable(payload)]
     )
     const existing = this.activities.get(id)
     if (existing) return existing.identity
@@ -184,14 +215,40 @@ export class CodexIdentityCapture {
     return identity
   }
 
+  /**
+   * The payload is hashed only to tell distinct events apart and is never retained.
+   * Neither the activity head nor the checkpoint chain moves.
+   */
+  private recordProgress(
+    conversationId: string,
+    timestamp: string,
+    payload: Record<string, unknown>
+  ): void {
+    const eventId = key(conversationId, 'progress', [
+      'event_msg',
+      this.head,
+      timestamp,
+      stable(payload)
+    ])
+    if (this.progress.has(eventId)) return
+    this.progress.set(eventId, {
+      eventId,
+      parentEventId: this.head,
+      timestamp,
+      progressType: String(payload.type)
+    })
+  }
+
   finish(): CodexActivityEvidence {
     const reason = this.failure ?? (this.conversationId ? null : 'missing-session-identity')
     return {
       version: 1,
+      conversationId: this.conversationId,
       status: reason ? 'unavailable' : 'captured',
       reason,
       activities: reason ? [] : [...this.activities.values()],
-      checkpoints: reason ? [] : this.checkpoints
+      checkpoints: reason ? [] : this.checkpoints,
+      progress: reason ? [] : [...this.progress.values()]
     }
   }
 }

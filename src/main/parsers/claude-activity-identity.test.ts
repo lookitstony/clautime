@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { claudeActivityIdentity } from './claude-activity-identity'
 
-vi.mock('electron-log/main.js', () => ({
+vi.mock('electron-log', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }))
 import { parseSessionFile } from './session-parser'
@@ -307,4 +307,76 @@ it('scopes native IDs by recorded conversation and keeps unknown parents distinc
   )
   expect(claudeActivityIdentity({ ...root, parentUuid: undefined })!.parentEventId).toBeUndefined()
   expect(claudeActivityIdentity(root)!.parentEventId).toBeNull()
+})
+
+const progress = {
+  type: 'progress',
+  sessionId: root.sessionId,
+  uuid: 'progress-1',
+  parentUuid: assistant.uuid,
+  timestamp: '2026-03-04T10:00:02.123456Z',
+  data: { type: 'bash_progress', output: 'PRIVATE_TOOL_OUTPUT' }
+}
+
+it('captures native progress lineage without turning progress into messages or exposing payloads', async () => {
+  const parsed = await parse('progress.jsonl', [
+    root,
+    assistant,
+    progress,
+    {
+      ...root,
+      uuid: 'after-progress',
+      parentUuid: progress.uuid,
+      timestamp: '2026-03-04T10:00:03Z'
+    }
+  ])
+  expect(parsed.messages).toHaveLength(3)
+  expect(parsed.progressTimestamps).toEqual([progress.timestamp])
+  expect(parsed.claudeProgressEvidence).toEqual([
+    {
+      identity: claudeActivityIdentity(progress),
+      timestamp: progress.timestamp,
+      progressType: 'bash_progress',
+      sourceFile: parsed.sourceFile,
+      isSubagent: false
+    }
+  ])
+  expect(parsed.messages[2].activityIdentity!.parentEventId).toBe(
+    parsed.claudeProgressEvidence![0].identity.eventId
+  )
+  expect(JSON.stringify(parsed)).not.toContain('PRIVATE_TOOL_OUTPUT')
+})
+
+it('captures progress-only main and subagent incremental tails using recorded identities', async () => {
+  const main = await parse(`${root.sessionId}.jsonl`, [root])
+  const subdir = join(directory, root.sessionId, 'subagents')
+  await mkdir(subdir, { recursive: true })
+  const subpath = join(subdir, 'arbitrary-agent-name.jsonl')
+  await writeFile(
+    subpath,
+    jsonl([{ ...progress, uuid: 'agent-progress', data: { type: 'hook_progress' } }])
+  )
+  await writeFile(main.sourceFile, jsonl([root, progress]))
+  const tail = (await parseSessionFile(main.sourceFile, { offsets: main.fileOffsets }))!
+  expect(tail.messages).toEqual([])
+  expect(tail.progressTimestamps).toEqual([progress.timestamp])
+  expect(tail.subagentProgressTimestamps).toEqual([progress.timestamp])
+  expect(tail.claudeProgressEvidence).toHaveLength(2)
+  expect(tail.claudeProgressEvidence![1]).toMatchObject({ sourceFile: subpath, isSubagent: true })
+  const full = (await parseSessionFile(main.sourceFile))!
+  expect(tail.claudeProgressEvidence).toEqual(full.claudeProgressEvidence)
+  const unchanged = (await parseSessionFile(main.sourceFile, { offsets: tail.fileOffsets }))!
+  expect(unchanged.claudeProgressEvidence).toEqual([])
+})
+
+it.each([
+  { uuid: undefined },
+  { sessionId: undefined },
+  { timestamp: 'invalid' },
+  { timestamp: '2026-03-04T10:00:02' }
+])('keeps unsupported progress local without inventing identity: %j', async (patch) => {
+  const parsed = await parse('unsupported.jsonl', [root, { ...progress, ...patch }])
+  expect(parsed.progressTimestamps).toHaveLength(1)
+  expect(parsed.claudeProgressEvidence).toEqual([])
+  expect(parsed.messages[0].activityIdentity).toEqual(claudeActivityIdentity(root))
 })

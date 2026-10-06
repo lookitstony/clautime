@@ -5,6 +5,46 @@ import type { IpcResult } from '../shared/types/ipc'
 
 // Custom APIs for renderer — typed service interfaces
 const api = {
+  syncConflicts: {
+    list: (options?: { presentation?: boolean }) =>
+      ipcRenderer.invoke('folderSync:conflicts:list', options),
+    resolve: (resolution: import('../shared/types/sync-conflict').SyncConflictResolution) =>
+      ipcRenderer.invoke('folderSync:conflicts:resolve', resolution)
+  },
+  folderSync: {
+    status: () => ipcRenderer.invoke('folderSync:status'),
+    discover: (folder: string) => ipcRenderer.invoke('folderSync:discover', folder),
+    connect: (input: import('../shared/types/folder-sync').ConnectFolderSync) =>
+      ipcRenderer.invoke('folderSync:connect', input),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('folderSync:setEnabled', enabled),
+    syncNow: () => ipcRenderer.invoke('folderSync:syncNow'),
+    joinReview: () => ipcRenderer.invoke('folderSync:joinReview'),
+    applyJoinReview: (input: import('../shared/types/folder-sync').ApplyFolderSyncJoinReview) =>
+      ipcRenderer.invoke('folderSync:applyJoinReview', input)
+  } satisfies import('../shared/types/folder-sync').FolderSyncApi,
+  machines: {
+    coverage: () => ipcRenderer.invoke('machine:coverage'),
+    list: () => ipcRenderer.invoke('machine:list'),
+    rename: (input: import('../shared/types/source-machine').RenameSourceMachineInput) =>
+      ipcRenderer.invoke('machine:rename', input)
+  } satisfies import('../shared/types/source-machine').SourceMachineApi,
+  workspace: {
+    getPolicy: (): Promise<
+      IpcResult<import('../shared/types/workspace-policy').WorkspacePolicyState | null>
+    > => ipcRenderer.invoke('workspace:getPolicy'),
+    reviewPolicy: (
+      request: import('../shared/types/workspace-policy').WorkspacePolicyReviewRequest
+    ): Promise<IpcResult<import('../shared/types/workspace-policy').WorkspacePolicyReview>> =>
+      ipcRenderer.invoke('workspace:reviewPolicy', request),
+    applyPolicy: (
+      request: import('../shared/types/workspace-policy').WorkspacePolicyApplyRequest
+    ): Promise<IpcResult<void>> => ipcRenderer.invoke('workspace:applyPolicy', request),
+    reviewActivity: (): Promise<
+      IpcResult<import('../shared/types/workspace-policy').WorkspaceActivityAdoptionReview>
+    > => ipcRenderer.invoke('workspace:reviewActivity'),
+    adoptActivity: (fingerprint: string, sessionIds: number[]): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('workspace:adoptActivity', fingerprint, sessionIds)
+  },
   dialog: {
     openFolder: (): Promise<IpcResult<string | null>> => ipcRenderer.invoke('dialog:openFolder'),
     discoverProjects: (
@@ -66,12 +106,14 @@ const api = {
       data: import('../shared/types/session').UpdateSession
     ): Promise<IpcResult<import('../shared/types/session').Session>> =>
       ipcRenderer.invoke('session:update', id, data),
-    delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('session:delete', id),
+    delete: (id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('session:delete', id, expectedSyncVersion),
     split: (
       id: number,
-      splitAt: string
+      splitAt: string,
+      expectedSyncVersion?: string
     ): Promise<IpcResult<import('../shared/types/session').Session[]>> =>
-      ipcRenderer.invoke('session:split', id, splitAt),
+      ipcRenderer.invoke('session:split', id, splitAt, expectedSyncVersion),
     getTimeBreakdown: (
       startDate: string,
       endDate: string
@@ -106,7 +148,8 @@ const api = {
       data: import('../shared/types/client-project').UpdateClient
     ): Promise<IpcResult<import('../shared/types/client-project').Client>> =>
       ipcRenderer.invoke('client:update', id, data),
-    delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('client:delete', id)
+    delete: (id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('client:delete', id, expectedSyncVersion)
   },
   ai: {
     getMethod: (): Promise<IpcResult<string>> => ipcRenderer.invoke('ai:getMethod'),
@@ -251,6 +294,17 @@ const api = {
     }
   },
   invoice: {
+    getPendingOperations: (): Promise<
+      IpcResult<import('../shared/types/invoice').PendingInvoiceOperation[]>
+    > => ipcRenderer.invoke('invoice:getPendingOperations'),
+    resumeDraftInvoice: (
+      operationId: string
+    ): Promise<IpcResult<import('../shared/types/invoice').DraftInvoice>> =>
+      ipcRenderer.invoke('invoice:resumeDraftInvoice', operationId),
+    cancelInvoiceOperation: (
+      operationId: string
+    ): Promise<IpcResult<{ basis: 'rejected-before-invoice' | 'draft-deleted' }>> =>
+      ipcRenderer.invoke('invoice:cancelInvoiceOperation', operationId),
     hasStripeKey: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('invoice:hasStripeKey'),
     isTestMode: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('invoice:isTestMode'),
     storeStripeKey: (key: string): Promise<IpcResult<void>> =>
@@ -258,9 +312,10 @@ const api = {
     removeStripeKey: (): Promise<IpcResult<void>> => ipcRenderer.invoke('invoice:removeStripeKey'),
     testConnection: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('invoice:testConnection'),
     syncCustomer: (
-      clientId: number
+      clientId: number,
+      operationId: string
     ): Promise<IpcResult<import('../shared/types/invoice').StripeCustomerInfo>> =>
-      ipcRenderer.invoke('invoice:syncCustomer', clientId),
+      ipcRenderer.invoke('invoice:syncCustomer', clientId, operationId),
     createDraftInvoice: (
       request: import('../shared/types/invoice').CreateInvoiceRequest
     ): Promise<IpcResult<import('../shared/types/invoice').DraftInvoice>> =>
@@ -369,6 +424,13 @@ const api = {
     }
   },
   projects: {
+    getLocalSetup: (): Promise<
+      IpcResult<import('../shared/types/local-project-setup').LocalProjectSetupStatus>
+    > => ipcRenderer.invoke('project:getLocalSetup'),
+    completeLocalSetup: (
+      selections: import('../shared/types/local-project-setup').LegacyFolderSelection[]
+    ): Promise<IpcResult<import('../shared/types/local-project-setup').LocalProjectSetupStatus>> =>
+      ipcRenderer.invoke('project:completeLocalSetup', selections),
     getAll: (
       clientId?: number
     ): Promise<IpcResult<import('../shared/types/client-project').Project[]>> =>
@@ -382,7 +444,8 @@ const api = {
       data: import('../shared/types/client-project').UpdateProject
     ): Promise<IpcResult<import('../shared/types/client-project').Project>> =>
       ipcRenderer.invoke('project:update', id, data),
-    delete: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke('project:delete', id),
+    delete: (id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke('project:delete', id, expectedSyncVersion),
     attributeSessions: (): Promise<IpcResult<number>> =>
       ipcRenderer.invoke('project:attributeSessions')
   }

@@ -1,7 +1,7 @@
 import { open, readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
-import log from 'electron-log/main.js'
+import log from 'electron-log'
 import { readJsonlLines } from './line-reader'
 import { CodexIdentityCapture } from './codex-activity-identity'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from './types'

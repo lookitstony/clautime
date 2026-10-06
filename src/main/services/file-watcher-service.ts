@@ -31,6 +31,7 @@ export const fileWatcherService = {
   _watchers: [] as FSWatcher[],
   _mainWindow: null as BrowserWindow | null,
   _debounceTimers: new Map<string, ReturnType<typeof setTimeout>>(),
+  _pendingCodexFiles: new Set<string>(),
   _knownDirs: new Set<string>(),
 
   async start(mainWindow: BrowserWindow): Promise<void> {
@@ -94,7 +95,6 @@ export const fileWatcherService = {
   },
 
   stop(): void {
-    if (this._watchers.length === 0) return
     for (const watcher of this._watchers) {
       watcher.close()
     }
@@ -103,6 +103,7 @@ export const fileWatcherService = {
       clearTimeout(timer)
     }
     this._debounceTimers.clear()
+    this._pendingCodexFiles.clear()
     log.info('File watcher stopped')
   },
 
@@ -185,7 +186,8 @@ export const fileWatcherService = {
   },
 
   _debouncedCodexScan(filePath: string): void {
-    const key = `codex:${filePath}`
+    this._pendingCodexFiles.add(filePath)
+    const key = 'codex'
     // Keep the first deadline so continuous writes still update the displayed time.
     if (this._debounceTimers.has(key)) return
     this._debounceTimers.set(
@@ -197,18 +199,34 @@ export const fileWatcherService = {
           this._debouncedCodexScan(filePath)
           return
         }
-        try {
-          const meta = await readCodexSessionMeta(filePath)
-          if (!meta?.cwd || isExcludedProjectPath(meta.cwd)) return
-          if (sessionService._scanInProgress) {
-            this._debouncedCodexScan(filePath)
-            return
+        const files = [...this._pendingCodexFiles]
+        this._pendingCodexFiles.clear()
+        const projects = new Map<string, string[]>()
+        for (const changedFile of files) {
+          try {
+            const meta = await readCodexSessionMeta(changedFile)
+            if (!meta?.cwd || isExcludedProjectPath(meta.cwd)) continue
+            const directory = mainProjectPath(meta.cwd)
+            const related = projects.get(directory) ?? []
+            related.push(changedFile)
+            projects.set(directory, related)
+          } catch (err) {
+            log.warn('Codex incremental scan failed:', err)
           }
-          const directory = mainProjectPath(meta.cwd)
-          clientProjectService.autoCreateProject(directory)
-          await this._runIncrementalScan(encodeProjectPath(directory), directory)
-        } catch (err) {
-          log.warn('Codex incremental scan failed:', err)
+        }
+        // Many changed transcripts can belong to one project. Scan that project
+        // once per batch, retaining new writes for the next deadline.
+        for (const [directory, changedFiles] of projects) {
+          if (sessionService._scanInProgress) {
+            for (const changedFile of changedFiles) this._debouncedCodexScan(changedFile)
+            continue
+          }
+          try {
+            clientProjectService.autoCreateProject(directory)
+            await this._runIncrementalScan(encodeProjectPath(directory), directory)
+          } catch (err) {
+            log.warn('Codex incremental scan failed:', err)
+          }
         }
       }, DEBOUNCE_MS)
     )

@@ -1,8 +1,13 @@
+import { folderSyncSettings } from '../db/schema/folder-sync'
+import { bootstrapFolderSync } from './folder-sync-bootstrap'
+import { getLegacyEditView, resolveLegacyEditConflict } from './folder-sync-legacy-edits'
+import { readLegacyQueue } from './folder-sync-legacy-records'
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { removeClientProjectSyncIds } from '../db/migration-test-helpers'
 import { eq } from 'drizzle-orm'
 import { join } from 'node:path'
 import { sessions } from '../db/schema/sessions'
@@ -23,6 +28,14 @@ import { rawMessages } from '../db/schema/raw-messages'
 import { invoices, invoiceLineItems } from '../db/schema/invoices'
 import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
+import { randomUUID } from 'node:crypto'
+import { activityIdentities, activityObservations } from '../db/schema/activity-evidence'
+import { sessionActivityMappings } from '../db/schema/session-activity-mappings'
+import { adoptInitialWorkspacePolicy, previewLedgerWorkspacePolicy } from './workspace-policy'
+import {
+  adoptSessionActivityMappings,
+  previewSessionActivityAdoption
+} from './session-activity-mappings'
 
 let sqlite: Database.Database
 let db: ReturnType<typeof drizzle>
@@ -1611,6 +1624,10 @@ it('upgrades pending comparisons without fabricating an approval fingerprint', a
     'ALTER TABLE session_deletions DROP COLUMN legacy_record_id; DROP TABLE session_legacy_records'
   )
   sqlite.exec('DROP TABLE session_replacements')
+  removeClientProjectSyncIds(sqlite)
+  sqlite.exec(
+    'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+  )
   sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at >= ?').run(1789603200002)
   sqlite.exec('ALTER TABLE session_billing_refs DROP COLUMN billed_ranges')
   migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
@@ -2089,6 +2106,10 @@ it('upgrades existing splits without inventing a legacy link, then reuses saved 
   const snapshot = db.select().from(sessionLegacyRecords).get()!
   sqlite.exec('ALTER TABLE session_splits DROP COLUMN legacy_record_id')
   sqlite.exec('DROP TABLE session_replacements')
+  removeClientProjectSyncIds(sqlite)
+  sqlite.exec(
+    'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+  )
   sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at >= ?').run(1789603200005)
   migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
   migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
@@ -2197,6 +2218,10 @@ it('migrates legacy comma-separated invoice links without rewriting saved histor
     'ALTER TABLE session_deletions DROP COLUMN legacy_record_id; DROP TABLE session_legacy_records'
   )
   sqlite.exec('DROP TABLE session_replacements')
+  removeClientProjectSyncIds(sqlite)
+  sqlite.exec(
+    'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+  )
   sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at >= ?').run(1789603200000)
   migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
   expect(db.select().from(sessionBillingRefs).all()).toEqual([
@@ -2387,6 +2412,10 @@ it('freezes legacy billing bounds once during migration and preserves them acros
   sqlite.exec('ALTER TABLE session_billing_refs DROP COLUMN billed_ranges')
   sqlite.exec('ALTER TABLE session_splits DROP COLUMN legacy_record_id')
   sqlite.exec('DROP TABLE session_replacements')
+  removeClientProjectSyncIds(sqlite)
+  sqlite.exec(
+    'DROP TABLE activity_sources; DROP TABLE activity_observations; DROP TABLE activity_identities'
+  )
   sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at >= ?').run(1789603200004)
   migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
   const frozen = db.select().from(sessionBillingRefs).all()
@@ -2402,4 +2431,164 @@ it('freezes legacy billing bounds once during migration and preserves them acros
       .amountCents
   ).toBe(1000)
   expect(db.select().from(sessionBillingRefs).all()).toEqual(frozen)
+})
+
+it('splits adopted activity by exact ownership while unadopted rows keep proportional splits', () => {
+  const trackingPolicy = {
+    version: 1,
+    normalizationVersion: 1,
+    detectorVersion: 1,
+    idleTimeoutMinutes: 15,
+    reportingTimeZone: 'UTC'
+  }
+  adoptInitialWorkspacePolicy(db, {
+    workspaceId: randomUUID(),
+    revisionId: randomUUID(),
+    policy: trackingPolicy
+  })
+  const events: Array<[string, string | null, number, 'user' | 'assistant', number]> = [
+    ['m0', null, 0, 'user', 0],
+    ['m1', 'm0', 4, 'assistant', 90],
+    ['m2', 'm1', 8, 'user', 0],
+    ['m3', 'm2', 12, 'assistant', 30]
+  ]
+  for (const [id, parent, minute, type, input] of events) {
+    const timestamp = new Date(Date.UTC(2026, 2, 4, 10, minute)).toISOString()
+    db.insert(activityIdentities)
+      .values({
+        eventId: id,
+        provider: 'claude',
+        conversationId: 'mapped',
+        identityVersion: 1,
+        basis: 'native',
+        nativeEventId: id
+      })
+      .run()
+    db.insert(activityObservations)
+      .values({
+        id: `observation-${id}`,
+        eventId: id,
+        version: 1,
+        kind: 'message',
+        createdAt: timestamp,
+        payloadJson: JSON.stringify({
+          type,
+          timestamp,
+          parentEventId: parent,
+          model: input ? 'model-a' : null,
+          usage: input
+            ? {
+                inputTokens: input,
+                outputTokens: 0,
+                cacheCreationInputTokens: 0,
+                cacheReadInputTokens: 0
+              }
+            : null,
+          isToolResult: false,
+          hasToolUse: false,
+          toolNames: []
+        })
+      })
+      .run()
+  }
+  const conversation = previewLedgerWorkspacePolicy(db, trackingPolicy).conversations[0]
+  if (conversation.status !== 'resolved') throw new Error('Unresolved fixture')
+  const [interval] = conversation.before
+  const row = db
+    .insert(sessions)
+    .values({
+      projectPath: 'C:\\fixture',
+      sourceFile: 'mapped.jsonl',
+      claudeSessionId: 'mapped',
+      startedAt: interval.startedAt,
+      endedAt: interval.endedAt,
+      durationMinutes: interval.durationMinutes,
+      promptCount: interval.promptCount,
+      inputTokens: interval.inputTokens,
+      outputTokens: interval.outputTokens
+    })
+    .returning()
+    .get()
+  db.insert(sessionDerivations)
+    .values({
+      sessionId: row.id,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      durationMinutes: row.durationMinutes
+    })
+    .run()
+  for (const usage of interval.modelUsage)
+    db.insert(sessionModelUsage)
+      .values({ sessionId: row.id, ...usage })
+      .run()
+  adoptSessionActivityMappings(db, previewSessionActivityAdoption(db).fingerprint, [row.id])
+
+  // A proportional split would give each half 60 tokens.
+  const [first, second] = sessionService.splitSession(row.id, '2026-03-04T10:06:00Z')
+  expect(first).toMatchObject({
+    endedAt: '2026-03-04T10:06:00.000Z',
+    promptCount: 1,
+    inputTokens: 90
+  })
+  expect(second).toMatchObject({ durationMinutes: 6, promptCount: 1, inputTokens: 30 })
+  expect(sessionService.getAllSessions().map((entry) => entry.id)).toEqual([first.id, second.id])
+  expect(
+    db
+      .select()
+      .from(sessionActivityMappings)
+      .all()
+      .map((entry) => entry.sessionId)
+      .sort((a, b) => a - b)
+  ).toEqual([row.id, first.id, second.id])
+  expect(db.select().from(sessionSplits).get()).toMatchObject({
+    parentSessionId: row.id,
+    legacyRecordId: null
+  })
+
+  const manualRow = manual()
+  const [manualFirst] = sessionService.splitSession(manualRow.id, '2026-03-04T10:30:00Z')
+  expect(manualFirst.durationMinutes).toBe(30)
+  expect(db.select().from(sessionActivityMappings).all()).toHaveLength(3)
+})
+
+it('splits a restored shared legacy parent again without rewriting its first split audit', () => {
+  const workspaceId = randomUUID()
+  db.insert(folderSyncSettings)
+    .values({ slot: 1, workspaceId, folderPath: 'C:/fixture-sync' })
+    .run()
+  const parent = db
+    .insert(sessions)
+    .values({
+      source: 'auto',
+      status: 'completed',
+      projectPath: '',
+      startedAt: '2026-03-04T10:00:00.000Z',
+      endedAt: '2026-03-04T11:00:00.000Z',
+      durationMinutes: 60
+    })
+    .returning()
+    .get()
+  bootstrapFolderSync(db, workspaceId)
+  const legacyId = db
+    .select()
+    .from(sessionLegacyRecords)
+    .where(eq(sessionLegacyRecords.sessionId, parent.id))
+    .get()!.id
+  const firstParts = sessionService.splitSession(parent.id, '2026-03-04T10:20:00.000Z')
+  const audit = db.select().from(sessionSplits).get()!
+  resolveLegacyEditConflict(db, workspaceId, {
+    legacyId,
+    expectedHeads: getLegacyEditView(db, workspaceId, legacyId).heads,
+    present: true
+  })
+  expect(sessionService.getAllSessions().map((row) => row.id)).toEqual([parent.id])
+  const nextParts = sessionService.splitSession(parent.id, '2026-03-04T10:40:00.000Z')
+  expect(db.select().from(sessionSplits).all()).toEqual([audit])
+  expect(new Set(sessionService.getAllSessions().map((row) => row.id))).toEqual(
+    new Set(nextParts.map((row) => row.id))
+  )
+  expect(nextParts.map((row) => row.durationMinutes)).toEqual([40, 20])
+  expect(firstParts.every((part) => !sessionService.getSessionById(part.id))).toBe(true)
+  expect(bootstrapFolderSync(db, workspaceId)).toEqual([])
+  expect(readLegacyQueue(db, workspaceId)).toEqual([])
 })

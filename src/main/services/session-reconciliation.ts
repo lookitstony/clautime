@@ -6,6 +6,7 @@ import { sessionDeletions, activeSessionCondition } from '../db/schema/session-d
 import { sessionDerivations, sessionTimeOverrides } from '../db/schema/session-derivations'
 import { sessionSplits, sessionReplacements } from '../db/schema/session-history'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
+import { sessionActivityMappings } from '../db/schema/session-activity-mappings'
 import {
   sessionReconciliationCases,
   sessionReconciliationResolutions
@@ -22,6 +23,7 @@ import {
   sourceLessLegacySessions
 } from './session-legacy'
 import { retainInvoiceBillingRefs } from './session-billing'
+import { getWorkspacePolicy } from './workspace-policy'
 import type { ParsedSessionData } from '../parsers/types'
 import type {
   DetectedSession,
@@ -105,6 +107,7 @@ export function reconciliationFingerprint(
   idleTimeoutMinutes: number,
   activity?: ParsedSessionData
 ): string {
+  const workspace = getWorkspacePolicy(db)
   const rows = savedHistoryRows(db, sourceFile, detected)
   const replacements = rows.length
     ? db
@@ -151,11 +154,63 @@ export function reconciliationFingerprint(
         ...(replacements.length ? { replacements } : {}),
         detected,
         idleTimeoutMinutes,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezone:
+          workspace?.policy.reportingTimeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...(workspace ? { workspace } : {}),
         activity: activity ?? null
       })
     )
     .digest('hex')
+}
+
+const mappingNote = '\n\nActivity mapping review: '
+
+/** Any adopted mapping makes a conversation mapping-managed, including its copies on other sources. */
+function mappingManaged(
+  db: Db,
+  rows: Array<{ tool: string; claudeSessionId: string | null }>
+): boolean {
+  const keys = new Set(
+    rows.flatMap((row) =>
+      row.claudeSessionId ? [JSON.stringify([row.tool, row.claudeSessionId])] : []
+    )
+  )
+  if (!keys.size) return false
+  const conversationIds = [
+    ...new Set(rows.flatMap((row) => (row.claudeSessionId ? [row.claudeSessionId] : [])))
+  ]
+  return db
+    .select({
+      provider: sessionActivityMappings.provider,
+      conversationId: sessionActivityMappings.conversationId
+    })
+    .from(sessionActivityMappings)
+    .where(inArray(sessionActivityMappings.conversationId, conversationIds))
+    .all()
+    .some((row) => keys.has(JSON.stringify([row.provider, row.conversationId])))
+}
+
+/**
+ * Legacy keep/map/replace would bypass mapping revisions or turn a transient mapping hold
+ * into permanent protection. Checked in the service layer so stale or direct requests fail.
+ */
+function assertLegacyResolutionAllowed(
+  db: Db,
+  sourceFile: string,
+  detected: DetectedSession[]
+): void {
+  const review = db
+    .select()
+    .from(sessionReconciliationCases)
+    .where(eq(sessionReconciliationCases.sourceFile, sourceFile))
+    .get()
+  if (
+    (review && !review.resolvedAt && review.mappingReview) ||
+    mappingManaged(db, [...detected, ...savedHistoryRows(db, sourceFile, detected)])
+  )
+    throw new Error(
+      'This history is managed by reviewed activity mappings. Recheck retained activity, or review the shared tracking policy in Settings. Saved history was retained.'
+    )
 }
 
 function latestResolution(db: Db, sourceFile: string) {
@@ -203,6 +258,7 @@ export function keepSavedHistory(
   idleTimeoutMinutes: number,
   activity?: ParsedSessionData
 ): void {
+  assertLegacyResolutionAllowed(db, sourceFile, detected)
   const current = reconciliationFingerprint(db, sourceFile, detected, idleTimeoutMinutes, activity)
   if (!expectedFingerprint || current !== expectedFingerprint)
     throw new Error(
@@ -244,6 +300,7 @@ export function mapSavedHistory(
   idleTimeoutMinutes: number,
   activity?: ParsedSessionData
 ): void {
+  assertLegacyResolutionAllowed(db, sourceFile, detected)
   const current = reconciliationFingerprint(db, sourceFile, detected, idleTimeoutMinutes, activity)
   if (!expectedFingerprint || current !== expectedFingerprint)
     throw new Error(
@@ -413,6 +470,7 @@ export function replaceSavedHistory(
   activity?: ParsedSessionData,
   choices: SessionReplacementChoice[] = []
 ): void {
+  assertLegacyResolutionAllowed(db, sourceFile, detected)
   const current = reconciliationFingerprint(db, sourceFile, detected, idleTimeoutMinutes, activity)
   if (!expectedFingerprint || expectedFingerprint !== current)
     throw new Error(
@@ -672,7 +730,8 @@ export function recordReconciliationFailure(
   message: string,
   detected: DetectedSession[],
   idleTimeoutMinutes: number,
-  activity?: ParsedSessionData
+  activity?: ParsedSessionData,
+  mappingReview = false
 ): void {
   const savedRows = savedHistoryRows(db, sourceFile, detected)
   const saved: ReconciliationPreview[] = savedRows.map((row) => ({
@@ -726,9 +785,24 @@ export function recordReconciliationFailure(
         .get()
     }))
   const now = new Date().toISOString()
+  const existing = db
+    .select()
+    .from(sessionReconciliationCases)
+    .where(eq(sessionReconciliationCases.sourceFile, sourceFile))
+    .get()
+  // A transient mapping failure never lowers an unresolved legacy case's protection or hides
+  // its discrepancy. A resolved case may become a new mapping case.
+  const legacyMessage =
+    existing && !existing.resolvedAt && !existing.mappingReview
+      ? existing.message.split(mappingNote)[0]
+      : null
   const comparison = {
+    mappingReview: legacyMessage === null ? Number(mappingReview) : 0,
     fingerprint: reconciliationFingerprint(db, sourceFile, detected, idleTimeoutMinutes, activity),
-    message,
+    message:
+      legacyMessage !== null && mappingReview
+        ? `${legacyMessage}${mappingNote}${message}`
+        : message,
     saved,
     idleTimeoutMinutes,
     updatedAt: now,
@@ -740,6 +814,8 @@ export function recordReconciliationFailure(
       return {
         ...measurement(row),
         disposition: 'detected',
+        tool: row.tool,
+        claudeSessionId: row.claudeSessionId,
         clientId: null,
         projectId: null,
         modelUsage: row.modelUsage ?? [],
@@ -768,10 +844,23 @@ export function resolveReconciliationCase(db: Db, sourceFile: string): void {
 }
 
 export function getReconciliationCases(): SessionReconciliationCase[] {
-  return getDb()
+  const db = getDb()
+  return db
     .select()
     .from(sessionReconciliationCases)
     .where(isNull(sessionReconciliationCases.resolvedAt))
     .orderBy(sessionReconciliationCases.createdAt, sessionReconciliationCases.sourceFile)
     .all()
+    .map((review) => {
+      const ids = review.saved.flatMap((row) => (row.id === undefined ? [] : [row.id]))
+      // Older snapshots lack detected identities; the legacy actions recheck current activity.
+      const rows = [
+        ...savedHistoryRows(db, review.sourceFile, []),
+        ...(ids.length ? db.select().from(sessions).where(inArray(sessions.id, ids)).all() : []),
+        ...review.detected.flatMap((row) =>
+          row.tool ? [{ tool: row.tool, claudeSessionId: row.claudeSessionId ?? null }] : []
+        )
+      ]
+      return { ...review, mappingManaged: !!review.mappingReview || mappingManaged(db, rows) }
+    })
 }

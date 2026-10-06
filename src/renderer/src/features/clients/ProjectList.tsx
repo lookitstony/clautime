@@ -56,7 +56,7 @@ export function ProjectList({ clientId }: ProjectListProps): React.JSX.Element {
           </span>
           {!presentationMode && (
             <span className="max-w-[200px] shrink-0 truncate font-mono text-[11px] text-[var(--text-muted)]">
-              {project.directoryPath}
+              {project.directoryPath ?? 'No folder on this computer'}
             </span>
           )}
           {!project.isActive && (

@@ -113,4 +113,14 @@ describe('useFilterStore', () => {
     expect(filters.clientId).toBe(2)
     expect(filters.projectId).toBe(7)
   })
+
+  it('carries the Source Machine device ID and clears it with the other filters', () => {
+    const deviceId = '7c8f7eab-af58-4cbb-9e74-d1e47f80d600'
+    useFilterStore.getState().setSourceMachine(deviceId)
+    expect(useFilterStore.getState().hasActiveFilters()).toBe(true)
+    expect(useFilterStore.getState().toSessionFilters()).toEqual({ sourceMachine: deviceId })
+    useFilterStore.getState().clearFilters()
+    expect(useFilterStore.getState().sourceMachine).toBeNull()
+    expect(useFilterStore.getState().toSessionFilters()).toEqual({})
+  })
 })

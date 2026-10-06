@@ -9,11 +9,18 @@ import { sessions } from '../db/schema/sessions'
 import { sessionDeletions } from '../db/schema/session-deletions'
 import { sessionLegacyRecords } from '../db/schema/session-legacy'
 import { sessionDerivations } from '../db/schema/session-derivations'
-import { rawMessages } from '../db/schema/raw-messages'
+import { rawMessages, progressEvents } from '../db/schema/raw-messages'
+import { scanState } from '../db/schema/scan-state'
+import {
+  activityIdentities,
+  activityObservations,
+  activitySources
+} from '../db/schema/activity-evidence'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
 import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { invoices, invoiceLineItems } from '../db/schema/invoices'
+import { randomUUID } from 'node:crypto'
 
 let db: ReturnType<typeof drizzle>
 let sqlite: Database.Database
@@ -47,6 +54,11 @@ import { liveMonitorService } from './live-monitor-service'
 import { gitService } from './git-service'
 import { registerSessionHandlers } from '../ipc/session-handlers'
 import { retainLegacySession } from './session-legacy'
+import { adoptInitialWorkspacePolicy, previewLedgerWorkspacePolicy } from './workspace-policy'
+import {
+  adoptSessionActivityMappings,
+  previewSessionActivityAdoption
+} from './session-activity-mappings'
 
 beforeEach(() => {
   sqlite = new Database(':memory:')
@@ -519,4 +531,200 @@ it('blocks reset for a retained legacy snapshot even before a deletion exists', 
   })
   expect(sessionService.getAllSessions()).toEqual([original])
   expect(db.select().from(sessionLegacyRecords).all()).toEqual(snapshots)
+})
+
+it.each(['identity only', 'complete evidence'])(
+  'blocks reset before any writes when activity history is retained (%s)',
+  async (evidence) => {
+    const sourceFile = 'evidence-reset.jsonl'
+    const timestamp = '2026-03-04T10:00:00Z'
+    capture(sourceFile, [0, 5])
+    await sessionService.rebuildSessionsFromRaw()
+    const session = sessionService.getAllSessions()[0]
+    db.insert(aiSummaries).values({ sessionId: session.id, summary: 'Retained summary' }).run()
+    db.insert(sessionModelUsage)
+      .values({ sessionId: session.id, model: 'fixture-model', inputTokens: 100 })
+      .run()
+    db.insert(progressEvents).values({ sourceFile, timestamp }).run()
+    db.insert(scanState)
+      .values({
+        filePath: sourceFile,
+        lastModifiedAt: timestamp,
+        lastScannedAt: timestamp,
+        lastFileSize: 123
+      })
+      .run()
+    db.insert(activityIdentities)
+      .values({
+        eventId: 'event-a',
+        provider: 'claude',
+        identityVersion: 1,
+        conversationId: 'conversation-a',
+        basis: 'native',
+        nativeEventId: 'message-a'
+      })
+      .run()
+    if (evidence === 'complete evidence') {
+      db.insert(activityObservations)
+        .values({
+          id: 'observation-a',
+          eventId: 'event-a',
+          version: 1,
+          kind: 'message',
+          payloadJson: JSON.stringify({ timestamp, usage: { inputTokens: 100 } }),
+          createdAt: timestamp
+        })
+        .run()
+      db.insert(activitySources)
+        .values({ observationId: 'observation-a', sourceFile, isSubagent: 0 })
+        .run()
+    }
+    const tables = [
+      sessions,
+      rawMessages,
+      aiSummaries,
+      sessionModelUsage,
+      progressEvents,
+      scanState,
+      activityIdentities,
+      activityObservations,
+      activitySources
+    ]
+    const before = tables.map((table) => db.select().from(table).all())
+    registerSessionHandlers()
+    const reset = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([name]) => name === 'session:reset')![1]
+    expect(await reset({} as never)).toMatchObject({
+      success: false,
+      error: { code: 'SESSION_RESET_ERROR', message: expect.stringContaining('activity history') }
+    })
+    expect(tables.map((table) => db.select().from(table).all())).toEqual(before)
+  }
+)
+
+it('still permits reset without retained activity or other audit history', async () => {
+  capture('reset-allowed.jsonl', [0, 5])
+  await sessionService.rebuildSessionsFromRaw()
+  expect(sessionService.getAllSessions()).toHaveLength(1)
+  registerSessionHandlers()
+  const reset = vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === 'session:reset')![1]
+  expect(await reset({} as never)).toMatchObject({ success: true })
+  expect(db.select().from(sessions).all()).toEqual([])
+  expect(db.select().from(rawMessages).all()).toEqual([])
+  expect(db.select().from(activityIdentities).all()).toEqual([])
+})
+
+it('deletes adopted activity by its coverage so rebuilds and copies never restore it', async () => {
+  const trackingPolicy = {
+    version: 1,
+    normalizationVersion: 1,
+    detectorVersion: 1,
+    idleTimeoutMinutes: 15,
+    reportingTimeZone: 'UTC'
+  }
+  adoptInitialWorkspacePolicy(db, {
+    workspaceId: randomUUID(),
+    revisionId: randomUUID(),
+    policy: trackingPolicy
+  })
+  for (const [index, minute] of [0, 5].entries()) {
+    const eventId = `mapped.jsonl-${minute}`
+    const timestamp = new Date(Date.UTC(2026, 2, 4, 10, minute)).toISOString()
+    db.insert(activityIdentities)
+      .values({
+        eventId,
+        provider: 'claude',
+        conversationId: 'mapped',
+        identityVersion: 1,
+        basis: 'native',
+        nativeEventId: eventId
+      })
+      .run()
+    db.insert(activityObservations)
+      .values({
+        id: `observation-${eventId}`,
+        eventId,
+        version: 1,
+        kind: 'message',
+        createdAt: timestamp,
+        payloadJson: JSON.stringify({
+          type: 'user',
+          timestamp,
+          parentEventId: index ? 'mapped.jsonl-0' : null,
+          model: null,
+          usage: null,
+          isToolResult: false,
+          hasToolUse: false,
+          toolNames: []
+        })
+      })
+      .run()
+  }
+  capture('mapped.jsonl', [0, 5], 'mapped')
+  capture('copied.jsonl', [0, 5], 'mapped')
+  const conversation = previewLedgerWorkspacePolicy(db, trackingPolicy).conversations[0]
+  if (conversation.status !== 'resolved') throw new Error('Unresolved fixture')
+  const [interval] = conversation.before
+  const original = db
+    .insert(sessions)
+    .values({
+      projectPath: 'C:\\fixture',
+      sourceFile: 'mapped.jsonl',
+      claudeSessionId: 'mapped',
+      startedAt: interval.startedAt,
+      endedAt: interval.endedAt,
+      durationMinutes: interval.durationMinutes,
+      promptCount: interval.promptCount
+    })
+    .returning()
+    .get()
+  db.insert(sessionDerivations)
+    .values({
+      sessionId: original.id,
+      startedAt: original.startedAt,
+      endedAt: original.endedAt,
+      durationMinutes: original.durationMinutes
+    })
+    .run()
+  adoptSessionActivityMappings(db, previewSessionActivityAdoption(db).fingerprint, [original.id])
+
+  sessionService.deleteSession(original.id)
+  sessionService.deleteSession(original.id)
+  expect(db.select().from(sessionDeletions).all()).toEqual([
+    expect.objectContaining({
+      sessionId: original.id,
+      startedAt: interval.startedAt,
+      endedAt: interval.endedAt,
+      legacyRecordId: null
+    })
+  ])
+  expect(db.select().from(sessionLegacyRecords).all()).toEqual([])
+  expect(sessionService.getAllSessions()).toEqual([])
+  const result = await sessionService.rebuildSessionsFromRaw()
+  expect(result.errors).toBeUndefined()
+  expect(sessionService.getAllSessions()).toEqual([])
+  expect(db.select().from(sessions).all()).toEqual([original])
+})
+
+it('blocks reset before any writes when manual time identities are retained', async () => {
+  const session = sessionService.createSession({
+    projectPath: 'C:/manual',
+    startedAt: '2026-09-26T10:00:00Z',
+    endedAt: '2026-09-26T11:00:00Z',
+    durationMinutes: 60
+  })
+  db.insert(aiSummaries).values({ sessionId: session.id, summary: 'Saved manual summary' }).run()
+  const snapshot = () =>
+    ['sessions', 'manual_time_entries', 'ai_summaries'].map((table) =>
+      sqlite.prepare(`SELECT * FROM ${table}`).all()
+    )
+  const before = snapshot()
+  registerSessionHandlers()
+  const reset = vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === 'session:reset')![1]
+  expect(await reset({} as never)).toMatchObject({
+    success: false,
+    error: { message: expect.stringContaining('manual time history') }
+  })
+  expect(snapshot()).toEqual(before)
 })

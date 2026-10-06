@@ -12,6 +12,34 @@ export interface ClaudeActivityIdentity {
   parentEventId?: string | null
 }
 
+export interface ClaudeProgressActivity {
+  identity: ClaudeActivityIdentity
+  timestamp: string
+  progressType: string | null
+}
+
+/** Native progress only; tool output and filenames cannot supply a missing event ID. */
+export function claudeProgressActivity(
+  raw: Record<string, unknown>
+): ClaudeProgressActivity | null {
+  if (
+    raw.type !== 'progress' ||
+    !nonempty(raw.uuid) ||
+    !nonempty(raw.timestamp) ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw.timestamp) ||
+    !Number.isFinite(Date.parse(raw.timestamp))
+  )
+    return null
+  const identity = claudeActivityIdentity(raw)
+  if (!identity) return null
+  const data = raw.data as Record<string, unknown> | null | undefined
+  return {
+    identity,
+    timestamp: raw.timestamp,
+    progressType: nonempty(data?.type) ? data.type : null
+  }
+}
+
 function nonempty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }

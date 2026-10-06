@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 // Mock electron-log before importing parser
-vi.mock('electron-log/main.js', () => ({
+vi.mock('electron-log', () => ({
   default: {
     info: vi.fn(),
     warn: vi.fn(),

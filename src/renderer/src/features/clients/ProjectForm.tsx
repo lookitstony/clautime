@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Dialog,
   DialogContent,
@@ -49,18 +50,25 @@ export function ProjectForm({
   const [isExcluded, setIsExcluded] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState(clientId)
   const [error, setError] = useState('')
+  // Folder sync freshness: the version this editor opened on, kept until the user reloads.
+  const [syncVersion, setSyncVersion] = useState<string | undefined>()
+  const [stale, setStale] = useState(false)
+  // The folder shown when the editor opened; only a changed folder is sent.
+  const [openedPath, setOpenedPath] = useState('')
+  const openedFor = useRef<string | undefined>(undefined)
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    if (open) {
-      if (project) {
-        setName(project.name)
-        setInvoiceName(project.invoiceName ?? '')
-        setStageName(project.stageName ?? '')
-        setHourlyRate(project.hourlyRate != null ? String(project.hourlyRate) : '')
-        setDirectoryPath(project.directoryPath)
-        setIsBillable(project.isBillable)
-        setIsExcluded(!project.isActive)
-        setSelectedClientId(project.clientId)
+  const load = useCallback(
+    (source: Project | null): void => {
+      if (source) {
+        setName(source.name)
+        setInvoiceName(source.invoiceName ?? '')
+        setStageName(source.stageName ?? '')
+        setHourlyRate(source.hourlyRate != null ? String(source.hourlyRate) : '')
+        setDirectoryPath(source.directoryPath ?? '')
+        setIsBillable(source.isBillable)
+        setIsExcluded(!source.isActive)
+        setSelectedClientId(source.clientId)
       } else {
         setName('')
         setInvoiceName('')
@@ -71,9 +79,25 @@ export function ProjectForm({
         setIsExcluded(false)
         setSelectedClientId(clientId)
       }
+      setOpenedPath(source?.directoryPath ?? '')
+      setSyncVersion(source?.syncVersion)
+      setStale(false)
       setError('')
+    },
+    [clientId]
+  )
+
+  useEffect(() => {
+    if (!open) {
+      openedFor.current = undefined
+      return
     }
-  }, [open, project, clientId])
+    // A query refresh hands in a new object for the same project: keep the draft and its version.
+    const key = project ? `project:${project.id}` : `new:${clientId}`
+    if (openedFor.current === key) return
+    openedFor.current = key
+    load(project)
+  }, [open, project, clientId, load])
 
   const handleBrowse = async (): Promise<void> => {
     const result = await window.api.dialog.openFolder()
@@ -86,12 +110,13 @@ export function ProjectForm({
   const handleSubmit = async (): Promise<void> => {
     const trimmedName = name.trim()
     const trimmedPath = directoryPath.trim()
-    if (!trimmedName || !trimmedPath) return
+    if (!trimmedName || (!isEdit && !trimmedPath)) return
 
     setError('')
 
     const parsedRate = hourlyRate.trim() === '' ? null : Number(hourlyRate)
-    const rate = parsedRate != null && Number.isFinite(parsedRate) && parsedRate >= 0 ? parsedRate : null
+    const rate =
+      parsedRate != null && Number.isFinite(parsedRate) && parsedRate >= 0 ? parsedRate : null
 
     try {
       if (isEdit && project) {
@@ -102,10 +127,13 @@ export function ProjectForm({
             invoiceName: invoiceName.trim() || null,
             stageName: stageName.trim() || null,
             hourlyRate: rate,
-            directoryPath: trimmedPath,
+            ...(trimmedPath !== openedPath && {
+              directoryPath: trimmedPath || null
+            }),
             isBillable,
             isActive: !isExcluded,
-            clientId: selectedClientId
+            clientId: selectedClientId,
+            ...(syncVersion !== undefined && { expectedSyncVersion: syncVersion })
           }
         })
         toast.success('Project updated')
@@ -123,7 +151,11 @@ export function ProjectForm({
       onClose()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save project'
-      if (
+      if (message.includes('SYNC_STALE_EDIT')) {
+        // Keep the draft; refresh the list so "Load latest" shows what changed.
+        setStale(true)
+        queryClient.invalidateQueries({ queryKey: ['projects'] })
+      } else if (
         message.toLowerCase().includes('unique') ||
         message.toLowerCase().includes('already exists')
       ) {
@@ -135,7 +167,7 @@ export function ProjectForm({
   }
 
   const isPending = createProject.isPending || updateProject.isPending
-  const isValid = name.trim().length > 0 && directoryPath.trim().length > 0
+  const isValid = name.trim().length > 0 && (isEdit || directoryPath.trim().length > 0)
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -249,7 +281,7 @@ export function ProjectForm({
 
           <div className="space-y-2">
             <label htmlFor="project-path" className="text-[13px] font-medium">
-              Directory Path
+              Folder on this computer
             </label>
             <div className="flex gap-2">
               <input
@@ -274,10 +306,14 @@ export function ProjectForm({
                 onClick={handleBrowse}
                 className="shrink-0 border-[var(--surface-border)]"
               >
-                Browse
+                {isEdit ? 'Change folder on this computer' : 'Browse'}
               </Button>
             </div>
             {error && <p className="text-[12px] text-red-400">{error}</p>}
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Changing this folder preserves history and other computers&apos; folders.
+              {isEdit && ' Clear it to disconnect the folder on this computer.'}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -324,11 +360,23 @@ export function ProjectForm({
           </div>
         </div>
 
+        {stale && (
+          <div className="flex items-center justify-between gap-2 text-[12px] text-amber-400">
+            <span>
+              This project changed on another computer since you opened it. Your changes are kept
+              until you load the latest values.
+            </span>
+            <Button variant="outline" size="sm" onClick={() => load(project)}>
+              Load latest
+            </Button>
+          </div>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!isValid || isPending}>
+          <Button onClick={handleSubmit} disabled={!isValid || isPending || stale}>
             {isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Project'}
           </Button>
         </DialogFooter>

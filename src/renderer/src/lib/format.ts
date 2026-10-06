@@ -1,4 +1,5 @@
 import { clientAlias, projectAlias } from '../../../shared/presentation-alias'
+import { calendarDate, calendarDateKey, calendarDayStart } from '../../../shared/reporting-calendar'
 
 const PROJECT_COLORS = [
   'var(--project-1)',
@@ -20,9 +21,9 @@ export function formatDuration(minutes: number): string {
   return `${hours}h ${mins}m`
 }
 
-export function formatTimeRange(startedAt: string, endedAt: string): string {
-  const start = new Date(startedAt)
-  const end = new Date(endedAt)
+export function formatTimeRange(startedAt: string, endedAt: string, timeZone?: string): string {
+  const start = calendarDate(startedAt, timeZone)
+  const end = calendarDate(endedAt, timeZone)
   const fmt = (d: Date): string =>
     d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
   return `${fmt(start)} \u2013 ${fmt(end)}`
@@ -46,9 +47,9 @@ export function formatRelativeTime(isoString: string): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-export function formatDateLabel(isoString: string): string {
-  const date = new Date(isoString)
-  const now = new Date()
+export function formatDateLabel(isoString: string, timeZone?: string): string {
+  const date = calendarDate(isoString, timeZone)
+  const now = calendarDate(new Date(), timeZone)
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   const diffDays = Math.round((today.getTime() - target.getTime()) / 86_400_000)
@@ -61,9 +62,8 @@ export function formatDateLabel(isoString: string): string {
   return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-export function getDateKey(isoString: string): string {
-  const d = new Date(isoString)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+export function getDateKey(isoString: string, timeZone?: string): string {
+  return calendarDateKey(isoString, timeZone)
 }
 
 export function getProjectColor(projectPath: string): string {
@@ -145,15 +145,17 @@ export type DatePreset = 'today' | 'this-week' | 'last-week' | 'this-month'
  */
 export function getDateRangeForPreset(
   preset: DatePreset,
-  weekStartDay: number = 1
+  weekStartDay: number = 1,
+  timeZone?: string
 ): { startDate: string; endDate: string } {
-  const now = new Date()
+  const now = calendarDate(new Date(), timeZone)
   const startOfDay = (d: Date): string => {
-    const s = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    const s = calendarDayStart(d.getFullYear(), d.getMonth(), d.getDate(), timeZone)
     return s.toISOString()
   }
   const endOfDay = (d: Date): string => {
-    const e = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+    const next = calendarDayStart(d.getFullYear(), d.getMonth(), d.getDate() + 1, timeZone)
+    const e = new Date(next.getTime() - 1)
     return e.toISOString()
   }
 
@@ -164,21 +166,24 @@ export function getDateRangeForPreset(
     case 'today':
       return { startDate: startOfDay(now), endDate: endOfDay(now) }
     case 'this-week': {
-      const weekStart = new Date(now)
+      const weekStart = calendarDate(now, timeZone)
       weekStart.setDate(now.getDate() - daysSinceWeekStart)
       return { startDate: startOfDay(weekStart), endDate: endOfDay(now) }
     }
     case 'last-week': {
-      const thisWeekStart = new Date(now)
+      const thisWeekStart = calendarDate(now, timeZone)
       thisWeekStart.setDate(now.getDate() - daysSinceWeekStart)
-      const lastWeekStart = new Date(thisWeekStart)
+      const lastWeekStart = calendarDate(thisWeekStart, timeZone)
       lastWeekStart.setDate(thisWeekStart.getDate() - 7)
-      const lastWeekEnd = new Date(thisWeekStart)
+      const lastWeekEnd = calendarDate(thisWeekStart, timeZone)
       lastWeekEnd.setDate(thisWeekStart.getDate() - 1)
       return { startDate: startOfDay(lastWeekStart), endDate: endOfDay(lastWeekEnd) }
     }
     case 'this-month': {
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+      const firstDay = calendarDate(
+        calendarDayStart(now.getFullYear(), now.getMonth(), 1, timeZone),
+        timeZone
+      )
       return { startDate: startOfDay(firstDay), endDate: endOfDay(now) }
     }
   }
@@ -187,8 +192,8 @@ export function getDateRangeForPreset(
 /**
  * Format an ISO date string as a short display date (e.g., "Mar 5").
  */
-export function formatShortDate(isoString: string): string {
-  const d = new Date(isoString)
+export function formatShortDate(isoString: string, timeZone?: string): string {
+  const d = calendarDate(isoString, timeZone)
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
