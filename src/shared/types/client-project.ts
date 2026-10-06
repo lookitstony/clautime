@@ -104,3 +104,18 @@ export const CLIENT_COLORS = [
   'var(--project-7)',
   'var(--project-8)'
 ] as const
+
+/** The `.clautime` project ID file in this computer's folder for a project. */
+export interface ProjectMarkerStatus {
+  /** The folder is a main Git checkout, so the Git setting applies. */
+  gitRepo: boolean
+  markerPresent: boolean
+  /** Not listed in `.git/info/exclude`, so Git can track it. */
+  keepInGit: boolean
+}
+
+/** A folder linked, moved or found to be a copy through its `.clautime` file. */
+export type MarkedFolderEvent =
+  | { kind: 'linked'; projectName: string; directoryPath: string }
+  | { kind: 'moved'; projectName: string; directoryPath: string; previousPath: string }
+  | { kind: 'copy'; projectName: string; directoryPath: string; currentPath: string }

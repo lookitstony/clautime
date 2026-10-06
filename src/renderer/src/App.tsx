@@ -75,6 +75,29 @@ function useFileWatcherEvents(): void {
       qc.invalidateQueries({ queryKey: ['live'] })
     })
 
+    window.api.projects.onFolderMarker((event) => {
+      if (event.kind === 'copy') {
+        toast.warning(`${event.projectName}: this folder looks like a copy`, {
+          description: `${event.directoryPath} has the project's ID file, but the project is still at ${event.currentPath}. Use "Change folder on this computer" if this copy is the real one. A worktree outside its main folder may need \`git worktree repair\`.`,
+          duration: 15000
+        })
+      } else {
+        toast.info(
+          event.kind === 'moved'
+            ? `${event.projectName} moved to ${event.directoryPath}`
+            : `${event.projectName} linked to ${event.directoryPath}`,
+          {
+            description:
+              event.kind === 'moved'
+                ? `Found its ID file after the folder left ${event.previousPath}. History is unchanged.`
+                : 'Found its ID file in this folder.',
+            duration: 8000
+          }
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['projects'] })
+    })
+
     return () => {
       if (timer) clearTimeout(timer)
     }

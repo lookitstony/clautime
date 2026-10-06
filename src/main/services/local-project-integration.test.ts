@@ -7,6 +7,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { eq } from 'drizzle-orm'
 import { join } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
 import { gitCommits } from '../db/schema/git-commits'
@@ -438,4 +440,48 @@ it('does not reuse deleted project IDs when upgrading an empty project table', (
   db.delete(projects).run()
   migrate(db, { migrationsFolder })
   expect(legacyProject('New', null).id).toBeGreaterThan(project.id)
+})
+
+it('relinks a moved, marked project folder instead of creating an Unassigned project', () => {
+  initializeEmptyLocalProjectSetup()
+  const root = mkdtempSync(join(tmpdir(), 'clautime-move-'))
+  try {
+    const oldDir = join(root, 'old')
+    const newDir = join(root, 'new')
+    mkdirSync(oldDir)
+    const project = legacyProject('App', null)
+    setProjectFolderMapping(db, deviceId, project.syncId, oldDir)
+    expect(clientProjectService.writeProjectMarkers()).toBe(1)
+    expect(existsSync(join(oldDir, '.clautime'))).toBe(true)
+    renameSync(oldDir, newDir)
+    const moved = db
+      .insert(sessions)
+      .values({
+        projectPath: newDir,
+        startedAt: '2026-10-06T10:00:00Z',
+        endedAt: '2026-10-06T11:00:00Z',
+        durationMinutes: 60
+      })
+      .returning()
+      .get()
+
+    expect(clientProjectService.attributeSessions()).toBe(1)
+    expect(db.select().from(sessions).where(eq(sessions.id, moved.id)).get()?.projectId).toBe(
+      project.id
+    )
+    expect(clientProjectService.autoCreateProject(newDir)).toBeNull()
+    expect(clientProjectService.autoCreateProject(oldDir)).toBeNull()
+    expect(
+      db
+        .select()
+        .from(projects)
+        .all()
+        .map((row) => row.id)
+    ).toEqual([project.id])
+    expect(getProjectFolderMapping(db, deviceId, project.syncId)?.directoryPath).toBe(
+      newDir.replace(/^([a-z]):/, (drive) => drive.toUpperCase())
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

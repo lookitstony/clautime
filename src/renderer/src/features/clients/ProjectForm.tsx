@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { useCreateProject, useUpdateProject } from './use-projects'
 import { useClients } from './use-clients'
-import type { Project } from '../../../../shared/types/client-project'
+import type { Project, ProjectMarkerStatus } from '../../../../shared/types/client-project'
 
 interface ProjectFormProps {
   open: boolean
@@ -56,6 +56,9 @@ export function ProjectForm({
   // The folder shown when the editor opened; only a changed folder is sent.
   const [openedPath, setOpenedPath] = useState('')
   const openedFor = useRef<string | undefined>(undefined)
+  // The .clautime ID file in this computer's folder; null until loaded or without a folder.
+  const [marker, setMarker] = useState<{ id: number; status: ProjectMarkerStatus | null }>()
+  const [keepInGit, setKeepInGit] = useState(false)
   const queryClient = useQueryClient()
 
   const load = useCallback(
@@ -99,6 +102,21 @@ export function ProjectForm({
     load(project)
   }, [open, project, clientId, load])
 
+  const projectId = project?.id
+  useEffect(() => {
+    if (!open || projectId === undefined) return
+    let current = true
+    window.api.projects.getMarkerStatus(projectId).then((result) => {
+      if (!current || !result.success) return
+      setMarker({ id: projectId, status: result.data })
+      setKeepInGit(result.data?.keepInGit ?? false)
+    })
+    return () => {
+      current = false
+    }
+  }, [open, projectId])
+  const markerStatus = marker && marker.id === projectId ? marker.status : null
+
   const handleBrowse = async (): Promise<void> => {
     const result = await window.api.dialog.openFolder()
     if (result.success && result.data) {
@@ -136,6 +154,14 @@ export function ProjectForm({
             ...(syncVersion !== undefined && { expectedSyncVersion: syncVersion })
           }
         })
+        if (
+          markerStatus?.gitRepo &&
+          trimmedPath === openedPath &&
+          keepInGit !== markerStatus.keepInGit
+        ) {
+          const result = await window.api.projects.setMarkerInGit(project.id, keepInGit)
+          if (!result.success) toast.error(result.error.message)
+        }
         toast.success('Project updated')
       } else {
         await createProject.mutateAsync({
@@ -358,6 +384,22 @@ export function ProjectForm({
             </div>
             <Switch id="project-excluded" checked={isExcluded} onCheckedChange={setIsExcluded} />
           </div>
+
+          {markerStatus?.gitRepo && directoryPath.trim() === openedPath && (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <label htmlFor="project-marker-git" className="text-[13px] font-medium">
+                  Keep ID file in Git
+                </label>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  The <code>.clautime</code> file lets a moved folder or a fresh clone find this
+                  project. Off keeps it out of Git. On lets you commit it so clones on your other
+                  computers link automatically.
+                </p>
+              </div>
+              <Switch id="project-marker-git" checked={keepInGit} onCheckedChange={setKeepInGit} />
+            </div>
+          )}
         </div>
 
         {stale && (

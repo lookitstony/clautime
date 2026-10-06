@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { AppError, ipcSuccess, ipcError } from '../../shared/types/ipc'
 import type { ApplyFolderSyncJoinReview, ConnectFolderSync } from '../../shared/types/folder-sync'
 import { getFolderSyncService } from '../services/folder-sync-service'
+import { clientProjectService } from '../services/client-project-service'
 
 export function registerFolderSyncHandlers(): void {
   const handle = <A extends unknown[], R>(name: string, action: (...args: A) => R) => {
@@ -22,7 +23,10 @@ export function registerFolderSyncHandlers(): void {
   handle('setEnabled', (enabled: boolean) => getFolderSyncService().setEnabled(enabled))
   handle('syncNow', () => getFolderSyncService().syncNow())
   handle('joinReview', () => getFolderSyncService().joinReview())
-  handle('applyJoinReview', (input: ApplyFolderSyncJoinReview) =>
-    getFolderSyncService().applyJoinReview(input)
-  )
+  handle('applyJoinReview', async (input: ApplyFolderSyncJoinReview) => {
+    const state = await getFolderSyncService().applyJoinReview(input)
+    // Folders chosen in the review get their project marker.
+    clientProjectService.writeProjectMarkers()
+    return state
+  })
 }

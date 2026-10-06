@@ -1173,7 +1173,10 @@ export const mockApi = {
       if (i >= 0) projects.splice(i, 1)
       return ok(undefined)
     },
-    attributeSessions: () => ok(0)
+    attributeSessions: () => ok(0),
+    getMarkerStatus: () => ok(null),
+    setMarkerInGit: () => ok(null),
+    onFolderMarker: noop
   }
 }
 

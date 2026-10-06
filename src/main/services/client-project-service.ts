@@ -10,6 +10,13 @@ import { mainProjectPath } from './worktree-paths'
 import { getLocalDeviceSession } from './device-context'
 import { isLocalProjectSetupComplete } from './local-project-setup'
 import {
+  getProjectMarkerStatus,
+  resolveMarkedFolder,
+  setMarkerKeptInGit,
+  writeProjectMarkers,
+  type ProjectMarkerStatus
+} from './project-folder-marker'
+import {
   findProjectFolderMapping,
   getProjectFolderMapping,
   isProjectFolderDiscoveryBlocked,
@@ -265,6 +272,7 @@ export const clientProjectService = {
     const existing = this.findProjectByDirectory(normalized)
     if (existing) {
       if (existing.clientId === data.clientId) {
+        this.writeProjectMarkers([existing.id])
         return existing // already under this client
       }
       const syncId = db
@@ -309,6 +317,7 @@ export const clientProjectService = {
       log.info(
         `Moved project: ${result.name} (id=${existing.id}) from client ${existing.clientId} to ${data.clientId}`
       )
+      this.writeProjectMarkers([existing.id])
       return toProject(result)
     }
 
@@ -332,6 +341,7 @@ export const clientProjectService = {
     })
 
     log.info(`Created project: ${result.name} (id=${result.id}, client=${data.clientId})`)
+    this.writeProjectMarkers([result.id])
     return toProject(result)
   },
 
@@ -423,7 +433,35 @@ export const clientProjectService = {
         return result
       })
     )
+    // A newly linked folder, or a project moved out of Unassigned, gets its marker now.
+    this.writeProjectMarkers([id])
     return toProject(result)
+  },
+
+  /** Write markers for this computer's assigned project folders (all, or only `projectIds`). */
+  writeProjectMarkers(projectIds?: number[]): number {
+    const db = getDb()
+    const syncIds = projectIds?.flatMap((projectId) => {
+      const row = db
+        .select({ syncId: projects.syncId })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .get()
+      return row ? [row.syncId] : []
+    })
+    return writeProjectMarkers(db, getLocalDeviceSession().deviceId, syncIds)
+  },
+
+  getProjectMarkerStatus(id: number): ProjectMarkerStatus | null {
+    const directory = this.getProjectById(id)?.directoryPath
+    return directory ? getProjectMarkerStatus(directory) : null
+  },
+
+  setProjectMarkerInGit(id: number, keep: boolean): ProjectMarkerStatus | null {
+    const directory = this.getProjectById(id)?.directoryPath
+    if (!directory) return null
+    setMarkerKeptInGit(directory, keep)
+    return getProjectMarkerStatus(directory)
   },
 
   deleteProject(id: number): void {
@@ -516,6 +554,8 @@ export const clientProjectService = {
       ) {
         return null
       }
+      // A marked folder links to (or is a copy of) its existing project, never a new one.
+      if (resolveMarkedFolder(getDb(), getLocalDeviceSession().deviceId, directoryPath)) return null
     } catch (error) {
       if (error instanceof AppError && error.code === 'INVALID_PROJECT_FOLDER') return null
       throw error
@@ -587,6 +627,17 @@ export const clientProjectService = {
 
   // ── Directory Mapping ──
 
+  /** Link or move a folder carrying a known project's marker. True when it is now mapped. */
+  resolveMarkedFolder(directoryPath: string): boolean {
+    try {
+      const marked = resolveMarkedFolder(getDb(), getLocalDeviceSession().deviceId, directoryPath)
+      return marked?.kind === 'linked' || marked?.kind === 'moved'
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'INVALID_PROJECT_FOLDER') return false
+      throw error
+    }
+  },
+
   findProjectByDirectory(directoryPath: string): Project | null {
     const db = getDb()
     let mapping: ReturnType<typeof findProjectFolderMapping>
@@ -618,7 +669,10 @@ export const clientProjectService = {
       for (const session of candidates) {
         const canonical = mainProjectPath(session.projectPath)
         if (canonical !== normalizePath(session.projectPath)) this.autoCreateProject(canonical)
-        const match = this.findProjectByDirectory(session.projectPath)
+        let match = this.findProjectByDirectory(session.projectPath)
+        if (!match && this.resolveMarkedFolder(session.projectPath)) {
+          match = this.findProjectByDirectory(session.projectPath)
+        }
         if (!match) continue
         journalSessionMutations(tx, [session.id], () => {
           tx.update(sessions)

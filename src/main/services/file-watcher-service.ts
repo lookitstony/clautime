@@ -11,6 +11,7 @@ import { getClaudeConfigDirs } from './discovery-service'
 import { decodeProjectPath, encodeProjectPath } from './session-detector'
 import { getCodexSessionsDir, readCodexSessionMeta } from '../parsers/codex-parser'
 import { mainProjectPath } from './worktree-paths'
+import { setMarkedFolderListener } from './project-folder-marker'
 import { isProviderEnabled } from './provider-tracking'
 import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
 
@@ -38,6 +39,7 @@ export const fileWatcherService = {
     if (this._watchers.length > 0) return
 
     this._mainWindow = mainWindow
+    setMarkedFolderListener((event) => this._sendToRenderer('watcher:projectFolder', event))
 
     // Watch every Claude profile (~/.claude, ~/.claude-vss, …) so switching
     // accounts keeps live tracking working. A claude_dir override pins to one.
@@ -95,6 +97,7 @@ export const fileWatcherService = {
   },
 
   stop(): void {
+    setMarkedFolderListener(undefined)
     for (const watcher of this._watchers) {
       watcher.close()
     }
@@ -124,6 +127,7 @@ export const fileWatcherService = {
       }
 
       clientProjectService.attributeSessions()
+      clientProjectService.writeProjectMarkers()
       gitService
         .scanCommits()
         .then((r) => {

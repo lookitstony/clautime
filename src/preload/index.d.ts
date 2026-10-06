@@ -229,6 +229,16 @@ interface ProjectsApi {
   update(id: number, data: UpdateProject): Promise<IpcResult<Project>>
   delete(id: number, expectedSyncVersion?: string): Promise<IpcResult<void>>
   attributeSessions(): Promise<IpcResult<number>>
+  getMarkerStatus(
+    id: number
+  ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>>
+  setMarkerInGit(
+    id: number,
+    keep: boolean
+  ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>>
+  onFolderMarker(
+    callback: (event: import('../shared/types/client-project').MarkedFolderEvent) => void
+  ): void
 }
 
 interface InvoiceApi {

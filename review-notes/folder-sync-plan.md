@@ -96,14 +96,14 @@ Technical references checked during planning: [Stripe invoice retrieval](https:/
 A moved folder or a fresh clone should link to its project without manual selection. No existing per-folder identifier is both unique and stable: git remotes change on rename/transfer and are shared by forks, root commits are shared by forks/templates and absent in new repos and non-git folders, and manifest names (`package.json`, `Cargo.toml`) are language-specific. ClauTime therefore owns a small marker file, `.clautime`, in the project's main folder.
 
 - **Contents:** versioned JSON `{ "version": 1, "projectSyncId": "<uuid>" }`. No client/project names, paths, rates, or device data. A sync ID unknown to this installation is ignored.
-- **Written** only to a main folder (`mainProjectPath(dir) === dir`), never to a worktree, when a project is created with a folder, **Change folder on this computer** is used, or activity is explicitly linked to a project. Automatically discovered Unassigned projects get no marker, so ClauTime does not litter every folder an agent touches. An existing marker naming a different project is never overwritten; it becomes a prompt. A failed write (read-only, permissions) is a warning; the local mapping is still saved.
-- **Keep ID file in git** (shared project setting, default off). Off: add `/.clautime` to the repository's `.git/info/exclude` (the common git dir, so it covers every worktree), and nothing appears in client history. On: leave it unexcluded so the user can commit it, and every clone carries the project identity to other computers. ClauTime never runs `git add`/`git rm`; turning the setting off for a tracked file explains how to untrack it. No effect for non-git folders.
+- **Written** only to a main folder (`mainProjectPath(dir) === dir`), never to a worktree, when a project is created with a folder, edited (folder change or move out of Unassigned), linked in the join review, and at startup for every mapped folder of a project assigned to a real client (backfill). Automatically discovered Unassigned projects get no marker, so ClauTime does not litter every folder an agent touches. An existing marker naming a different project is never overwritten; it becomes a prompt. A failed write (read-only, permissions) is a warning; the local mapping is still saved.
+- **Keep ID file in Git** (read from the repository, not stored in the database or synced; default off). Off: `/.clautime` is listed in the repository's `.git/info/exclude` (the common git dir, so it covers every worktree), and nothing appears in client history. On: the line is removed so the user can commit it, and every clone carries the project identity to other computers. ClauTime never runs `git add`/`git rm`. Shown in the project editor only for a main Git checkout. No effect for non-git folders.
 - **Lookup:** when a scan meets an unmapped main folder (after worktree resolution), read its marker before auto-creating a project. Read once per newly seen path; do not add filesystem walks to the scan loop.
   - Project has no folder on this computer (new machine, fresh clone): map it automatically and notify.
   - Project's mapped folder no longer exists: treat as a move. Remap it, block the old path from rediscovery, and notify. History, assignments and invoice references are untouched (decision E).
   - Mapped folder still exists with the same marker: it is a copy or second clone. Do not remap; prompt to use this folder instead or keep it separate (a local per-folder block, without rewriting a possibly committed file).
   - A worktree outside the main folder whose git link broke after the main folder moved: if its committed marker matches a mapped project, do not create a separate Unassigned project; leave its activity unassigned and suggest `git worktree repair`.
-- **Fallback for folders without a marker:** record each mapped git project's root commit (`git rev-list --max-parents=0 HEAD`) as a shared field. A new unmarked folder whose root commit matches exactly one project gets a link suggestion, never an automatic link. Multiple matches (forks/templates) produce no suggestion.
+- **Phase 2 — fallback for folders without a marker:** record each mapped git project's root commit (`git rev-list --max-parents=0 HEAD`) as a shared field. A new unmarked folder whose root commit matches exactly one project gets a link suggestion, never an automatic link. Multiple matches (forks/templates) produce no suggestion.
 
 The marker only proposes or creates device-local mappings. It never moves history, changes another computer's mapping, or overrides an explicit user choice.
 
@@ -149,7 +149,7 @@ Implement decision H with saved invoice migration, portable billed-activity link
 
 ### 6. Add the project folder marker
 
-Implement decision I: shared project fields for the git setting and root commit (migration), a marker read/write service, `.git/info/exclude` handling, lookup in new-folder discovery and the join review, the **Keep ID file in git** toggle in the project form, and the move/copy/clone notifications and prompts. Discovery stays in the existing scan paths; the marker read is cached per path.
+Implement decision I: a marker read/write service, `.git/info/exclude` handling, lookup in new-folder discovery and attribution, startup backfill, the **Keep ID file in Git** toggle in the project form, and move/link/copy notifications. Discovery stays in the existing scan paths; unmarked paths are cached per process. Phase 2 adds the shared root-commit field (migration and sync records) and its link suggestion.
 
 ## Required verification
 
@@ -193,6 +193,6 @@ September 28, 2026: local implementation is complete, including retained canonic
 
 The final full local regression passed 1,721 tests with zero failures (one Windows file-symlink test skipped); all 81 focused billing tests also passed. The QA handoff links the reports. Final type checks, lint (zero errors; existing warnings) and Electron/Vite build passed. Isolated renderer smoke and 5,000-entry performance/restore checks passed.
 
-October 6, 2026: decision I (project folder marker), implementation step 6 and verification items 21–24 added. Not yet implemented.
+October 6, 2026: decision I (project folder marker), implementation step 6 and verification items 21–24 added. Phase 1 implemented locally (`project-folder-marker.ts`); the root-commit fallback (item 24) is phase 2. Not yet installed.
 
 See [folder-sync-qa-handoff.md](folder-sync-qa-handoff.md) for final evidence, acceptance coverage and the remaining real two-computer Drive/Stripe test-account QA. No production database, cloud folder or Stripe account was changed; no build was deployed. Production rollout remains subject to the explicit confirmation rule above.

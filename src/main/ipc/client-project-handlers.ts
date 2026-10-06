@@ -145,6 +145,24 @@ export function registerClientProjectHandlers(): void {
     }
   )
 
+  ipcMain.handle('project:getMarkerStatus', async (_event, id: number) => {
+    try {
+      return ipcSuccess(clientProjectService.getProjectMarkerStatus(id))
+    } catch (error) {
+      log.error('IPC project:getMarkerStatus failed:', error)
+      return ipcError('PROJECT_MARKER_ERROR', String(error))
+    }
+  })
+
+  ipcMain.handle('project:setMarkerInGit', async (_event, id: number, keep: boolean) => {
+    try {
+      return ipcSuccess(clientProjectService.setProjectMarkerInGit(id, keep === true))
+    } catch (error) {
+      log.error('IPC project:setMarkerInGit failed:', error)
+      return ipcError('PROJECT_MARKER_ERROR', String(error))
+    }
+  })
+
   ipcMain.handle('project:attributeSessions', async (): Promise<IpcResult<number>> => {
     try {
       return ipcSuccess(clientProjectService.attributeSessions())

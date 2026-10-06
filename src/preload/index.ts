@@ -447,7 +447,21 @@ const api = {
     delete: (id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('project:delete', id, expectedSyncVersion),
     attributeSessions: (): Promise<IpcResult<number>> =>
-      ipcRenderer.invoke('project:attributeSessions')
+      ipcRenderer.invoke('project:attributeSessions'),
+    getMarkerStatus: (
+      id: number
+    ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>> =>
+      ipcRenderer.invoke('project:getMarkerStatus', id),
+    setMarkerInGit: (
+      id: number,
+      keep: boolean
+    ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>> =>
+      ipcRenderer.invoke('project:setMarkerInGit', id, keep),
+    onFolderMarker: (
+      callback: (event: import('../shared/types/client-project').MarkedFolderEvent) => void
+    ) => {
+      ipcRenderer.on('watcher:projectFolder', (_event, info) => callback(info))
+    }
   }
 }
 
