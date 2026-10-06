@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access, constants } from 'node:fs/promises'
 import { join } from 'node:path'
-import { eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { gitCommits } from '../db/schema/git-commits'
@@ -370,46 +370,67 @@ export const gitService = {
    */
   correlateCommitsWithSessions(): number {
     const db = getDb()
-    const allSessions = db.select().from(sessions).all()
-
-    // Build a set of valid session IDs for stale detection
-    const validSessionIds = new Set(allSessions.map((s) => s.id))
-    const activeSessions = db.select().from(sessions).where(activeSessionCondition).all()
 
     // Reset stale correlations (sessionId points to a deleted/recreated session)
-    const allCommits = db.select().from(gitCommits).all()
-    for (const commit of allCommits) {
-      if (commit.sessionId != null && !validSessionIds.has(commit.sessionId)) {
-        db.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.id, commit.id)).run()
-      }
+    db.update(gitCommits)
+      .set({ sessionId: null })
+      .where(
+        and(
+          isNotNull(gitCommits.sessionId),
+          notInArray(gitCommits.sessionId, db.select({ id: sessions.id }).from(sessions))
+        )
+      )
+      .run()
+
+    // Commits outside any session stay uncorrelated, so index sessions by project once
+    // instead of rescanning every session for every such commit.
+    const byProject = new Map<number | null, { id: number; startMs: number; endMs: number }[]>()
+    for (const s of db
+      .select({
+        id: sessions.id,
+        projectId: sessions.projectId,
+        startedAt: sessions.startedAt,
+        endedAt: sessions.endedAt
+      })
+      .from(sessions)
+      .where(activeSessionCondition)
+      .all()) {
+      const list = byProject.get(s.projectId) ?? []
+      list.push({
+        id: s.id,
+        startMs: new Date(s.startedAt).getTime(),
+        endMs: new Date(s.endedAt).getTime() + COMMIT_BUFFER_MS
+      })
+      byProject.set(s.projectId, list)
     }
 
-    // Re-fetch after cleanup
     const uncorrelated = db
-      .select()
+      .select({
+        id: gitCommits.id,
+        projectId: gitCommits.projectId,
+        committedAt: gitCommits.committedAt
+      })
       .from(gitCommits)
+      .where(isNull(gitCommits.sessionId))
       .all()
-      .filter((c) => c.sessionId == null)
     let correlated = 0
 
-    for (const commit of uncorrelated) {
-      const commitTime = new Date(commit.committedAt).getTime()
+    db.transaction((tx) => {
+      for (const commit of uncorrelated) {
+        const commitTime = new Date(commit.committedAt).getTime()
+        const matchingSession = byProject
+          .get(commit.projectId)
+          ?.find((s) => commitTime >= s.startMs && commitTime <= s.endMs)
 
-      const matchingSession = activeSessions.find((s) => {
-        if (s.projectId !== commit.projectId) return false
-        const startMs = new Date(s.startedAt).getTime()
-        const endMs = new Date(s.endedAt).getTime() + COMMIT_BUFFER_MS
-        return commitTime >= startMs && commitTime <= endMs
-      })
-
-      if (matchingSession) {
-        db.update(gitCommits)
-          .set({ sessionId: matchingSession.id })
-          .where(eq(gitCommits.id, commit.id))
-          .run()
-        correlated++
+        if (matchingSession) {
+          tx.update(gitCommits)
+            .set({ sessionId: matchingSession.id })
+            .where(eq(gitCommits.id, commit.id))
+            .run()
+          correlated++
+        }
       }
-    }
+    })
 
     return correlated
   },

@@ -122,6 +122,49 @@ function invoice(clientId: number, sessionId: number) {
   })
 }
 
+it('correlates commits only with same-project sessions and relinks commits whose session is gone', () => {
+  const client = clientProjectService.createClient({ name: 'Fixture', billableRate: 60 })
+  const project = clientProjectService.createProject({
+    clientId: client.id,
+    name: 'Fixture',
+    directoryPath: 'C:\\fixture'
+  })
+  const other = clientProjectService.createProject({
+    clientId: client.id,
+    name: 'Other',
+    directoryPath: 'C:\\other'
+  })
+  const session = manual()
+  sessionService.updateSession(session.id, { clientId: client.id, projectId: project.id })
+  const commit = (projectId: number, minute: number, sessionId: number | null = null) =>
+    db
+      .insert(gitCommits)
+      .values({
+        sessionId,
+        projectId,
+        hash: `correlate-${projectId}-${minute}-${sessionId}`,
+        message: 'Work',
+        authorName: 'Fixture',
+        authorEmail: 'fixture@example.invalid',
+        committedAt: new Date(Date.UTC(2026, 2, 4, 10, minute)).toISOString()
+      })
+      .returning()
+      .get()
+  const inside = commit(project.id, 30)
+  const stale = commit(project.id, 45, 99999)
+  const otherProject = commit(other.id, 30)
+  const later = commit(project.id, 300)
+
+  expect(gitService.correlateCommitsWithSessions()).toBe(2)
+  const linked = (id: number) =>
+    db.select().from(gitCommits).where(eq(gitCommits.id, id)).get()?.sessionId
+  expect(linked(inside.id)).toBe(session.id)
+  expect(linked(stale.id)).toBe(session.id)
+  expect(linked(otherProject.id)).toBeNull()
+  expect(linked(later.id)).toBeNull()
+  expect(gitService.correlateCommitsWithSessions()).toBe(0)
+})
+
 it('reads applicable predecessor commits through replacements and later splits without rewriting audit links', async () => {
   const sourceFile = '/review/replacement-commits'
   settings.idle_timeout_minutes = '30'
