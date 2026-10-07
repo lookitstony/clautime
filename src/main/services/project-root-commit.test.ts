@@ -45,13 +45,19 @@ beforeEach(() => {
 })
 afterEach(() => {
   sqlite.close()
-  rmSync(root, { recursive: true, force: true })
+  rmSync(root, { recursive: true, force: true, maxRetries: 5 })
 })
 
+// Fixtures ignore the machine's own git config (signing, hooks, fsmonitor).
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=f@example.com', ...args], {
     cwd,
-    encoding: 'utf8'
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: join(tmpdir(), 'clautime-empty-gitconfig'),
+      GIT_CONFIG_NOSYSTEM: '1'
+    }
   }).trim()
 
 function gitRepo(name: string): string {
@@ -153,8 +159,10 @@ it('releases a clone without suggesting when its project folder still exists or 
   expect(copy.events).toEqual([])
   expect(copy.released).toEqual([join(root, 'copy')])
 
-  // A fork with an unmapped project: two matches, so no suggestion either.
+  // A fork with an unmapped project: two matches, so no suggestion either (App's folder is
+  // gone now, so only the second match prevents it).
   resetRootCommitCaches()
+  setProjectFolderMapping(db, device, app.syncId, join(root, 'gone'))
   project('Fork', rootCommit)
   git(root, 'clone', '-q', origin, 'second')
   const second = hold(join(root, 'second'))
@@ -224,7 +232,7 @@ it('confirms a link only for the suggested project while its folder is still mis
   expect(() => confirmRootCommitSuggestion(db, device, clone, other.id)).toThrow(
     expect.objectContaining({ code: 'SUGGESTION_NOT_FOUND' })
   )
-  expect(confirmRootCommitSuggestion(db, device, clone, app.id).id).toBe(app.id)
+  expect(confirmRootCommitSuggestion(db, device, clone, app.id).project.id).toBe(app.id)
   // The project's own folder came back (or was linked by hand) while the prompt was open.
   mkdirSync(oldLocation)
   expect(() => confirmRootCommitSuggestion(db, device, clone, app.id)).toThrow(
@@ -232,4 +240,32 @@ it('confirms a link only for the suggested project while its folder is still mis
   )
   expect(openRootCommitSuggestions()).toEqual([])
   expect(hold(clone).held).toBe(false)
+})
+
+it('reads only a folder’s own repository, never a parent one, when its .git is empty', async () => {
+  const parent = gitRepo('parent')
+  const nested = join(parent, 'nested')
+  mkdirSync(join(nested, '.git'), { recursive: true })
+  expect(await readRootCommit(parent)).not.toBeNull()
+  expect(await readRootCommit(nested)).toBeNull()
+})
+
+it('drops a suggestion whose folder was linked another way or deleted while it was open', async () => {
+  const origin = gitRepo('origin')
+  const app = project('App', await readRootCommit(origin))
+  const other = project('Other')
+  setProjectFolderMapping(db, device, app.syncId, join(root, 'gone'))
+  for (const name of ['linked', 'deleted']) git(root, 'clone', '-q', origin, name)
+  await hold(join(root, 'linked')).settled
+  await hold(join(root, 'deleted')).settled
+  expect(openRootCommitSuggestions()).toHaveLength(2)
+
+  setProjectFolderMapping(db, device, other.syncId, join(root, 'linked'))
+  rmSync(join(root, 'deleted'), { recursive: true, force: true, maxRetries: 5 })
+  for (const name of ['linked', 'deleted']) {
+    expect(() => confirmRootCommitSuggestion(db, device, join(root, name), app.id)).toThrow(
+      expect.objectContaining({ code: 'SUGGESTION_OUTDATED' })
+    )
+  }
+  expect(openRootCommitSuggestions()).toEqual([])
 })

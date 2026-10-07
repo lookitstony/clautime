@@ -92,7 +92,13 @@ export const gitService = {
       }
     }
 
-    const args = ['log', '--branches', '--format=%H|%s|%an|%ae|%aI', '--no-merges']
+    const args = [
+      'log',
+      '--no-show-signature',
+      '--branches',
+      '--format=%H|%s|%an|%ae|%aI',
+      '--no-merges'
+    ]
 
     if (since) {
       args.push(`--since=${since}`)
@@ -227,7 +233,14 @@ export const gitService = {
 
       try {
         const { stdout } = await runGit(
-          ['log', '--branches', '--no-merges', '--since=90 days ago', '--format=%ae|%an'],
+          [
+            'log',
+            '--no-show-signature',
+            '--branches',
+            '--no-merges',
+            '--since=90 days ago',
+            '--format=%ae|%an'
+          ],
           { cwd: project.directoryPath, maxBuffer: 10 * 1024 * 1024 }
         )
         for (const line of stdout.trim().split('\n')) {

@@ -2,7 +2,7 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { existsSync, statSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import log from 'electron-log/main.js'
 import { projects, type ProjectRow } from '../db/schema/projects'
 import { projectFolderMappings } from '../db/schema/project-folder-mappings'
@@ -11,7 +11,7 @@ import type { MarkedFolderEvent } from '../../shared/types/client-project'
 import { AppError } from '../../shared/types/ipc'
 import { journalDirectoryEdit } from './folder-sync-directory-local'
 import { isPortableRootCommit } from './folder-sync-directory-records'
-import { getProjectFolderMapping } from './project-folder-mappings'
+import { findProjectFolderMapping, getProjectFolderMapping } from './project-folder-mappings'
 import { runGit } from './git-exec'
 
 /**
@@ -23,8 +23,11 @@ import { runGit } from './git-exec'
 type Db<S extends Record<string, unknown>> = BetterSQLite3Database<S>
 type SuggestedEvent = Extract<MarkedFolderEvent, { kind: 'suggested' }>
 
-/** Spacing between git processes when recording, so a first run cannot stall the main thread. */
-const RECORD_SPACING_MS = 250
+/** Spacing between git processes, so many new folders at once cannot stall the main thread. */
+export const GIT_SPACING_MS = 250
+/** A timed-out or failed git check is retried this long later, a few times, before giving up. */
+const RETRY_DELAY_MS = 30_000
+const MAX_ATTEMPTS = 3
 
 type Check =
   | { state: 'pending' }
@@ -33,8 +36,16 @@ type Check =
 /** Per-process state of each unmapped folder looked at during discovery. */
 const checks = new Map<string, Check>()
 const attempted = new Set<string>()
+/** Discovery checks run one after another, spaced out. */
+let queue: Promise<void> = Promise.resolve()
 
-const keyOf = (directory: string): string => normalizePath(directory).toLowerCase()
+/** Same rule as folder mappings: Windows paths ignore case, POSIX paths keep it. */
+function keyOf(directory: string): string {
+  const path = normalizePath(directory)
+  return /^(?:[a-z]:|\\\\|\/\/)/i.test(path) ? path.toLowerCase() : path
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 function hasGitDirectory(directory: string): boolean {
   try {
@@ -44,27 +55,37 @@ function hasGitDirectory(directory: string): boolean {
   }
 }
 
+/** 'retry' when git did not finish (timeout, overload); null when there is no usable history. */
+async function probeRootCommit(directory: string): Promise<string | null | 'retry'> {
+  if (existsSync(join(directory, '.git', 'shallow'))) return null
+  try {
+    const { stdout } = await runGit(['rev-list', '--max-parents=0', 'HEAD'], {
+      cwd: directory,
+      timeout: 10_000,
+      // Only this folder's own repository: an empty or broken `.git` must not fall back to a
+      // parent repository and report its history.
+      env: { GIT_DIR: join(directory, '.git'), GIT_CEILING_DIRECTORIES: dirname(directory) }
+    })
+    const rootCommit = stdout.split(/\s+/).filter(Boolean).sort().join(' ')
+    return isPortableRootCommit(rootCommit) ? rootCommit : null
+  } catch (error) {
+    const failure = error as { killed?: boolean; signal?: string | null }
+    return failure.killed || failure.signal ? 'retry' : null
+  }
+}
+
 /**
  * Sorted root commit hashes of `directory`'s history, space-separated. Null without history, for
  * shallow clones (their cut-off commit looks like a root) and beyond what sync accepts.
  */
 export async function readRootCommit(directory: string): Promise<string | null> {
-  if (existsSync(join(directory, '.git', 'shallow'))) return null
-  try {
-    const { stdout } = await runGit(['rev-list', '--max-parents=0', 'HEAD'], {
-      cwd: directory,
-      timeout: 10_000
-    })
-    const rootCommit = stdout.split(/\s+/).filter(Boolean).sort().join(' ')
-    return isPortableRootCommit(rootCommit) ? rootCommit : null
-  } catch {
-    return null
-  }
+  const result = await probeRootCommit(directory)
+  return result === 'retry' ? null : result
 }
 
 /**
- * Record root commits for this computer's mapped git folders that have none yet (or only
- * `syncIds`). Each folder is tried once per process; git runs one at a time, spaced out.
+ * Record root commits for this computer's mapped folders of active projects that have none yet
+ * (or only `syncIds`). Each folder is tried once per process; git runs one at a time, spaced out.
  */
 export async function recordRootCommits<S extends Record<string, unknown>>(
   db: Db<S>,
@@ -80,7 +101,11 @@ export async function recordRootCommits<S extends Record<string, unknown>>(
     .from(projectFolderMappings)
     .innerJoin(projects, eq(projects.syncId, projectFolderMappings.projectSyncId))
     .where(
-      and(eq(projectFolderMappings.deviceId, deviceId.toLowerCase()), isNull(projects.rootCommit))
+      and(
+        eq(projectFolderMappings.deviceId, deviceId.toLowerCase()),
+        isNull(projects.rootCommit),
+        eq(projects.isActive, true)
+      )
     )
     .all()
     .filter((row) => !syncIds || syncIds.includes(row.syncId))
@@ -91,7 +116,7 @@ export async function recordRootCommits<S extends Record<string, unknown>>(
     if (attempted.has(key)) continue
     attempted.add(key)
     if (!hasGitDirectory(row.directory)) continue
-    if (spawned) await new Promise((resolve) => setTimeout(resolve, RECORD_SPACING_MS))
+    if (spawned) await sleep(GIT_SPACING_MS)
     spawned = true
     const rootCommit = await readRootCommit(row.directory)
     if (!rootCommit) continue
@@ -183,26 +208,46 @@ export function holdForRootCommitMatch<S extends Record<string, unknown>>(
     .get()
   if (!known || !hasGitDirectory(directory)) return false
   checks.set(key, { state: 'pending' })
-  void (async () => {
-    let suggestion: { event: SuggestedEvent; rootCommit: string } | null = null
-    try {
-      const rootCommit = await readRootCommit(directory)
-      const event = rootCommit ? await suggestionFor(db, deviceId, directory, rootCommit) : null
-      if (rootCommit && event) suggestion = { event, rootCommit }
-    } catch (error) {
-      log.warn(`Could not compare the git history of ${directory}:`, error)
-    }
+
+  const settle = (suggestion: { event: SuggestedEvent; rootCommit: string } | null): void => {
     if (suggestion) {
       checks.set(key, { state: 'suggested', ...suggestion })
-      log.info(
-        `Project root commit: suggest linking ${directory} to ${suggestion.event.projectName}`
-      )
+      const { projectName } = suggestion.event
+      log.info(`Project root commit: suggest linking ${directory} to ${projectName}`)
       notify(suggestion.event)
     } else {
       checks.set(key, { state: 'none' })
       release(directory)
     }
-  })().catch((error) => log.warn(`Discovering ${directory} after its git check failed:`, error))
+  }
+  const attempt = (attempts: number): void => {
+    queue = queue
+      .then(async () => {
+        const rootCommit = await probeRootCommit(directory)
+        if (rootCommit === 'retry' && attempts < MAX_ATTEMPTS) {
+          // Under load a timeout says nothing about the history; never conclude "no match".
+          setTimeout(() => attempt(attempts + 1), RETRY_DELAY_MS)
+          return
+        }
+        if (rootCommit === 'retry') log.warn(`Gave up comparing the git history of ${directory}`)
+        const found = rootCommit === 'retry' ? null : rootCommit
+        const event = found ? await suggestionFor(db, deviceId, directory, found) : null
+        settle(event && found ? { event, rootCommit: found } : null)
+      })
+      .catch((error) => {
+        log.warn(`Comparing the git history of ${directory} failed:`, error)
+        if (checks.get(key)?.state === 'pending') {
+          checks.set(key, { state: 'none' })
+          try {
+            release(directory)
+          } catch (releaseError) {
+            log.warn(`Discovering ${directory} failed:`, releaseError)
+          }
+        }
+      })
+      .then(() => sleep(GIT_SPACING_MS))
+  }
+  attempt(1)
   return true
 }
 
@@ -212,29 +257,38 @@ export function openRootCommitSuggestions(): SuggestedEvent[] {
 }
 
 /**
- * Before linking: the suggestion must still be open for this project, the project must still be
- * the only match, and its folder here must still be missing.
+ * Before linking: the suggestion must still be open for this project, the folder must still be
+ * unlinked and present, the project must still be the only match, and its folder here must still
+ * be missing. Returns the project and the folder as main discovered it.
  */
 export function confirmRootCommitSuggestion<S extends Record<string, unknown>>(
   db: Db<S>,
   deviceId: string,
   directory: string,
   projectId: number
-): ProjectRow {
-  const check = checks.get(keyOf(directory))
+): { project: ProjectRow; directoryPath: string } {
+  const key = keyOf(directory)
+  const check = checks.get(key)
   if (check?.state !== 'suggested' || check.event.projectId !== projectId) {
     throw new AppError('SUGGESTION_NOT_FOUND', `No link suggestion is open for ${directory}`)
   }
+  const { directoryPath, projectName } = check.event
   const project = soleMatch(db, check.rootCommit)
   const mapping = project && getProjectFolderMapping(db, deviceId, project.syncId)
-  if (!project || project.id !== projectId || (mapping && existsSync(mapping.directoryPath))) {
-    checks.set(keyOf(directory), { state: 'none' })
+  const stale =
+    !project ||
+    project.id !== projectId ||
+    (mapping && existsSync(mapping.directoryPath)) ||
+    !existsSync(directoryPath) ||
+    findProjectFolderMapping(db, deviceId, directoryPath)
+  if (stale) {
+    checks.set(key, { state: 'none' })
     throw new AppError(
       'SUGGESTION_OUTDATED',
-      `${check.event.projectName} already has a folder on this computer or is no longer the only match`
+      `${projectName} or this folder changed since the suggestion; nothing was linked`
     )
   }
-  return project
+  return { project, directoryPath }
 }
 
 /** The user answered a suggestion: discovery stops holding the folder. */
@@ -242,12 +296,15 @@ export function settleRootCommitSuggestion(directory: string): void {
   checks.set(keyOf(directory), { state: 'none' })
 }
 
-export function isRootCommitSuggestionOpen(directory: string): boolean {
-  return checks.get(keyOf(directory))?.state === 'suggested'
+/** The folder of an open suggestion, as main discovered it, or null. */
+export function openRootCommitSuggestion(directory: string): string | null {
+  const check = checks.get(keyOf(directory))
+  return check?.state === 'suggested' ? check.event.directoryPath : null
 }
 
 /** Test hook: forget per-process caches. */
 export function resetRootCommitCaches(): void {
   checks.clear()
   attempted.clear()
+  queue = Promise.resolve()
 }

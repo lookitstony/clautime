@@ -10,6 +10,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -210,4 +211,25 @@ it('ignores folders without a marker or with an unknown project ID', () => {
   const unknown = repo('unknown')
   writeProjectMarker(unknown, randomUUID())
   expect(resolveMarkedFolder(db, device, unknown)).toBeNull()
+})
+
+it('writes no marker through a linked .git/info folder, and ignores an oversized marker', () => {
+  const dir = join(root, 'linked')
+  mkdirSync(join(dir, '.git'), { recursive: true })
+  const outside = join(root, 'outside')
+  mkdirSync(outside)
+  // A junction needs no privileges on Windows; elsewhere it is an ordinary directory symlink.
+  symlinkSync(outside, join(dir, '.git', 'info'), 'junction')
+  expect(writeProjectMarker(dir, randomUUID())).toBe('failed')
+  expect(existsSync(join(dir, MARKER_FILE))).toBe(false)
+  expect(existsSync(join(outside, 'exclude'))).toBe(false)
+
+  const plain = join(root, 'plain')
+  mkdirSync(plain)
+  const id = randomUUID()
+  writeFileSync(
+    join(plain, MARKER_FILE),
+    JSON.stringify({ version: 1, projectSyncId: id }) + ' '.repeat(5000)
+  )
+  expect(readProjectMarker(plain)).toBeNull()
 })

@@ -28,7 +28,7 @@ import { explicitAssignmentSessionIds } from './session-history'
 import {
   confirmRootCommitSuggestion,
   holdForRootCommitMatch,
-  isRootCommitSuggestionOpen,
+  openRootCommitSuggestion,
   openRootCommitSuggestions,
   recordRootCommits,
   settleRootCommitSuggestion
@@ -111,6 +111,25 @@ function toProject(row: typeof projects.$inferSelect): Project {
 
 /** Told about projects discovery creates later, after a git-history check released a folder. */
 let discoveredProjectListener: ((project: Project) => void) | undefined
+const RELEASE_BATCH_MS = 1000
+const releasedFolders = new Set<string>()
+let releaseTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * Follow-up work once a suggestion is answered. The answer itself stands, so a failure here is
+ * reported under a code the renderer does not ask again for.
+ */
+function afterSettled(work: () => void): void {
+  try {
+    work()
+  } catch (error) {
+    log.warn('Follow-up after a folder suggestion failed:', error)
+    throw new AppError(
+      'SUGGESTION_FOLLOW_UP_FAILED',
+      `Your answer was saved, but updating sessions failed: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
 
 export const clientProjectService = {
   // ── Client CRUD ──
@@ -483,37 +502,61 @@ export const clientProjectService = {
   linkSuggestedFolder(projectId: number, directoryPath: string): void {
     const db = getDb()
     const { deviceId } = getLocalDeviceSession()
-    let project: ReturnType<typeof confirmRootCommitSuggestion>
+    let confirmed: ReturnType<typeof confirmRootCommitSuggestion>
     try {
-      project = confirmRootCommitSuggestion(db, deviceId, directoryPath, projectId)
+      confirmed = confirmRootCommitSuggestion(db, deviceId, directoryPath, projectId)
     } catch (error) {
       // An outdated suggestion no longer holds the folder; discover it as before.
-      if (error instanceof AppError && error.code === 'SUGGESTION_OUTDATED')
-        this._discoverReleasedFolder(directoryPath)
+      if (error instanceof AppError && error.code === 'SUGGESTION_OUTDATED') {
+        try {
+          this._discoverReleasedFolders([directoryPath])
+        } catch (discoverError) {
+          log.warn(`Discovering ${directoryPath} failed:`, discoverError)
+        }
+      }
       throw error
     }
-    setProjectFolderMapping(db, deviceId, project.syncId, directoryPath)
-    settleRootCommitSuggestion(directoryPath)
-    log.info(`Linked ${directoryPath} to ${project.name} by its git history`)
-    this.attributeSessions()
-    this.writeProjectMarkers([projectId])
+    const { project, directoryPath: folder } = confirmed
+    setProjectFolderMapping(db, deviceId, project.syncId, folder)
+    settleRootCommitSuggestion(folder)
+    log.info(`Linked ${folder} to ${project.name} by its git history`)
+    afterSettled(() => {
+      this.attributeSessions()
+      this.writeProjectMarkers([projectId])
+    })
   },
 
   /** Decline a root-commit suggestion: discover the folder as its own project, as before. */
   declineSuggestedFolder(directoryPath: string): void {
-    if (!isRootCommitSuggestionOpen(directoryPath)) {
+    const folder = openRootCommitSuggestion(directoryPath)
+    if (!folder) {
       throw new AppError('SUGGESTION_NOT_FOUND', `No link suggestion is open for ${directoryPath}`)
     }
-    settleRootCommitSuggestion(directoryPath)
-    this._discoverReleasedFolder(directoryPath)
+    settleRootCommitSuggestion(folder)
+    afterSettled(() => this._discoverReleasedFolders([folder]))
   },
 
-  /** Create the project discovery held back, and tell the watcher as discovery would have. */
-  _discoverReleasedFolder(directoryPath: string): void {
-    const created = this.autoCreateProject(directoryPath)
-    if (!created) return
+  /** A folder released by its git check; batched so many releases attribute sessions once. */
+  _queueReleasedFolder(directoryPath: string): void {
+    releasedFolders.add(directoryPath)
+    releaseTimer ??= setTimeout(() => {
+      releaseTimer = undefined
+      const folders = [...releasedFolders]
+      releasedFolders.clear()
+      try {
+        this._discoverReleasedFolders(folders)
+      } catch (error) {
+        log.warn('Discovering released folders failed:', error)
+      }
+    }, RELEASE_BATCH_MS)
+  },
+
+  /** Create the projects discovery held back, and tell the watcher as discovery would have. */
+  _discoverReleasedFolders(directoryPaths: string[]): void {
+    const created = directoryPaths.flatMap((path) => this.autoCreateProject(path) ?? [])
+    if (!created.length) return
     this.attributeSessions()
-    discoveredProjectListener?.(created)
+    for (const project of created) discoveredProjectListener?.(project)
   },
 
   getProjectMarkerStatus(id: number): ProjectMarkerStatus | null {
@@ -626,7 +669,7 @@ export const clientProjectService = {
         getLocalDeviceSession().deviceId,
         directoryPath,
         emitMarkedFolder,
-        (released) => this._discoverReleasedFolder(released)
+        (released) => this._queueReleasedFolder(released)
       )
       if (held) return null
     } catch (error) {

@@ -1,13 +1,26 @@
 import { and, eq, isNull, ne, or } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
+import { dirname, join } from 'node:path'
 import log from 'electron-log/main.js'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { projectFolderMappings } from '../db/schema/project-folder-mappings'
 import { normalizePath } from '../../shared/paths'
 import type { MarkedFolderEvent, ProjectMarkerStatus } from '../../shared/types/client-project'
+import { AppError } from '../../shared/types/ipc'
 import { UNASSIGNED_CLIENT_ROLE } from './folder-sync-builtin-client'
 import {
   findProjectFolderMapping,
@@ -73,12 +86,21 @@ function isMainFolder(directory: string): boolean {
 export function readProjectMarker(directory: string): string | null {
   const path = join(directory, MARKER_FILE)
   if (!isPlainFile(path, MAX_MARKER_BYTES)) return null
+  let fd: number | undefined
   try {
-    const data = JSON.parse(readFileSync(path, 'utf8'))
+    // Checked again on the open file: it may be swapped for a pipe or grow after the lstat.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
+    const entry = fstatSync(fd)
+    if (!entry.isFile() || entry.size > MAX_MARKER_BYTES) return null
+    const buffer = Buffer.alloc(entry.size)
+    readSync(fd, buffer, 0, entry.size, 0)
+    const data = JSON.parse(buffer.toString('utf8'))
     const id = typeof data?.projectSyncId === 'string' ? data.projectSyncId.toLowerCase() : ''
     return data?.version === 1 && UUID.test(id) ? id : null
   } catch {
     return null
+  } finally {
+    if (fd !== undefined) closeSync(fd)
   }
 }
 
@@ -103,11 +125,21 @@ function excludeLines(file: string): string[] {
 const isMarkerPattern = (line: string): boolean =>
   line.trim() === EXCLUDE_PATTERN || line.trim() === MARKER_FILE
 
-/** Off: list the marker in `.git/info/exclude`. On: remove it so the user can commit it. */
+/**
+ * Off: list the marker in `.git/info/exclude`. On: remove it so the user can commit it. Throws
+ * rather than write through a linked or special `info` folder or exclude file.
+ */
 export function setMarkerKeptInGit(directory: string, keep: boolean): void {
   const file = excludeFile(directory)
-  // A linked or special exclude file is not written through.
-  if (!file || (lstatSync(file, { throwIfNoEntry: false }) && !isPlainFile(file))) return
+  if (!file) return
+  const info = lstatSync(dirname(file), { throwIfNoEntry: false })
+  const exclude = lstatSync(file, { throwIfNoEntry: false })
+  if ((info && !info.isDirectory()) || (exclude && !exclude.isFile())) {
+    throw new AppError(
+      'UNSAFE_GIT_EXCLUDE',
+      `${file} is a link or special file; ClauTime will not write through it`
+    )
+  }
   const lines = excludeLines(file)
   const listed = lines.some(isMarkerPattern)
   if (keep && listed) {
@@ -141,7 +173,7 @@ export function writeProjectMarker(directory: string, projectSyncId: string): Ma
       log.warn(`Project marker in ${directory} names another project; left unchanged`)
       return 'conflict'
     }
-    // Exclude first: a failed exclude write must not leave an untracked marker in Git status.
+    // Exclude first: a failed or refused exclude write must leave no marker in Git status.
     setMarkerKeptInGit(directory, false)
     // 'wx' never writes through a (dangling) link or over a file that appeared meanwhile.
     writeFileSync(path, `${JSON.stringify({ version: 1, projectSyncId }, null, 2)}\n`, {

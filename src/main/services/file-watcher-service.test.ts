@@ -26,6 +26,7 @@ vi.mock('../parsers/codex-parser', () => ({
 const { fileWatcherService } = await import('./file-watcher-service')
 const { sessionService } = await import('./session-service')
 const { readCodexSessionMeta } = await import('../parsers/codex-parser')
+const { gitService } = await import('./git-service')
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -128,4 +129,31 @@ it('notifies the renderer of committed work and unresolved files after a partial
   const send = vi.spyOn(fileWatcherService, '_sendToRenderer').mockImplementation(() => {})
   await fileWatcherService._runIncrementalScan('C--repo', 'C:\\repo')
   expect(send).toHaveBeenCalledWith('watcher:sessionsUpdated', { errors })
+})
+
+it('announces a project created after its git-history check like any discovered project', async () => {
+  const send = vi.spyOn(fileWatcherService, '_sendToRenderer').mockImplementation(() => {})
+  const scanCommits = vi.fn().mockResolvedValue({ newCommits: 2, projectsScanned: 1 })
+  const correlate = vi.fn()
+  Object.assign(gitService, { scanCommits, correlateCommitsWithSessions: correlate })
+  const project = { id: 7, name: 'other', directoryPath: 'C:\\repo' }
+
+  fileWatcherService._onDiscoveredProject(project as never)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(send).toHaveBeenCalledWith('watcher:newProject', {
+    dirName: 'C--repo',
+    decodedPath: 'C:\\repo',
+    projectName: 'other'
+  })
+  expect(send).toHaveBeenCalledWith('watcher:sessionsUpdated', { errors: undefined })
+  expect(scanCommits).toHaveBeenCalledWith([7])
+  expect(correlate).toHaveBeenCalledTimes(1)
+
+  // No new commits: nothing to correlate; a failed scan is only logged.
+  scanCommits.mockResolvedValueOnce({ newCommits: 0, projectsScanned: 1 })
+  fileWatcherService._onDiscoveredProject(project as never)
+  scanCommits.mockRejectedValueOnce(new Error('git missing'))
+  fileWatcherService._onDiscoveredProject(project as never)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(correlate).toHaveBeenCalledTimes(1)
 })

@@ -578,3 +578,77 @@ it('asks before linking an unmarked clone of a known project, and links its sess
     rmSync(root, { recursive: true, force: true })
   }
 }, 120_000)
+
+it('creates an unmatched git folder after its check, and discovers an outdated suggestion as its own project', async () => {
+  initializeEmptyLocalProjectSetup()
+  resetRootCommitCaches()
+  const root = mkdtempSync(join(tmpdir(), 'clautime-release-'))
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=F', '-c', 'user.email=f@example.com', ...args], { cwd })
+  const repo = (name: string) => {
+    const dir = join(root, name)
+    mkdirSync(dir)
+    git(dir, 'init', '-q')
+    writeFileSync(join(dir, 'README.md'), name)
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', 'first')
+    return dir
+  }
+  const session = (projectPath: string) =>
+    db
+      .insert(sessions)
+      .values({
+        projectPath,
+        startedAt: '2026-10-06T10:00:00Z',
+        endedAt: '2026-10-06T11:00:00Z',
+        durationMinutes: 60
+      })
+      .returning()
+      .get()
+  const projectOf = (id: number) =>
+    db.select().from(sessions).where(eq(sessions.id, id)).get()?.projectId
+  const events: MarkedFolderEvent[] = []
+  setMarkedFolderListener((event) => events.push(event))
+  const discovered: string[] = []
+  clientProjectService.setDiscoveredProjectListener((created) => discovered.push(created.name))
+  try {
+    const origin = repo('origin')
+    const app = legacyProject('App', null)
+    db.update(projects)
+      .set({ rootCommit: await readRootCommit(origin) })
+      .where(eq(projects.id, app.id))
+      .run()
+
+    // Unrelated history: held while compared, then discovered as before.
+    const fresh = repo('fresh')
+    const freshWork = session(fresh)
+    expect(clientProjectService.autoCreateProject(fresh)).toBeNull()
+    await vi.waitFor(() => expect(discovered).toEqual(['fresh']), { timeout: 30_000 })
+    const created = clientProjectService.findProjectByDirectory(fresh)
+    expect(created?.name).toBe('fresh')
+    expect(projectOf(freshWork.id)).toBe(created?.id)
+    expect(events).toEqual([])
+
+    // A second project with the same history appears while the prompt is open.
+    git(root, 'clone', '-q', origin, 'clone')
+    const clone = join(root, 'clone')
+    const cloneWork = session(clone)
+    expect(clientProjectService.autoCreateProject(clone)).toBeNull()
+    await vi.waitFor(() => expect(events).toHaveLength(1), { timeout: 30_000 })
+    const fork = legacyProject('Fork', null)
+    db.update(projects)
+      .set({ rootCommit: await readRootCommit(origin) })
+      .where(eq(projects.id, fork.id))
+      .run()
+    expect(() => clientProjectService.linkSuggestedFolder(app.id, clone)).toThrow(
+      expect.objectContaining({ code: 'SUGGESTION_OUTDATED' })
+    )
+    expect(discovered).toEqual(['fresh', 'clone'])
+    expect(projectOf(cloneWork.id)).toBe(clientProjectService.findProjectByDirectory(clone)?.id)
+    expect(projectOf(cloneWork.id)).not.toBe(app.id)
+  } finally {
+    setMarkedFolderListener(undefined)
+    clientProjectService.setDiscoveredProjectListener(undefined)
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 })
+  }
+}, 120_000)

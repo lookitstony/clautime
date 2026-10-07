@@ -14,6 +14,7 @@ import { mainProjectPath } from './worktree-paths'
 import { setMarkedFolderListener } from './project-folder-marker'
 import { isProviderEnabled } from './provider-tracking'
 import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
+import type { Project } from '../../shared/types/client-project'
 
 // Per-project debounce before an incremental scan. Kept high because each scan
 // re-parses the project's (often large, actively-growing) JSONL and writes to
@@ -40,22 +41,9 @@ export const fileWatcherService = {
 
     this._mainWindow = mainWindow
     setMarkedFolderListener((event) => this._sendToRenderer('watcher:projectFolder', event))
-    // A git-history check released a held folder: finish what discovery would have done.
-    clientProjectService.setDiscoveredProjectListener((project) => {
-      const decodedPath = project.directoryPath ?? ''
-      this._sendToRenderer('watcher:newProject', {
-        dirName: encodeProjectPath(decodedPath),
-        decodedPath,
-        projectName: project.name
-      })
-      this._notifyRenderer()
-      gitService
-        .scanCommits([project.id])
-        .then((r) => {
-          if (r.newCommits > 0) gitService.correlateCommitsWithSessions()
-        })
-        .catch((err) => log.warn('Git scan of a discovered project failed:', err))
-    })
+    clientProjectService.setDiscoveredProjectListener((project) =>
+      this._onDiscoveredProject(project)
+    )
 
     // Watch every Claude profile (~/.claude, ~/.claude-vss, …) so switching
     // accounts keeps live tracking working. A claude_dir override pins to one.
@@ -283,6 +271,23 @@ export const fileWatcherService = {
     } catch (err) {
       log.warn('File watcher: incremental scan failed:', err)
     }
+  },
+
+  /** A git-history check released a held folder: finish what discovery would have done. */
+  _onDiscoveredProject(project: Project): void {
+    const decodedPath = project.directoryPath ?? ''
+    this._sendToRenderer('watcher:newProject', {
+      dirName: encodeProjectPath(decodedPath),
+      decodedPath,
+      projectName: project.name
+    })
+    this._notifyRenderer()
+    gitService
+      .scanCommits([project.id])
+      .then((r) => {
+        if (r.newCommits > 0) gitService.correlateCommitsWithSessions()
+      })
+      .catch((err) => log.warn('Git scan of a discovered project failed:', err))
   },
 
   _handleNewProject(dirName: string): void {

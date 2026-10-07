@@ -184,6 +184,9 @@ export const PROJECT_SYNC_SCHEMA: RecordSchema = Object.freeze({
   })
 })
 
+/** Portable fields added after the first protocol-1 builds; each must have a default. */
+const ADDED_IN_PROTOCOL_1: ReadonlySet<string> = new Set(['rootCommit'])
+
 /** Sorted root commit hashes as synced; also caps what git output is recorded. */
 export function isPortableRootCommit(value: JsonValue): boolean {
   return typeof value === 'string' && value.length <= 1000 && ROOT_COMMITS.test(value)
@@ -224,9 +227,9 @@ export function validateDirectoryChange(change: unknown): ParsedRevision {
   const present = revision.fields.get(PRESENT)!
   if (!present.parents.length) {
     if (present.value !== true) invalid(`${revision.id} must create ${revision.entityId}`)
-    // A field added within protocol 1 (rootCommit) has a default: older creates omit it.
+    // Fields added within protocol 1 take their default when an older create omits them.
     const missing = schema.fields.filter(
-      (field) => !revision.fields.has(field) && !Object.hasOwn(schema.defaults ?? {}, field)
+      (field) => !revision.fields.has(field) && !ADDED_IN_PROTOCOL_1.has(field)
     )
     if (missing.length)
       invalid(`${revision.id} creates ${entityType} without ${missing.join(', ')}`)

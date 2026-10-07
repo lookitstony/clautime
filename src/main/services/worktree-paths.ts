@@ -20,7 +20,8 @@ export function mainProjectPath(directory: string): string {
     try {
       if (statSync(marker).isDirectory()) return normalized
       const gitdir = readFileSync(marker, 'utf8').match(/^gitdir:\s*(.+)\s*$/m)?.[1]
-      if (!gitdir) return normalized
+      // A network gitdir would make this read connect out (and send Windows credentials).
+      if (!gitdir || /^(?:\\\\|\/\/)/.test(gitdir.trim())) return normalized
       const adminDir = resolve(current, gitdir.trim())
       const commonDir = resolve(adminDir, readFileSync(join(adminDir, 'commondir'), 'utf8').trim())
       if (commonDir !== adminDir && /[/\\]\.git$/i.test(commonDir)) {

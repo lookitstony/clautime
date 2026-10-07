@@ -200,6 +200,14 @@ it('imports a project delivered before its client only after the declared client
   expect(state(b, 'project', project.syncId)?.projectionIssue).toBeUndefined()
 })
 
+it('carries a recorded root commit to the other computer', () => {
+  const rootCommit = ['b'.repeat(40), 'c'.repeat(64)].join(' ')
+  const project = addProject(a, addClient(a).id, { rootCommit })
+  exportAll(a)
+  expect(deliver(b, publish(a)).errors).toEqual([])
+  expect(projectRow(b, project.syncId)?.rootCommit).toBe(rootCommit)
+})
+
 it('imports a project created before rootCommit existed, defaulting it to none', () => {
   const client = addClient(a)
   addProject(a, client.id, { rootCommit: 'a'.repeat(40) })
@@ -245,6 +253,9 @@ it('exports only allowlisted values and rejects unknown fields, local IDs, facts
   }
   const incomplete = structuredClone(clientChange)
   delete incomplete.payload.fields.color
+  // Only fields added within protocol 1 may be missing; older defaulted fields stay required.
+  const withoutDefaulted = structuredClone(projectChange)
+  delete withoutDefaulted.payload.fields.hourlyRate
   const rejected: unknown[] = [
     withField(clientChange, 'stripeCustomerId', 'cus_other'),
     withField(projectChange, 'directoryPath', 'C:/elsewhere'),
@@ -253,7 +264,12 @@ it('exports only allowlisted values and rejects unknown fields, local IDs, facts
     withField(clientChange, 'billableRate', '100'),
     withField(clientChange, 'email', 'x'.repeat(400)),
     withField(clientChange, 'color', 'url(javascript:alert(1))'),
+    withField(projectChange, 'rootCommit', 'HEAD'),
+    withField(projectChange, 'rootCommit', 'A'.repeat(40)),
+    withField(projectChange, 'rootCommit', `${'a'.repeat(40)} `),
+    withField(projectChange, 'rootCommit', Array(30).fill('a'.repeat(40)).join(' ')),
     incomplete,
+    withoutDefaulted,
     { ...clientChange, kind: 'fact' },
     { ...clientChange, entityId: String(client.id) },
     { ...projectChange, dependencies: [] }

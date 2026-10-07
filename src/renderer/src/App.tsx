@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, Outlet, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { showFolderSuggestion } from '@/features/clients/folder-suggestion-toast'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { Toaster } from '@/components/ui/sonner'
@@ -24,7 +25,6 @@ import { ManualTimerDialog } from '@/features/live/ManualTimerDialog'
 import { useLiveBroadcastSync } from '@/features/live/use-live'
 import { useUpdaterNotifications } from '@/features/settings/use-updater'
 import type { ProjectLiveStatus } from '../../shared/types/live'
-import type { MarkedFolderEvent } from '../../shared/types/client-project'
 import { reportScanErrors } from '@/lib/scan-errors'
 
 // While you're actively coding, the file watcher emits a scan-complete event
@@ -76,38 +76,15 @@ function useFileWatcherEvents(): void {
       qc.invalidateQueries({ queryKey: ['live'] })
     })
 
-    type FolderSuggestion = Extract<MarkedFolderEvent, { kind: 'suggested' }>
-    // Main holds the folder until answered, so the prompt cannot be swiped away.
-    const showFolderSuggestion = (event: FolderSuggestion) => {
-      const answer = async (link: boolean) => {
-        const result = link
-          ? await window.api.projects.linkSuggestedFolder(event.projectId, event.directoryPath)
-          : await window.api.projects.declineSuggestedFolder(event.directoryPath)
-        if (!result.success) {
-          toast.error(result.error.message)
-          // Still open unless main says it is gone or outdated: ask again.
-          if (!result.error.code.startsWith('SUGGESTION_')) showFolderSuggestion(event)
-        }
-        qc.invalidateQueries({ queryKey: ['projects'] })
-        qc.invalidateQueries({ queryKey: ['sessions'] })
-      }
-      toast(`Is this ${event.projectName}?`, {
-        id: `folder-suggestion:${event.directoryPath}`,
-        description: `${event.directoryPath} has no ClauTime ID file, but its git history matches ${event.projectName}. Link it to track this folder's time there.`,
-        duration: Infinity,
-        dismissible: false,
-        action: { label: 'Link', onClick: () => void answer(true) },
-        cancel: { label: 'Keep separate', onClick: () => void answer(false) }
-      })
-    }
     void window.api.projects.getFolderSuggestions().then((result) => {
       if (!result.success) return
-      for (const event of result.data) if (event.kind === 'suggested') showFolderSuggestion(event)
+      for (const event of result.data)
+        if (event.kind === 'suggested') showFolderSuggestion(event, qc)
     })
 
     window.api.projects.onFolderMarker((event) => {
       if (event.kind === 'suggested') {
-        showFolderSuggestion(event)
+        showFolderSuggestion(event, qc)
         return
       }
       if (event.kind === 'copy') {
