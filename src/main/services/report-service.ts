@@ -38,6 +38,8 @@ function formatDateLabel(isoString: string): string {
   // Same as formatting currentReportingDate(), which applies the reporting zone.
   const timeZone = calendarKey ? 'UTC' : currentReportingTimeZone()
   const d = new Date(calendarKey ? isoString + 'T12:00:00Z' : isoString)
+  // Intl throws on an invalid date; toLocaleDateString returned this label instead.
+  if (Number.isNaN(d.getTime())) return 'Invalid Date'
   // A host zone change through TZ must not reuse a formatter bound to the previous zone.
   const key = `${timeZone ?? ''}|${process.env.TZ ?? ''}`
   let format = dateLabelFormats.get(key)

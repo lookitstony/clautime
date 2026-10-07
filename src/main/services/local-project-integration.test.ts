@@ -515,6 +515,8 @@ it('asks before linking an unmarked clone of a known project, and links its sess
     execFileSync('git', ['-c', 'user.name=F', '-c', 'user.email=f@example.com', ...args], { cwd })
   const events: MarkedFolderEvent[] = []
   setMarkedFolderListener((event) => events.push(event))
+  const discovered: string[] = []
+  clientProjectService.setDiscoveredProjectListener((created) => discovered.push(created.name))
   try {
     const origin = join(root, 'origin')
     mkdirSync(origin)
@@ -568,8 +570,11 @@ it('asks before linking an unmarked clone of a known project, and links its sess
     const created = clientProjectService.findProjectByDirectory(other)
     expect(created?.id).not.toBe(project.id)
     expect(created?.name).toBe('other')
+    // The watcher hears about it as it would for an ordinary discovery.
+    expect(discovered).toEqual(['other'])
   } finally {
     setMarkedFolderListener(undefined)
+    clientProjectService.setDiscoveredProjectListener(undefined)
     rmSync(root, { recursive: true, force: true })
   }
 }, 120_000)

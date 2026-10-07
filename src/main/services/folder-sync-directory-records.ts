@@ -178,13 +178,16 @@ export const PROJECT_SYNC_SCHEMA: RecordSchema = Object.freeze({
     invoiceName: optional(text(MAX_TEXT)),
     stageName: optional(text(MAX_TEXT)),
     hourlyRate: optional(isRate),
-    rootCommit: optional(
-      (value) => typeof value === 'string' && value.length <= 1000 && ROOT_COMMITS.test(value)
-    ),
+    rootCommit: optional(isPortableRootCommit),
     isBillable: isBoolean,
     isActive: isBoolean
   })
 })
+
+/** Sorted root commit hashes as synced; also caps what git output is recorded. */
+export function isPortableRootCommit(value: JsonValue): boolean {
+  return typeof value === 'string' && value.length <= 1000 && ROOT_COMMITS.test(value)
+}
 
 function invalid(message: string): never {
   throw new AppError('SYNC_INVALID_DIRECTORY_CHANGE', message)
@@ -221,7 +224,10 @@ export function validateDirectoryChange(change: unknown): ParsedRevision {
   const present = revision.fields.get(PRESENT)!
   if (!present.parents.length) {
     if (present.value !== true) invalid(`${revision.id} must create ${revision.entityId}`)
-    const missing = schema.fields.filter((field) => !revision.fields.has(field))
+    // A field added within protocol 1 (rootCommit) has a default: older creates omit it.
+    const missing = schema.fields.filter(
+      (field) => !revision.fields.has(field) && !Object.hasOwn(schema.defaults ?? {}, field)
+    )
     if (missing.length)
       invalid(`${revision.id} creates ${entityType} without ${missing.join(', ')}`)
   }

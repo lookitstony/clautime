@@ -1176,6 +1176,7 @@ export const mockApi = {
     attributeSessions: () => ok(0),
     getMarkerStatus: () => ok(null),
     setMarkerInGit: () => ok(null),
+    getFolderSuggestions: () => ok([]),
     linkSuggestedFolder: () => ok(undefined),
     declineSuggestedFolder: () => ok(undefined),
     onFolderMarker: noop

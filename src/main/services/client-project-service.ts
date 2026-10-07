@@ -26,8 +26,10 @@ import {
 } from './project-folder-mappings'
 import { explicitAssignmentSessionIds } from './session-history'
 import {
+  confirmRootCommitSuggestion,
   holdForRootCommitMatch,
   isRootCommitSuggestionOpen,
+  openRootCommitSuggestions,
   recordRootCommits,
   settleRootCommitSuggestion
 } from './project-root-commit'
@@ -53,6 +55,7 @@ import type {
   Client,
   NewClient,
   UpdateClient,
+  MarkedFolderEvent,
   Project,
   NewProject,
   UpdateProject
@@ -105,6 +108,9 @@ function toProject(row: typeof projects.$inferSelect): Project {
     ...syncVersionOf({ kind: 'project', id: row.id })
   }
 }
+
+/** Told about projects discovery creates later, after a git-history check released a folder. */
+let discoveredProjectListener: ((project: Project) => void) | undefined
 
 export const clientProjectService = {
   // ── Client CRUD ──
@@ -464,15 +470,29 @@ export const clientProjectService = {
     return writeProjectMarkers(db, deviceId, syncIds)
   },
 
+  setDiscoveredProjectListener(next: ((project: Project) => void) | undefined): void {
+    discoveredProjectListener = next
+  },
+
+  /** Root-commit suggestions waiting for an answer (the renderer shows them again on reload). */
+  getFolderSuggestions(): MarkedFolderEvent[] {
+    return openRootCommitSuggestions()
+  },
+
   /** Accept a root-commit suggestion: use this folder for the project on this computer. */
   linkSuggestedFolder(projectId: number, directoryPath: string): void {
-    if (!isRootCommitSuggestionOpen(directoryPath)) {
-      throw new AppError('SUGGESTION_NOT_FOUND', `No link suggestion is open for ${directoryPath}`)
-    }
     const db = getDb()
-    const project = db.select().from(projects).where(eq(projects.id, projectId)).get()
-    if (!project) throw new AppError('PROJECT_NOT_FOUND', `Project with id ${projectId} not found`)
-    setProjectFolderMapping(db, getLocalDeviceSession().deviceId, project.syncId, directoryPath)
+    const { deviceId } = getLocalDeviceSession()
+    let project: ReturnType<typeof confirmRootCommitSuggestion>
+    try {
+      project = confirmRootCommitSuggestion(db, deviceId, directoryPath, projectId)
+    } catch (error) {
+      // An outdated suggestion no longer holds the folder; discover it as before.
+      if (error instanceof AppError && error.code === 'SUGGESTION_OUTDATED')
+        this._discoverReleasedFolder(directoryPath)
+      throw error
+    }
+    setProjectFolderMapping(db, deviceId, project.syncId, directoryPath)
     settleRootCommitSuggestion(directoryPath)
     log.info(`Linked ${directoryPath} to ${project.name} by its git history`)
     this.attributeSessions()
@@ -481,8 +501,19 @@ export const clientProjectService = {
 
   /** Decline a root-commit suggestion: discover the folder as its own project, as before. */
   declineSuggestedFolder(directoryPath: string): void {
+    if (!isRootCommitSuggestionOpen(directoryPath)) {
+      throw new AppError('SUGGESTION_NOT_FOUND', `No link suggestion is open for ${directoryPath}`)
+    }
     settleRootCommitSuggestion(directoryPath)
-    if (this.autoCreateProject(directoryPath)) this.attributeSessions()
+    this._discoverReleasedFolder(directoryPath)
+  },
+
+  /** Create the project discovery held back, and tell the watcher as discovery would have. */
+  _discoverReleasedFolder(directoryPath: string): void {
+    const created = this.autoCreateProject(directoryPath)
+    if (!created) return
+    this.attributeSessions()
+    discoveredProjectListener?.(created)
   },
 
   getProjectMarkerStatus(id: number): ProjectMarkerStatus | null {
@@ -595,9 +626,7 @@ export const clientProjectService = {
         getLocalDeviceSession().deviceId,
         directoryPath,
         emitMarkedFolder,
-        (released) => {
-          if (this.autoCreateProject(released)) this.attributeSessions()
-        }
+        (released) => this._discoverReleasedFolder(released)
       )
       if (held) return null
     } catch (error) {

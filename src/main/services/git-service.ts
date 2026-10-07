@@ -1,6 +1,4 @@
 import { clientProjectService } from './client-project-service'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { access, constants } from 'node:fs/promises'
 import { join } from 'node:path'
 import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
@@ -12,9 +10,9 @@ import { activeSessionCondition } from '../db/schema/session-deletions'
 import { sessionDerivations } from '../db/schema/session-derivations'
 import { sessionReplacements, sessionSplits } from '../db/schema/session-history'
 import { settingsService } from './settings-service'
+import { runGit } from './git-exec'
 import type { UnconfiguredAuthor } from '../../shared/types/git'
 
-const execFileAsync = promisify(execFile)
 const BATCH_SIZE = 100
 // Commits often happen shortly after a session ends.
 const COMMIT_BUFFER_MS = 5 * 60 * 1000
@@ -45,7 +43,7 @@ export const gitService = {
    */
   async isGitAvailable(): Promise<boolean> {
     try {
-      await execFileAsync('git', ['--version'])
+      await runGit(['--version'])
       return true
     } catch {
       return false
@@ -66,7 +64,7 @@ export const gitService = {
     } catch {
       // Also try git rev-parse as fallback (works in subdirs)
       try {
-        await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dirPath })
+        await runGit(['rev-parse', '--git-dir'], { cwd: dirPath })
         isRepo = true
       } catch {
         isRepo = false
@@ -108,7 +106,7 @@ export const gitService = {
     }
 
     try {
-      const { stdout } = await execFileAsync('git', args, {
+      const { stdout } = await runGit(args, {
         cwd: dirPath,
         maxBuffer: 10 * 1024 * 1024 // 10MB
       })
@@ -141,8 +139,8 @@ export const gitService = {
         ? { cwd: dirPath, encoding: 'utf8' as const }
         : { encoding: 'utf8' as const }
       const [nameResult, emailResult] = await Promise.all([
-        execFileAsync('git', ['config', 'user.name'], opts),
-        execFileAsync('git', ['config', 'user.email'], opts)
+        runGit(['config', 'user.name'], opts),
+        runGit(['config', 'user.email'], opts)
       ])
       return {
         name: nameResult.stdout.trim(),
@@ -228,8 +226,7 @@ export const gitService = {
       )
 
       try {
-        const { stdout } = await execFileAsync(
-          'git',
+        const { stdout } = await runGit(
           ['log', '--branches', '--no-merges', '--since=90 days ago', '--format=%ae|%an'],
           { cwd: project.directoryPath, maxBuffer: 10 * 1024 * 1024 }
         )
@@ -500,7 +497,7 @@ export const gitService = {
    */
   async getRemoteUrl(dirPath: string): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
+      const { stdout } = await runGit(['remote', 'get-url', 'origin'], {
         cwd: dirPath
       })
       const raw = stdout.trim()

@@ -5,7 +5,7 @@ import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { eq } from 'drizzle-orm'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -14,7 +14,9 @@ import { projects } from '../db/schema/projects'
 import { setProjectFolderMapping } from './project-folder-mappings'
 import type { MarkedFolderEvent } from '../../shared/types/client-project'
 import {
+  confirmRootCommitSuggestion,
   holdForRootCommitMatch,
+  openRootCommitSuggestions,
   readRootCommit,
   recordRootCommits,
   resetRootCommitCaches,
@@ -168,4 +170,66 @@ it('does not hold folders without git history or when no project has one recorde
   expect(hold(plain).held).toBe(false)
   db.update(projects).set({ rootCommit: null }).run()
   expect(hold(gitRepo('repo')).held).toBe(false)
+})
+
+it('never runs commands from a planted repository config while reading history', async () => {
+  const repo = gitRepo('planted')
+  const tip = git(repo, 'rev-parse', 'HEAD')
+  const payload = join(root, 'payload-ran').replace(/\\/g, '/')
+  // A partial clone lazily fetches a missing object through core.sshCommand.
+  git(repo, 'config', 'core.repositoryformatversion', '1')
+  git(repo, 'config', 'extensions.partialClone', 'origin')
+  git(repo, 'config', 'remote.origin.url', 'ssh://example.invalid/repo')
+  git(repo, 'config', 'remote.origin.promisor', 'true')
+  git(repo, 'config', 'core.sshCommand', `touch '${payload}'`)
+  rmSync(join(repo, '.git', 'objects', tip.slice(0, 2), tip.slice(2)))
+
+  expect(await readRootCommit(repo)).toBeNull()
+  expect(existsSync(payload)).toBe(false)
+})
+
+it('reads no root commit from a shallow clone, whose cut-off commit only looks like a root', async () => {
+  const origin = gitRepo('origin')
+  writeFileSync(join(origin, 'second.md'), 'two')
+  git(origin, 'add', '.')
+  git(origin, 'commit', '-q', '-m', 'second')
+  git(root, 'clone', '-q', '--depth', '1', `file://${origin.replace(/\\/g, '/')}`, 'shallow')
+  expect(await readRootCommit(join(root, 'shallow'))).toBeNull()
+})
+
+it('matches any shared root among active projects only', async () => {
+  const origin = gitRepo('origin')
+  const rootCommit = (await readRootCommit(origin))!
+  // A merged history lists another root too; a deactivated project never competes.
+  const app = project('App', [rootCommit, 'f'.repeat(40)].sort().join(' '))
+  const retired = project('Retired', rootCommit)
+  db.update(projects).set({ isActive: false }).where(eq(projects.id, retired.id)).run()
+  git(root, 'clone', '-q', origin, 'clone')
+  const suggestion = hold(join(root, 'clone'))
+  await suggestion.settled
+  expect(suggestion.events).toMatchObject([{ kind: 'suggested', projectId: app.id }])
+})
+
+it('confirms a link only for the suggested project while its folder is still missing here', async () => {
+  const origin = gitRepo('origin')
+  const app = project('App', await readRootCommit(origin))
+  const other = project('Other')
+  const oldLocation = join(root, 'old-location')
+  setProjectFolderMapping(db, device, app.syncId, oldLocation)
+  git(root, 'clone', '-q', origin, 'clone')
+  const clone = join(root, 'clone')
+  await hold(clone).settled
+  expect(openRootCommitSuggestions()).toMatchObject([{ projectId: app.id, directoryPath: clone }])
+
+  expect(() => confirmRootCommitSuggestion(db, device, clone, other.id)).toThrow(
+    expect.objectContaining({ code: 'SUGGESTION_NOT_FOUND' })
+  )
+  expect(confirmRootCommitSuggestion(db, device, clone, app.id).id).toBe(app.id)
+  // The project's own folder came back (or was linked by hand) while the prompt was open.
+  mkdirSync(oldLocation)
+  expect(() => confirmRootCommitSuggestion(db, device, clone, app.id)).toThrow(
+    expect.objectContaining({ code: 'SUGGESTION_OUTDATED' })
+  )
+  expect(openRootCommitSuggestions()).toEqual([])
+  expect(hold(clone).held).toBe(false)
 })

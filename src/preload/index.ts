@@ -457,6 +457,9 @@ const api = {
       keep: boolean
     ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>> =>
       ipcRenderer.invoke('project:setMarkerInGit', id, keep),
+    getFolderSuggestions: (): Promise<
+      IpcResult<import('../shared/types/client-project').MarkedFolderEvent[]>
+    > => ipcRenderer.invoke('project:getFolderSuggestions'),
     linkSuggestedFolder: (projectId: number, directoryPath: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke('project:linkSuggestedFolder', projectId, directoryPath),
     declineSuggestedFolder: (directoryPath: string): Promise<IpcResult<void>> =>

@@ -12,7 +12,8 @@ vi.mock('./client-project-service', () => ({
   clientProjectService: {
     autoCreateProject: vi.fn(),
     attributeSessions: vi.fn(),
-    findProjectByDirectory: vi.fn()
+    findProjectByDirectory: vi.fn(),
+    setDiscoveredProjectListener: vi.fn()
   }
 }))
 vi.mock('./git-service', () => ({ gitService: {} }))

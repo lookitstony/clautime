@@ -40,6 +40,22 @@ export const fileWatcherService = {
 
     this._mainWindow = mainWindow
     setMarkedFolderListener((event) => this._sendToRenderer('watcher:projectFolder', event))
+    // A git-history check released a held folder: finish what discovery would have done.
+    clientProjectService.setDiscoveredProjectListener((project) => {
+      const decodedPath = project.directoryPath ?? ''
+      this._sendToRenderer('watcher:newProject', {
+        dirName: encodeProjectPath(decodedPath),
+        decodedPath,
+        projectName: project.name
+      })
+      this._notifyRenderer()
+      gitService
+        .scanCommits([project.id])
+        .then((r) => {
+          if (r.newCommits > 0) gitService.correlateCommitsWithSessions()
+        })
+        .catch((err) => log.warn('Git scan of a discovered project failed:', err))
+    })
 
     // Watch every Claude profile (~/.claude, ~/.claude-vss, …) so switching
     // accounts keeps live tracking working. A claude_dir override pins to one.
@@ -98,6 +114,7 @@ export const fileWatcherService = {
 
   stop(): void {
     setMarkedFolderListener(undefined)
+    clientProjectService.setDiscoveredProjectListener(undefined)
     for (const watcher of this._watchers) {
       watcher.close()
     }

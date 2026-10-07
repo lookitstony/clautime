@@ -1,6 +1,6 @@
 import { and, eq, isNull, ne, or } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import log from 'electron-log/main.js'
 import { clients } from '../db/schema/clients'
@@ -23,6 +23,7 @@ import { mainProjectPath } from './worktree-paths'
  */
 export const MARKER_FILE = '.clautime'
 const EXCLUDE_PATTERN = `/${MARKER_FILE}`
+const MAX_MARKER_BYTES = 4096
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type Db<S extends Record<string, unknown>> = BetterSQLite3Database<S>
@@ -54,14 +55,26 @@ function isDirectory(path: string): boolean {
   }
 }
 
+/** Never follow a link or open a device, pipe or oversized file planted in a project folder. */
+function isPlainFile(path: string, maxBytes = Infinity): boolean {
+  try {
+    const entry = lstatSync(path)
+    return entry.isFile() && entry.size <= maxBytes
+  } catch {
+    return false
+  }
+}
+
 function isMainFolder(directory: string): boolean {
   return normalizePath(mainProjectPath(directory)) === normalizePath(directory)
 }
 
 /** The project ID in `directory/.clautime`, or null when absent or unreadable. */
 export function readProjectMarker(directory: string): string | null {
+  const path = join(directory, MARKER_FILE)
+  if (!isPlainFile(path, MAX_MARKER_BYTES)) return null
   try {
-    const data = JSON.parse(readFileSync(join(directory, MARKER_FILE), 'utf8'))
+    const data = JSON.parse(readFileSync(path, 'utf8'))
     const id = typeof data?.projectSyncId === 'string' ? data.projectSyncId.toLowerCase() : ''
     return data?.version === 1 && UUID.test(id) ? id : null
   } catch {
@@ -71,7 +84,12 @@ export function readProjectMarker(directory: string): string | null {
 
 function excludeFile(directory: string): string | null {
   const gitDir = join(directory, '.git')
-  return isDirectory(gitDir) ? join(gitDir, 'info', 'exclude') : null
+  try {
+    // lstat: a linked `.git` (or a worktree's `.git` file) is left alone.
+    return lstatSync(gitDir).isDirectory() ? join(gitDir, 'info', 'exclude') : null
+  } catch {
+    return null
+  }
 }
 
 function excludeLines(file: string): string[] {
@@ -88,7 +106,8 @@ const isMarkerPattern = (line: string): boolean =>
 /** Off: list the marker in `.git/info/exclude`. On: remove it so the user can commit it. */
 export function setMarkerKeptInGit(directory: string, keep: boolean): void {
   const file = excludeFile(directory)
-  if (!file) return
+  // A linked or special exclude file is not written through.
+  if (!file || (lstatSync(file, { throwIfNoEntry: false }) && !isPlainFile(file))) return
   const lines = excludeLines(file)
   const listed = lines.some(isMarkerPattern)
   if (keep && listed) {
@@ -124,7 +143,10 @@ export function writeProjectMarker(directory: string, projectSyncId: string): Ma
     }
     // Exclude first: a failed exclude write must not leave an untracked marker in Git status.
     setMarkerKeptInGit(directory, false)
-    writeFileSync(path, `${JSON.stringify({ version: 1, projectSyncId }, null, 2)}\n`)
+    // 'wx' never writes through a (dangling) link or over a file that appeared meanwhile.
+    writeFileSync(path, `${JSON.stringify({ version: 1, projectSyncId }, null, 2)}\n`, {
+      flag: 'wx'
+    })
     unmarkedPaths.delete(normalizePath(directory).toLowerCase())
     return 'written'
   } catch (error) {

@@ -11,7 +11,12 @@ import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
 import { projectFolderMappings } from '../db/schema/project-folder-mappings'
 import { syncChanges } from '../db/schema/folder-sync'
-import { encodeSyncBatch, type SyncBatch, type SyncChange } from './folder-sync-protocol'
+import {
+  encodeSyncBatch,
+  syncBatchChecksum,
+  type SyncBatch,
+  type SyncChange
+} from './folder-sync-protocol'
 import {
   applyReadySyncBatches,
   assembleOutgoingBatch,
@@ -193,6 +198,24 @@ it('imports a project delivered before its client only after the declared client
   expect(b.select().from(projectFolderMappings).all()).toEqual(mappings)
   expect(state(b, 'project', project.syncId)).toMatchObject({ view: { lifecycle: 'present' } })
   expect(state(b, 'project', project.syncId)?.projectionIssue).toBeUndefined()
+})
+
+it('imports a project created before rootCommit existed, defaulting it to none', () => {
+  const client = addClient(a)
+  addProject(a, client.id, { rootCommit: 'a'.repeat(40) })
+  exportAll(a)
+  const batch = publish(a)
+  // An older build wrote project creates without the field.
+  const legacy = structuredClone(batch)
+  for (const change of legacy.changes as unknown as RevisionChange[]) {
+    const fields = (change.payload as { fields: Record<string, unknown> }).fields
+    if (change.entityType === 'project') delete fields.rootCommit
+  }
+  legacy.checksum = syncBatchChecksum(legacy)
+  expect(deliver(b, legacy).errors).toEqual([])
+  const imported = b.select().from(projects).all()
+  expect(imported).toHaveLength(1)
+  expect(imported[0]).toMatchObject({ name: 'Website', rootCommit: null })
 })
 
 it('exports only allowlisted values and rejects unknown fields, local IDs, facts and undeclared references', () => {

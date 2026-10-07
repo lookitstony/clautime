@@ -2,7 +2,10 @@ import type Database from 'better-sqlite3'
 
 /** Disposable fixtures only: restore the schema preceding migration 0052. */
 export function removeProjectRootCommit(sqlite: Database.Database): void {
-  sqlite.exec('ALTER TABLE projects DROP COLUMN root_commit')
+  if (
+    sqlite.prepare("SELECT 1 FROM pragma_table_info('projects') WHERE name = 'root_commit'").get()
+  )
+    sqlite.exec('ALTER TABLE projects DROP COLUMN root_commit')
   sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at = ?').run(1790640000003)
 }
 

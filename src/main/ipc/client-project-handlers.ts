@@ -163,29 +163,47 @@ export function registerClientProjectHandlers(): void {
     }
   })
 
+  ipcMain.handle('project:getFolderSuggestions', async () => {
+    try {
+      return ipcSuccess(clientProjectService.getFolderSuggestions())
+    } catch (error) {
+      log.error('IPC project:getFolderSuggestions failed:', error)
+      return ipcError('PROJECT_LINK_ERROR', String(error))
+    }
+  })
+
   ipcMain.handle(
     'project:linkSuggestedFolder',
-    async (_event, projectId: number, directoryPath: string): Promise<IpcResult<void>> => {
+    async (_event, projectId: unknown, directoryPath: unknown): Promise<IpcResult<void>> => {
       try {
+        if (typeof projectId !== 'number' || typeof directoryPath !== 'string')
+          return ipcError('INVALID_ARGUMENTS', 'A project ID and folder path are required')
         clientProjectService.linkSuggestedFolder(projectId, directoryPath)
         return ipcSuccess(undefined)
       } catch (error) {
         log.error('IPC project:linkSuggestedFolder failed:', error)
-        if (error instanceof AppError) return ipcError(error.code, error.message)
-        return ipcError('PROJECT_LINK_ERROR', String(error))
+        return ipcError(
+          error instanceof AppError ? error.code : 'PROJECT_LINK_ERROR',
+          error instanceof AppError ? error.message : String(error)
+        )
       }
     }
   )
 
   ipcMain.handle(
     'project:declineSuggestedFolder',
-    async (_event, directoryPath: string): Promise<IpcResult<void>> => {
+    async (_event, directoryPath: unknown): Promise<IpcResult<void>> => {
       try {
+        if (typeof directoryPath !== 'string')
+          return ipcError('INVALID_ARGUMENTS', 'A folder path is required')
         clientProjectService.declineSuggestedFolder(directoryPath)
         return ipcSuccess(undefined)
       } catch (error) {
         log.error('IPC project:declineSuggestedFolder failed:', error)
-        return ipcError('PROJECT_LINK_ERROR', String(error))
+        return ipcError(
+          error instanceof AppError ? error.code : 'PROJECT_LINK_ERROR',
+          error instanceof AppError ? error.message : String(error)
+        )
       }
     }
   )
