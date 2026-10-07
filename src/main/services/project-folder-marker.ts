@@ -107,8 +107,16 @@ export function readProjectMarker(directory: string): string | null {
 function excludeFile(directory: string): string | null {
   const gitDir = join(directory, '.git')
   try {
-    // lstat: a linked `.git` (or a worktree's `.git` file) is left alone.
-    return lstatSync(gitDir).isDirectory() ? join(gitDir, 'info', 'exclude') : null
+    // A worktree's `.git` file is left alone. A linked `.git` is followed only to a git directory,
+    // so a planted link cannot aim the write anywhere but some repository's own exclude file.
+    const entry = lstatSync(gitDir)
+    const repository =
+      entry.isDirectory() ||
+      (entry.isSymbolicLink() &&
+        statSync(gitDir).isDirectory() &&
+        existsSync(join(gitDir, 'HEAD')) &&
+        existsSync(join(gitDir, 'objects')))
+    return repository ? join(gitDir, 'info', 'exclude') : null
   } catch {
     return null
   }

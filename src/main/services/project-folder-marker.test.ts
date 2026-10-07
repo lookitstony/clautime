@@ -233,3 +233,25 @@ it('writes no marker through a linked .git/info folder, and ignores an oversized
   )
   expect(readProjectMarker(plain)).toBeNull()
 })
+
+it('excludes the marker through a linked .git folder only when it leads to a git directory', () => {
+  const store = join(root, 'store')
+  mkdirSync(join(store, 'objects'), { recursive: true })
+  writeFileSync(join(store, 'HEAD'), 'ref: refs/heads/main\n')
+  const linked = join(root, 'linked-git')
+  mkdirSync(linked)
+  symlinkSync(store, join(linked, '.git'), 'junction')
+  expect(getProjectMarkerStatus(linked).gitRepo).toBe(true)
+  expect(writeProjectMarker(linked, randomUUID())).toBe('written')
+  expect(readFileSync(join(store, 'info', 'exclude'), 'utf8')).toContain(MARKER_FILE)
+
+  // A link to anything else is not treated as a repository and gets nothing written into it.
+  const elsewhere = join(root, 'elsewhere')
+  mkdirSync(elsewhere)
+  const planted = join(root, 'planted-git')
+  mkdirSync(planted)
+  symlinkSync(elsewhere, join(planted, '.git'), 'junction')
+  expect(getProjectMarkerStatus(planted).gitRepo).toBe(false)
+  writeProjectMarker(planted, randomUUID())
+  expect(existsSync(join(elsewhere, 'info'))).toBe(false)
+})

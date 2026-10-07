@@ -8,6 +8,10 @@ const execFileAsync = promisify(execFile)
  * otherwise run programs: a partial clone lazily fetches missing objects over a transport
  * (`core.sshCommand`, `ext::`), `log.showSignature` calls `gpg.program`, and hooks or fsmonitor
  * run local programs. ClauTime only reads history, so all of that is switched off per call.
+ *
+ * Not covered: `include.path` on a UNC share still makes git open it (leaking an NTLM hash), and
+ * git cannot disable includes. Accepted: these folders are where an AI coding tool already ran,
+ * and those tools run git there first.
  */
 export function runGit(
   args: string[],
