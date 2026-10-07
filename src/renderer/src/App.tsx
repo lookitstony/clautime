@@ -76,6 +76,23 @@ function useFileWatcherEvents(): void {
     })
 
     window.api.projects.onFolderMarker((event) => {
+      if (event.kind === 'suggested') {
+        const answer = async (link: boolean) => {
+          const result = link
+            ? await window.api.projects.linkSuggestedFolder(event.projectId, event.directoryPath)
+            : await window.api.projects.declineSuggestedFolder(event.directoryPath)
+          if (!result.success) toast.error(result.error.message)
+          qc.invalidateQueries({ queryKey: ['projects'] })
+          qc.invalidateQueries({ queryKey: ['sessions'] })
+        }
+        toast(`Is this ${event.projectName}?`, {
+          description: `${event.directoryPath} has no ClauTime ID file, but its git history matches ${event.projectName}. Link it to track this folder's time there.`,
+          duration: Infinity,
+          action: { label: 'Link', onClick: () => void answer(true) },
+          cancel: { label: 'Keep separate', onClick: () => void answer(false) }
+        })
+        return
+      }
       if (event.kind === 'copy') {
         toast.warning(`${event.projectName}: this folder looks like a copy`, {
           description: `${event.directoryPath} has the project's ID file, but the project is still at ${event.currentPath}. Use "Change folder on this computer" if this copy is the real one. A worktree outside its main folder may need \`git worktree repair\`.`,

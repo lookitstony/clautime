@@ -76,6 +76,7 @@ export type PortableProject = {
   invoiceName: string | null
   stageName: string | null
   hourlyRate: number | null
+  rootCommit: string | null
   isBillable: boolean
   isActive: boolean
 }
@@ -101,6 +102,8 @@ export interface DirectoryRecordState {
 const MAX_TEXT = 200
 const MAX_EMAIL = 320
 const MAX_RATE = 1_000_000
+// One or more sorted SHA-1/SHA-256 commit hashes separated by spaces.
+const ROOT_COMMITS = /^[0-9a-f]{40}(?:[0-9a-f]{24})?(?: [0-9a-f]{40}(?:[0-9a-f]{24})?)*$/
 const COLOR = /^(#[0-9a-f]{3}|#[0-9a-f]{6}|var\(--[a-z0-9-]{1,40}\))$/i
 // Stands in for the derived bootstrap ID while the change body is planned.
 const PLACEHOLDER_ID = '00000000-0000-8000-8000-000000000000'
@@ -157,6 +160,7 @@ export const PROJECT_SYNC_SCHEMA: RecordSchema = Object.freeze({
     'invoiceName',
     'stageName',
     'hourlyRate',
+    'rootCommit',
     'isBillable',
     'isActive'
   ]),
@@ -164,6 +168,7 @@ export const PROJECT_SYNC_SCHEMA: RecordSchema = Object.freeze({
     invoiceName: null,
     stageName: null,
     hourlyRate: null,
+    rootCommit: null,
     isBillable: true,
     isActive: true
   }),
@@ -173,6 +178,9 @@ export const PROJECT_SYNC_SCHEMA: RecordSchema = Object.freeze({
     invoiceName: optional(text(MAX_TEXT)),
     stageName: optional(text(MAX_TEXT)),
     hourlyRate: optional(isRate),
+    rootCommit: optional(
+      (value) => typeof value === 'string' && value.length <= 1000 && ROOT_COMMITS.test(value)
+    ),
     isBillable: isBoolean,
     isActive: isBoolean
   })
@@ -335,6 +343,7 @@ export function portableProjectValues(db: Reader, row: ProjectRow): PortableProj
     invoiceName: row.invoiceName ?? null,
     stageName: row.stageName ?? null,
     hourlyRate: row.hourlyRate ?? null,
+    rootCommit: row.rootCommit ?? null,
     isBillable: row.isBillable,
     isActive: row.isActive
   }
@@ -627,6 +636,7 @@ function projectProject(
         invoiceName: null,
         stageName: null,
         hourlyRate: null,
+        rootCommit: null,
         ...(columns as Pick<ProjectRow, 'clientId' | 'name' | 'isBillable' | 'isActive'>),
         createdAt: now,
         updatedAt: now

@@ -1,7 +1,14 @@
 import type Database from 'better-sqlite3'
 
+/** Disposable fixtures only: restore the schema preceding migration 0052. */
+export function removeProjectRootCommit(sqlite: Database.Database): void {
+  sqlite.exec('ALTER TABLE projects DROP COLUMN root_commit')
+  sqlite.prepare('DELETE FROM __drizzle_migrations WHERE created_at = ?').run(1790640000003)
+}
+
 /** Disposable fixtures only: restore the schema preceding migration 0048. */
 export function removeProviderOperationResolutions(sqlite: Database.Database): void {
+  removeProjectRootCommit(sqlite)
   sqlite.exec(
     'DROP INDEX IF EXISTS idx_activity_identities_conversation; DROP INDEX IF EXISTS idx_sync_changes_type; DROP INDEX IF EXISTS idx_session_legacy_conversation'
   )

@@ -7,7 +7,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { eq } from 'drizzle-orm'
 import { join } from 'node:path'
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
@@ -40,6 +41,9 @@ import { clientProjectService } from './client-project-service'
 import { gitService } from './git-service'
 import { liveMonitorService } from './live-monitor-service'
 import { encodeProjectPath } from './session-detector'
+import { setMarkedFolderListener } from './project-folder-marker'
+import { readRootCommit, resetRootCommitCaches } from './project-root-commit'
+import type { MarkedFolderEvent } from '../../shared/types/client-project'
 
 beforeEach(() => {
   deviceId = deviceA
@@ -61,11 +65,21 @@ function legacyProject(name = 'Saved', directoryPath: string | null = 'C:/origin
     .get(name, 'red', randomUUID(), new Date().toISOString(), new Date().toISOString()) as {
     id: number
   }
-  return db
-    .insert(projects)
-    .values({ clientId: client.id, name, directoryPath, hourlyRate: 150 })
-    .returning()
-    .get()
+  // Raw SQL: only columns that exist before every migration these tests replay.
+  const now = new Date().toISOString()
+  return sqlite
+    .prepare(
+      `INSERT INTO projects (client_id, name, directory_path, hourly_rate, sync_id, created_at, updated_at)
+       VALUES (?, ?, ?, 150, ?, ?, ?)
+       RETURNING id, sync_id AS syncId, client_id AS clientId, name, directory_path AS directoryPath`
+    )
+    .get(client.id, name, directoryPath, randomUUID(), now, now) as {
+    id: number
+    syncId: string
+    clientId: number
+    name: string
+    directoryPath: string | null
+  }
 }
 function savedSession(project: ReturnType<typeof legacyProject>) {
   return db
@@ -401,6 +415,7 @@ it('migrates the actual previous schema without losing foreign-key children, inv
           delete row.provider_account_id
           delete row.operation_id
           delete row.hidden
+          delete row.root_commit
           return row
         })
     )
@@ -430,7 +445,13 @@ it('rolls back the migration rather than clearing a genuine foreign-key violatio
   expect(sqlite.prepare('SELECT project_id FROM sessions WHERE id = ?').get(session.id)).toEqual({
     project_id: 99999
   })
-  expect(db.select().from(projects).get()).toEqual(project)
+  expect(
+    sqlite
+      .prepare(
+        'SELECT id, sync_id AS syncId, client_id AS clientId, name, directory_path AS directoryPath FROM projects'
+      )
+      .get()
+  ).toEqual(project)
   expect(() => legacyProject('Pathless', null)).toThrow()
 })
 
@@ -485,3 +506,70 @@ it('relinks a moved, marked project folder instead of creating an Unassigned pro
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('asks before linking an unmarked clone of a known project, and links its sessions only when accepted', async () => {
+  initializeEmptyLocalProjectSetup()
+  resetRootCommitCaches()
+  const root = mkdtempSync(join(tmpdir(), 'clautime-clone-'))
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=F', '-c', 'user.email=f@example.com', ...args], { cwd })
+  const events: MarkedFolderEvent[] = []
+  setMarkedFolderListener((event) => events.push(event))
+  try {
+    const origin = join(root, 'origin')
+    mkdirSync(origin)
+    git(origin, 'init', '-q')
+    writeFileSync(join(origin, 'README.md'), 'app')
+    git(origin, 'add', '.')
+    git(origin, 'commit', '-q', '-m', 'first')
+    // Synced from another computer: known history, no folder on this one.
+    const project = legacyProject('App', null)
+    db.update(projects)
+      .set({ rootCommit: await readRootCommit(origin) })
+      .where(eq(projects.id, project.id))
+      .run()
+    git(root, 'clone', '-q', origin, 'clone')
+    const clone = join(root, 'clone')
+    const work = db
+      .insert(sessions)
+      .values({
+        projectPath: clone,
+        startedAt: '2026-10-06T10:00:00Z',
+        endedAt: '2026-10-06T11:00:00Z',
+        durationMinutes: 60
+      })
+      .returning()
+      .get()
+
+    expect(clientProjectService.autoCreateProject(clone)).toBeNull()
+    await vi.waitFor(() => expect(events).toHaveLength(1), { timeout: 30_000 })
+    expect(events[0]).toMatchObject({ kind: 'suggested', projectId: project.id })
+    // Unanswered: nothing is created or attributed.
+    expect(clientProjectService.autoCreateProject(clone)).toBeNull()
+    expect(clientProjectService.attributeSessions()).toBe(0)
+    expect(db.select().from(projects).all()).toHaveLength(1)
+
+    clientProjectService.linkSuggestedFolder(project.id, events[0].directoryPath)
+    expect(db.select().from(sessions).where(eq(sessions.id, work.id)).get()?.projectId).toBe(
+      project.id
+    )
+    expect(clientProjectService.findProjectByDirectory(clone)?.id).toBe(project.id)
+    expect(() => clientProjectService.linkSuggestedFolder(project.id, clone)).toThrow(
+      /No link suggestion/
+    )
+
+    // Declined elsewhere: the second clone becomes its own Unassigned project as before.
+    git(root, 'clone', '-q', origin, 'other')
+    const other = join(root, 'other')
+    rmSync(clone, { recursive: true, force: true })
+    expect(clientProjectService.autoCreateProject(other)).toBeNull()
+    await vi.waitFor(() => expect(events).toHaveLength(2), { timeout: 30_000 })
+    clientProjectService.declineSuggestedFolder(events[1].directoryPath)
+    const created = clientProjectService.findProjectByDirectory(other)
+    expect(created?.id).not.toBe(project.id)
+    expect(created?.name).toBe('other')
+  } finally {
+    setMarkedFolderListener(undefined)
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 120_000)

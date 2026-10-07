@@ -163,6 +163,33 @@ export function registerClientProjectHandlers(): void {
     }
   })
 
+  ipcMain.handle(
+    'project:linkSuggestedFolder',
+    async (_event, projectId: number, directoryPath: string): Promise<IpcResult<void>> => {
+      try {
+        clientProjectService.linkSuggestedFolder(projectId, directoryPath)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC project:linkSuggestedFolder failed:', error)
+        if (error instanceof AppError) return ipcError(error.code, error.message)
+        return ipcError('PROJECT_LINK_ERROR', String(error))
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'project:declineSuggestedFolder',
+    async (_event, directoryPath: string): Promise<IpcResult<void>> => {
+      try {
+        clientProjectService.declineSuggestedFolder(directoryPath)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC project:declineSuggestedFolder failed:', error)
+        return ipcError('PROJECT_LINK_ERROR', String(error))
+      }
+    }
+  )
+
   ipcMain.handle('project:attributeSessions', async (): Promise<IpcResult<number>> => {
     try {
       return ipcSuccess(clientProjectService.attributeSessions())

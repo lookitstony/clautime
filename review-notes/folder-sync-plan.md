@@ -193,6 +193,6 @@ September 28, 2026: local implementation is complete, including retained canonic
 
 The final full local regression passed 1,721 tests with zero failures (one Windows file-symlink test skipped); all 81 focused billing tests also passed. The QA handoff links the reports. Final type checks, lint (zero errors; existing warnings) and Electron/Vite build passed. Isolated renderer smoke and 5,000-entry performance/restore checks passed.
 
-October 6, 2026: decision I (project folder marker), implementation step 6 and verification items 21–24 added. Phase 1 implemented locally (`project-folder-marker.ts`); the root-commit fallback (item 24) is phase 2. Not yet installed.
+October 6, 2026: decision I (project folder marker), implementation step 6 and verification items 21–24 added. Phase 1 implemented and installed (`project-folder-marker.ts`). Phase 2 implemented (`project-root-commit.ts`, migration 0052 `projects.root_commit`, portable `rootCommit` project field): unmarked git folders matching exactly one project whose folder is absent here get a Link / Keep separate prompt; discovery holds the folder until answered (per process). Not yet installed.
 
 See [folder-sync-qa-handoff.md](folder-sync-qa-handoff.md) for final evidence, acceptance coverage and the remaining real two-computer Drive/Stripe test-account QA. No production database, cloud folder or Stripe account was changed; no build was deployed. Production rollout remains subject to the explicit confirmation rule above.

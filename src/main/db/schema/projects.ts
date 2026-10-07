@@ -22,6 +22,8 @@ export const projects = sqliteTable(
     stageName: text('stage_name'),
     /** Per-project hourly rate in dollars. Null = fall back to the client's rate. */
     hourlyRate: real('hourly_rate'),
+    /** Sorted root commit hashes of the main folder's git history; links clones without a marker. */
+    rootCommit: text('root_commit'),
     isBillable: integer('is_billable', { mode: 'boolean' }).notNull().default(true),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: text('created_at')

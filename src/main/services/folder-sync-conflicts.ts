@@ -153,6 +153,7 @@ const FIELD_LABELS: Record<string, string> = {
   clientSyncId: 'Client',
   projectSyncId: 'Project',
   invoiceName: 'Invoice name',
+  rootCommit: 'Git root commit',
   isBillable: 'Billable',
   startedAt: 'Start',
   endedAt: 'End',

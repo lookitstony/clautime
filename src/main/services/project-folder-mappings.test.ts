@@ -54,18 +54,21 @@ function createProject(name = 'Project', syncId = randomUUID()) {
 it('adds empty mapping storage on upgrade without guessing devices or changing existing project rows', () => {
   createProject()
   removeProjectFolderMappings(sqlite)
-  const before = db.select().from(projects).all()
+  // Raw rows: the pre-upgrade schema lacks columns added by later migrations.
+  const rows = () => sqlite.prepare('SELECT * FROM projects').all() as Record<string, unknown>[]
+  const before = rows()
   migrate(db, { migrationsFolder })
-  expect(db.select().from(projects).all()).toEqual(before)
+  expect(rows().map(({ root_commit: _rootCommit, ...row }) => row)).toEqual(before)
   expect(db.select().from(projectFolderMappings).all()).toEqual([])
-  const mapping = setProjectFolderMapping(db, deviceA, before[0].syncId, 'C:/mapping-test/restart')
+  const syncId = String(before[0].sync_id)
+  const mapping = setProjectFolderMapping(db, deviceA, syncId, 'C:/mapping-test/restart')
   migrate(db, { migrationsFolder })
   const reopened = new Database(sqlite.serialize())
   try {
     const reopenedDb = drizzle(reopened)
     migrate(reopenedDb, { migrationsFolder })
-    expect(getProjectFolderMapping(reopenedDb, deviceA, before[0].syncId)).toEqual(mapping)
-    expect(getProjectFolderMapping(reopenedDb, randomUUID(), before[0].syncId)).toBeNull()
+    expect(getProjectFolderMapping(reopenedDb, deviceA, syncId)).toEqual(mapping)
+    expect(getProjectFolderMapping(reopenedDb, randomUUID(), syncId)).toBeNull()
   } finally {
     reopened.close()
   }

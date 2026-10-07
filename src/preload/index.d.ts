@@ -236,6 +236,8 @@ interface ProjectsApi {
     id: number,
     keep: boolean
   ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>>
+  linkSuggestedFolder(projectId: number, directoryPath: string): Promise<IpcResult<void>>
+  declineSuggestedFolder(directoryPath: string): Promise<IpcResult<void>>
   onFolderMarker(
     callback: (event: import('../shared/types/client-project').MarkedFolderEvent) => void
   ): void

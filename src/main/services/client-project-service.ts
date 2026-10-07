@@ -10,6 +10,7 @@ import { mainProjectPath } from './worktree-paths'
 import { getLocalDeviceSession } from './device-context'
 import { isLocalProjectSetupComplete } from './local-project-setup'
 import {
+  emitMarkedFolder,
   getProjectMarkerStatus,
   resolveMarkedFolder,
   setMarkerKeptInGit,
@@ -24,6 +25,12 @@ import {
   removeProjectFolderMapping
 } from './project-folder-mappings'
 import { explicitAssignmentSessionIds } from './session-history'
+import {
+  holdForRootCommitMatch,
+  isRootCommitSuggestionOpen,
+  recordRootCommits,
+  settleRootCommitSuggestion
+} from './project-root-commit'
 import {
   journalDirectoryCreate,
   journalDirectoryDelete,
@@ -449,7 +456,33 @@ export const clientProjectService = {
         .get()
       return row ? [row.syncId] : []
     })
-    return writeProjectMarkers(db, getLocalDeviceSession().deviceId, syncIds)
+    const { deviceId } = getLocalDeviceSession()
+    // The same moments a folder becomes known: also record its git history for clones.
+    void recordRootCommits(db, deviceId, syncIds).catch((error) =>
+      log.warn('Recording git root commits failed:', error)
+    )
+    return writeProjectMarkers(db, deviceId, syncIds)
+  },
+
+  /** Accept a root-commit suggestion: use this folder for the project on this computer. */
+  linkSuggestedFolder(projectId: number, directoryPath: string): void {
+    if (!isRootCommitSuggestionOpen(directoryPath)) {
+      throw new AppError('SUGGESTION_NOT_FOUND', `No link suggestion is open for ${directoryPath}`)
+    }
+    const db = getDb()
+    const project = db.select().from(projects).where(eq(projects.id, projectId)).get()
+    if (!project) throw new AppError('PROJECT_NOT_FOUND', `Project with id ${projectId} not found`)
+    setProjectFolderMapping(db, getLocalDeviceSession().deviceId, project.syncId, directoryPath)
+    settleRootCommitSuggestion(directoryPath)
+    log.info(`Linked ${directoryPath} to ${project.name} by its git history`)
+    this.attributeSessions()
+    this.writeProjectMarkers([projectId])
+  },
+
+  /** Decline a root-commit suggestion: discover the folder as its own project, as before. */
+  declineSuggestedFolder(directoryPath: string): void {
+    settleRootCommitSuggestion(directoryPath)
+    if (this.autoCreateProject(directoryPath)) this.attributeSessions()
   },
 
   getProjectMarkerStatus(id: number): ProjectMarkerStatus | null {
@@ -556,6 +589,17 @@ export const clientProjectService = {
       }
       // A marked folder links to (or is a copy of) its existing project, never a new one.
       if (resolveMarkedFolder(getDb(), getLocalDeviceSession().deviceId, directoryPath)) return null
+      // An unmarked folder may share a known project's git history; ask before creating one.
+      const held = holdForRootCommitMatch(
+        getDb(),
+        getLocalDeviceSession().deviceId,
+        directoryPath,
+        emitMarkedFolder,
+        (released) => {
+          if (this.autoCreateProject(released)) this.attributeSessions()
+        }
+      )
+      if (held) return null
     } catch (error) {
       if (error instanceof AppError && error.code === 'INVALID_PROJECT_FOLDER') return null
       throw error

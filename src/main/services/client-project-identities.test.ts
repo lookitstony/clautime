@@ -106,6 +106,7 @@ it('backfills existing clients/projects once while preserving all local IDs, val
         delete original.provider_account_id
         delete original.operation_id
         delete original.hidden
+        delete original.root_commit
         return original
       })
   )

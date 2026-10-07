@@ -41,6 +41,11 @@ export function setMarkedFolderListener(next: ((event: MarkedFolder) => void) | 
   listener = next
 }
 
+/** Forwards a folder event raised outside marker resolution (root-commit suggestions). */
+export function emitMarkedFolder(event: MarkedFolder): void {
+  listener?.(event)
+}
+
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory()

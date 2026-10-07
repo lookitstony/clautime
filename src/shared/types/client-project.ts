@@ -119,3 +119,5 @@ export type MarkedFolderEvent =
   | { kind: 'linked'; projectName: string; directoryPath: string }
   | { kind: 'moved'; projectName: string; directoryPath: string; previousPath: string }
   | { kind: 'copy'; projectName: string; directoryPath: string; currentPath: string }
+  /** An unmarked folder with the same git history as one project; linked only if accepted. */
+  | { kind: 'suggested'; projectId: number; projectName: string; directoryPath: string }
