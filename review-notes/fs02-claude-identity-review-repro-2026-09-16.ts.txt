@@ -1,0 +1,29 @@
+// Archived review reproducer: copy into src/main/parsers to run with Vitest.
+// @vitest-environment node
+import { expect, it } from 'vitest'
+import { claudeActivityIdentity } from './claude-activity-identity'
+
+it('review: keeps distinct provider message IDs separate when the outer UUID is unavailable', () => {
+  const raw = {
+    type: 'assistant',
+    sessionId: 'review-conversation',
+    parentUuid: 'shared-parent',
+    timestamp: '2026-03-04T10:00:01.000Z',
+    message: {
+      id: 'msg_first_response',
+      type: 'message',
+      role: 'assistant',
+      model: 'fixture-model',
+      content: [{ type: 'text', text: 'Done.' }],
+      usage: { input_tokens: 10, output_tokens: 5 }
+    }
+  }
+  const first = claudeActivityIdentity(raw)
+  const second = claudeActivityIdentity({
+    ...raw,
+    message: { ...raw.message, id: 'msg_second_response' }
+  })
+  expect(first?.basis).toBe('fingerprint')
+  expect(second?.basis).toBe('fingerprint')
+  expect(second!.eventId).not.toBe(first!.eventId)
+})

@@ -44,7 +44,11 @@ import type {
   InvoiceOverlap
 } from '../../../shared/types/invoice'
 import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../../shared/types/live'
-import type { CustomSecretPattern, PatternTestResult, SecretScanSummary } from '../../../shared/types/secret-scan'
+import type {
+  CustomSecretPattern,
+  PatternTestResult,
+  SecretScanSummary
+} from '../../../shared/types/secret-scan'
 import {
   clients,
   projects,
@@ -61,7 +65,7 @@ import {
   effectiveRate
 } from './mock-data'
 
-const ok = <T,>(data: T): Promise<IpcResult<T>> => Promise.resolve(ipcSuccess(data))
+const ok = <T>(data: T): Promise<IpcResult<T>> => Promise.resolve(ipcSuccess(data))
 const noop = (): void => undefined
 
 // ── helpers ──
@@ -307,7 +311,7 @@ function generateLineItems(req: {
 let nextInvoiceId = 1
 let stripeSeq = 4821
 function createLocalInvoice(
-  req: CreateInvoiceRequest,
+  req: Omit<CreateInvoiceRequest, 'operationId'>,
   status: InvoiceStatus['status'],
   createdAt: string,
   paidAt: string | null = null
@@ -359,11 +363,16 @@ for (const [clientId, status, paidDaysAgo] of [
     endDate: seedInvoicePeriod.end
   })
   if (!gen.lineItems.length) continue
-  const createdAt = new Date(new Date(`${seedInvoicePeriod.end}T17:00:00`).getTime() + 2 * 86_400_000)
+  const createdAt = new Date(
+    new Date(`${seedInvoicePeriod.end}T17:00:00`).getTime() + 2 * 86_400_000
+  )
   createLocalInvoice(
     {
       clientId,
-      lineItems: gen.lineItems.map((li) => ({ description: li.description, amountCents: li.amountCents })),
+      lineItems: gen.lineItems.map((li) => ({
+        description: li.description,
+        amountCents: li.amountCents
+      })),
       memo: gen.memo ?? undefined,
       periodStart: seedInvoicePeriod.start,
       periodEnd: seedInvoicePeriod.end,
@@ -420,7 +429,10 @@ function liveStatuses(): ProjectLiveStatus[] {
     const state = watchState.get(p.id) ?? { isWatching: false, alertSound: 'system' }
     const allForProject = sessions.filter((s) => s.projectId === p.id)
     const lastEnd = allForProject.length
-      ? allForProject.reduce((max, s) => (s.endedAt > max ? s.endedAt : max), allForProject[0].endedAt)
+      ? allForProject.reduce(
+          (max, s) => (s.endedAt > max ? s.endedAt : max),
+          allForProject[0].endedAt
+        )
       : null
     // checkout-api looks actively worked on; the rest show their real last activity
     const lastPromptAt =
@@ -429,7 +441,7 @@ function liveStatuses(): ProjectLiveStatus[] {
     return {
       projectId: p.id,
       projectName: p.name,
-      projectPath: p.directoryPath,
+      projectPath: p.directoryPath ?? '',
       clientName: client?.name ?? null,
       clientId: p.clientId,
       lastPromptAt,
@@ -441,7 +453,8 @@ function liveStatuses(): ProjectLiveStatus[] {
       totalPrompts: list.reduce((a, s) => a + s.promptCount, 0),
       totalTokens: list.reduce((a, s) => a + s.inputTokens + s.outputTokens, 0),
       totalCommits: gitCommits.filter(
-        (c) => c.projectId === p.id && localDateKey(new Date(c.committedAt)) === localDateKey(new Date())
+        (c) =>
+          c.projectId === p.id && localDateKey(new Date(c.committedAt)) === localDateKey(new Date())
       ).length
     }
   })
@@ -495,6 +508,68 @@ const emptyScan: ScanResult = {
 }
 
 export const mockApi = {
+  syncConflicts: {
+    list: async () => ({ success: true as const, data: { items: [] } }),
+    resolve: async () => ({ success: true as const, data: { followUp: [] } })
+  },
+  folderSync: {
+    status: async () => ({
+      success: true as const,
+      data: {
+        connected: false,
+        enabled: false,
+        workspaceId: null,
+        name: null,
+        folder: null,
+        status: 'disabled' as const,
+        lastPublishedAt: null,
+        lastImportedAt: null,
+        pending: 0,
+        issues: [],
+        joinReviewRequired: false
+      }
+    }),
+    discover: async () => ({ success: true as const, data: { workspaces: [], issues: [] } }),
+    connect: async () => ({
+      success: false as const,
+      error: { code: 'DEMO', message: 'Shared history setup is unavailable in demo mode.' }
+    }),
+    setEnabled: async () => ({
+      success: false as const,
+      error: { code: 'DEMO', message: 'Shared history setup is unavailable in demo mode.' }
+    }),
+    syncNow: async () => ({
+      success: false as const,
+      error: { code: 'DEMO', message: 'Shared history setup is unavailable in demo mode.' }
+    }),
+    joinReview: async () => ({
+      success: false as const,
+      error: { code: 'DEMO', message: 'Shared history setup is unavailable in demo mode.' }
+    }),
+    applyJoinReview: async () => ({
+      success: false as const,
+      error: { code: 'DEMO', message: 'Shared history setup is unavailable in demo mode.' }
+    })
+  },
+  machines: {
+    coverage: async () => ({ success: true as const, data: [] }),
+    list: async () => ({ success: true as const, data: [] }),
+    rename: async () => ({
+      success: false as const,
+      error: { code: 'DEMO', message: 'Machine labels are unavailable in demo mode.' }
+    })
+  },
+  workspace: {
+    getPolicy: async () => ipcSuccess(null),
+    reviewPolicy: async () =>
+      ipcError('DEMO_UNAVAILABLE', 'Shared policy is unavailable in the browser demo'),
+    applyPolicy: async () =>
+      ipcError('DEMO_UNAVAILABLE', 'Shared policy is unavailable in the browser demo'),
+    reviewActivity: async () =>
+      ipcError('DEMO_UNAVAILABLE', 'Shared policy is unavailable in the browser demo'),
+    adoptActivity: async () =>
+      ipcError('DEMO_UNAVAILABLE', 'Shared policy is unavailable in the browser demo')
+  },
   dialog: {
     openFolder: () => ok<string | null>('/Users/demo/work/new-project'),
     discoverProjects: () =>
@@ -803,7 +878,11 @@ export const mockApi = {
     },
     getAlertConfig: (projectId: number) => {
       const s = watchState.get(projectId) ?? { isWatching: false, alertSound: 'system' }
-      return ok<ProjectAlertConfig>({ projectId, alertSound: s.alertSound, isWatching: s.isWatching })
+      return ok<ProjectAlertConfig>({
+        projectId,
+        alertSound: s.alertSound,
+        isWatching: s.isWatching
+      })
     },
     setAlertConfig: (projectId: number, alertSound: string) => {
       const s = watchState.get(projectId) ?? { isWatching: false, alertSound: 'system' }
@@ -829,7 +908,10 @@ export const mockApi = {
     },
     showAllWidgets: (projectIds: number[]) => {
       for (const id of projectIds) openWidgetIds.add(id)
-      window.parent.postMessage({ type: 'clautime-demo-widget', action: 'show-all', projectIds }, '*')
+      window.parent.postMessage(
+        { type: 'clautime-demo-widget', action: 'show-all', projectIds },
+        '*'
+      )
       notifyWidgetState()
       return ok(undefined)
     },
@@ -852,6 +934,15 @@ export const mockApi = {
   },
 
   invoice: {
+    getPendingOperations: () => ok([]),
+    resumeDraftInvoice: () =>
+      Promise.resolve(
+        ipcError('INVOICE_OPERATION_NOT_FOUND', 'There is no pending invoice in this demo.')
+      ),
+    cancelInvoiceOperation: () =>
+      Promise.resolve(
+        ipcError('INVOICE_OPERATION_NOT_FOUND', 'There is no pending invoice in this demo.')
+      ),
     hasStripeKey: () => ok(true),
     isTestMode: () => ok(true),
     storeStripeKey: () => ok(undefined),
@@ -868,7 +959,8 @@ export const mockApi = {
       const draft: DraftInvoice = {
         localId: inv.id,
         invoiceId: inv.stripeInvoiceId,
-        stripeCustomerId: clients.find((c) => c.id === inv.clientId)?.stripeCustomerId ?? 'cus_Demo',
+        stripeCustomerId:
+          clients.find((c) => c.id === inv.clientId)?.stripeCustomerId ?? 'cus_Demo',
         status: inv.status,
         amountDueCents: inv.amountDueCents,
         currency: inv.currency,
@@ -896,8 +988,12 @@ export const mockApi = {
       inv.status = 'void'
       return ok(toStatus(inv))
     },
-    generateLineItems: (request: { clientId: number; startDate: string; endDate: string; projectId?: number }) =>
-      ok(generateLineItems(request)),
+    generateLineItems: (request: {
+      clientId: number
+      startDate: string
+      endDate: string
+      projectId?: number
+    }) => ok(generateLineItems(request)),
     getAll: (filters?: { clientId?: number; status?: string }) =>
       ok(
         invoices
@@ -962,7 +1058,11 @@ export const mockApi = {
       }),
     cancel: () => ok(undefined),
     getFindings: (limit?: number, offset?: number) =>
-      ok(secretFindings.slice(offset ?? 0, (offset ?? 0) + (limit ?? secretFindings.length)).map((f) => ({ ...f }))),
+      ok(
+        secretFindings
+          .slice(offset ?? 0, (offset ?? 0) + (limit ?? secretFindings.length))
+          .map((f) => ({ ...f }))
+      ),
     getSummary: () => {
       const summary: SecretScanSummary = {
         total: secretFindings.length,
@@ -1020,7 +1120,9 @@ export const mockApi = {
         const result: PatternTestResult = { matches, matchCount: matches.length, warnings: [] }
         return ok(result)
       } catch (e) {
-        return Promise.resolve(ipcError('INVALID_PATTERN', e instanceof Error ? e.message : 'Invalid regex'))
+        return Promise.resolve(
+          ipcError('INVALID_PATTERN', e instanceof Error ? e.message : 'Invalid regex')
+        )
       }
     }
   },
@@ -1037,8 +1139,12 @@ export const mockApi = {
   },
 
   projects: {
+    getLocalSetup: () => ok({ machineName: 'Demo computer', complete: true, candidates: [] }),
+    completeLocalSetup: () => ok({ machineName: 'Demo computer', complete: true, candidates: [] }),
     getAll: (clientId?: number) =>
-      ok(projects.filter((p) => clientId == null || p.clientId === clientId).map((p) => ({ ...p }))),
+      ok(
+        projects.filter((p) => clientId == null || p.clientId === clientId).map((p) => ({ ...p }))
+      ),
     create: (data: NewProject) => {
       const p: Project = {
         id: nextProjectId++,
@@ -1067,7 +1173,13 @@ export const mockApi = {
       if (i >= 0) projects.splice(i, 1)
       return ok(undefined)
     },
-    attributeSessions: () => ok(0)
+    attributeSessions: () => ok(0),
+    getMarkerStatus: () => ok(null),
+    setMarkerInGit: () => ok(null),
+    getFolderSuggestions: () => ok([]),
+    linkSuggestedFolder: () => ok(undefined),
+    declineSuggestedFolder: () => ok(undefined),
+    onFolderMarker: noop
   }
 }
 
@@ -1080,7 +1192,9 @@ export const mockApi = {
 const callCounts: Record<string, number> = {}
 ;(window as unknown as { __demoApiCalls: Record<string, number> }).__demoApiCalls = callCounts
 
-function withLatency<T extends Record<string, Record<string, (...args: never[]) => unknown>>>(api: T): T {
+function withLatency<T extends Record<string, Record<string, (...args: never[]) => unknown>>>(
+  api: T
+): T {
   const wrapped = {} as Record<string, Record<string, unknown>>
   for (const [ns, methods] of Object.entries(api)) {
     wrapped[ns] = {}
@@ -1090,9 +1204,12 @@ function withLatency<T extends Record<string, Record<string, (...args: never[]) 
         const result = fn(...args)
         if (result instanceof Promise) {
           return new Promise((resolve, reject) => {
-            setTimeout(() => {
-              result.then(resolve, reject)
-            }, 5 + Math.random() * 20)
+            setTimeout(
+              () => {
+                result.then(resolve, reject)
+              },
+              5 + Math.random() * 20
+            )
           })
         }
         return result

@@ -1,4 +1,5 @@
 import './index.css'
+import './lib/diag'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

@@ -39,6 +39,7 @@ export function ClientCard({
   const { data: projects } = useProjects(client.id)
   const deleteClient = useDeleteClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteVersion, setDeleteVersion] = useState<string | undefined>()
   const projectCount = projects?.length ?? 0
   const presentationMode = usePresentationMode()
   const displayName = resolveClientName(client, presentationMode)
@@ -55,7 +56,7 @@ export function ClientCard({
 
   const handleDelete = async (): Promise<void> => {
     try {
-      await deleteClient.mutateAsync(client.id)
+      await deleteClient.mutateAsync({ id: client.id, expectedSyncVersion: deleteVersion })
       toast.success('Client deleted')
       setDeleteOpen(false)
     } catch (err) {
@@ -116,7 +117,13 @@ export function ClientCard({
             >
               <Pencil size={14} />
             </Button>
-            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+            <AlertDialog
+              open={deleteOpen}
+              onOpenChange={(open) => {
+                if (open) setDeleteVersion(client.syncVersion)
+                setDeleteOpen(open)
+              }}
+            >
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"

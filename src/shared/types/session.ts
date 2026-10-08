@@ -1,3 +1,5 @@
+import type { SessionSourceMachine } from './source-machine'
+
 /** Which coding agent produced a session's data. */
 export type SessionTool = 'claude' | 'codex' | 'gemini' | 'opencode'
 
@@ -22,6 +24,14 @@ export interface Session {
   clientId: number | null
   createdAt: string
   updatedAt: string
+  /**
+   * Machines that observed or imported this session's facts; one session still counts once.
+   * Empty while its original machine is unknown (pending provenance). Absent on older
+   * fixtures and on paths that do not read provenance.
+   */
+  sourceMachines?: SessionSourceMachine[]
+  /** Edit freshness token while folder sync is connected; absent otherwise. */
+  syncVersion?: string
 }
 
 /** Filters for querying sessions */
@@ -33,6 +43,8 @@ export interface SessionFilters {
   tool?: SessionTool
   clientId?: number
   projectId?: number
+  /** Device UUID; Sessions view only. Invoice generation never takes this filter. */
+  sourceMachine?: string
 }
 
 /** Timing data for a single human prompt → assistant response pair */
@@ -52,6 +64,69 @@ export interface ScanResult {
   totalFiles: number
   durationMs: number
   attributedCount: number
+  /** Files whose saved history needs reconciliation; other files were committed. */
+  errors?: SessionScanError[]
+}
+
+export interface SessionScanError {
+  sourceFile: string
+  message: string
+}
+
+/** A comparison snapshot, never a second set of active sessions. */
+export interface ReconciliationPreview {
+  id?: number
+  /** Saved source association; absent in older comparison snapshots. */
+  sourceFile?: string | null
+  disposition: 'active' | 'deleted' | 'split' | 'replaced' | 'detected'
+  projectPath: string
+  clientId: number | null
+  projectId: number | null
+  startedAt: string
+  endedAt: string
+  durationMinutes: number
+  promptCount: number
+  inputTokens: number
+  outputTokens: number
+  modelUsage: SessionModelUsage[]
+  /** Saved values and eligible predecessors are absent on older stored comparisons. */
+  description?: string | null
+  billable?: boolean
+  status?: string
+  replacementCandidates?: number[]
+  requiresReplacementChoice?: boolean
+  /** Detected conversation identity; absent on older stored comparisons. */
+  tool?: string
+  claudeSessionId?: string | null
+}
+
+export interface SessionReconciliationCase {
+  /** Null for pre-resolution migrations; recheck before approving. */
+  fingerprint: string | null
+  sourceFile: string
+  message: string
+  saved: ReconciliationPreview[]
+  detected: ReconciliationPreview[]
+  idleTimeoutMinutes: number
+  createdAt: string
+  updatedAt: string
+  /**
+   * Mapping-review case or mapping-managed conversation. Only a recheck or the shared
+   * policy review can resolve it; keep/map/replace are rejected. Absent on stored snapshots.
+   */
+  mappingManaged?: boolean
+}
+
+/** Explicit pairing within a fingerprinted, one-to-one source comparison. */
+export interface SessionActivityMapping {
+  sessionId: number
+  detectedIndex: number
+}
+
+/** Choose the saved values to carry into a detected replacement interval. */
+export interface SessionReplacementChoice {
+  detectedIndex: number
+  sessionId: number
 }
 
 /** A project discovered during folder scanning */
@@ -71,6 +146,8 @@ export interface UpdateSession {
   billable?: boolean
   projectId?: number | null
   clientId?: number | null
+  /** syncVersion captured when the editor opened; never a stored field. */
+  expectedSyncVersion?: string
 }
 
 /** Daily work vs idle time breakdown */

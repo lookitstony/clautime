@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router'
 import { SessionsPage } from './SessionsPage'
@@ -133,6 +133,7 @@ function stubApi(
 ) {
   vi.stubGlobal('api', {
     sessions: {
+      getReconciliationCases: vi.fn().mockResolvedValue({ success: true, data: [] }),
       getAll: vi.fn().mockResolvedValue({ success: true, data: sessionsData }),
       scan: vi.fn().mockResolvedValue({
         success: true,
@@ -178,6 +179,128 @@ beforeEach(() => {
 })
 
 describe('SessionsPage', () => {
+  describe('date rollover', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+      vi.setSystemTime(new Date(2026, 8, 13, 23, 59, 59))
+      useFilterStore.getState().setWeekStartDay(1)
+    })
+
+    afterEach(() => {
+      cleanup()
+      vi.useRealTimers()
+    })
+
+    it('refreshes This Week at local midnight without changing the selected filters', async () => {
+      useFilterStore.getState().setDatePreset('this-week')
+      useFilterStore.getState().setClientId(7)
+      useFilterStore.getState().setProjectId(9)
+      useFilterStore.getState().setTool('codex')
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: new Date(2026, 8, 7).toISOString(),
+        endDate: new Date(2026, 8, 13, 23, 59, 59, 999).toISOString(),
+        clientId: 7,
+        projectId: 9,
+        tool: 'codex'
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: new Date(2026, 8, 14).toISOString(),
+        endDate: new Date(2026, 8, 14, 23, 59, 59, 999).toISOString(),
+        clientId: 7,
+        projectId: 9,
+        tool: 'codex'
+      })
+    })
+
+    it('refreshes Today on focus after sleeping past midnight', async () => {
+      useFilterStore.getState().setDatePreset('today')
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      vi.setSystemTime(new Date(2026, 8, 15, 9))
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: new Date(2026, 8, 15).toISOString(),
+        endDate: new Date(2026, 8, 15, 23, 59, 59, 999).toISOString()
+      })
+    })
+
+    it('keeps custom dates unchanged across midnight', async () => {
+      const start = new Date(2026, 8, 1).toISOString()
+      const end = new Date(2026, 8, 2, 23, 59, 59, 999).toISOString()
+      useFilterStore.getState().setCustomRange(start, end)
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+
+      expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({
+        startDate: start,
+        endDate: end
+      })
+    })
+  })
+
+  describe('Source Machine filter', () => {
+    const DESK = '9b95ec41-b3b6-4cbb-b1b6-e7ce607ef222'
+    const machines = [
+      {
+        deviceId: DESK,
+        label: 'Desk',
+        originalName: 'DESKTOP-1',
+        labelBasis: 'shared',
+        alternatives: [],
+        labelHeads: {},
+        duplicateLabel: false,
+        isThisComputer: true
+      },
+      {
+        deviceId: '7c8f7eab-af58-4cbb-9e74-d1e47f80d600',
+        label: 'Laptop',
+        originalName: 'Laptop',
+        labelBasis: 'original',
+        alternatives: [],
+        labelHeads: {},
+        duplicateLabel: false,
+        isThisComputer: false
+      }
+    ]
+
+    it('asks the server to filter before totals and offers every known machine', async () => {
+      stubApi([mockSessions[0]])
+      ;(window.api as unknown as Record<string, unknown>).machines = {
+        list: vi.fn().mockResolvedValue({ success: true, data: machines })
+      }
+      useFilterStore.getState().setSourceMachine(DESK)
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await waitFor(() =>
+        expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({ sourceMachine: DESK })
+      )
+      expect(await screen.findByLabelText('Filter by source machine')).toBeInTheDocument()
+    })
+
+    it('leaves the unfiltered session query without a machine key', async () => {
+      stubApi(mockSessions)
+      render(<SessionsPage />, { wrapper: createWrapper() })
+      await waitFor(() => expect(window.api.sessions.getAll).toHaveBeenLastCalledWith({}))
+    })
+  })
+
   it('shows empty state when no sessions', async () => {
     render(<SessionsPage />, { wrapper: createWrapper() })
     await waitFor(() => {

@@ -21,7 +21,9 @@ import { SessionRow } from './SessionRow'
 import { SessionDetailPanel } from './SessionDetailPanel'
 import { SessionFilterBar } from './SessionFilterBar'
 import { ManualBlockForm } from './ManualBlockForm'
+import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { useSessions, useSessionStats, useGroupedSessions, type GroupSort } from './use-sessions'
+import { useSourceMachines } from './use-source-machines'
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { useSessionIdsWithCommits } from '../git/use-git'
@@ -29,8 +31,16 @@ import { useUIStore } from '@/stores/use-ui-store'
 import { useFilterStore } from '@/stores/use-filter-store'
 import { cn } from '@/lib/utils'
 import { computeBucketedHumanMinutes } from '../../../../shared/earnings'
-import { getProjectColor, getDateKey, formatDateLabel, formatDuration, formatUsd } from '@/lib/format'
+import {
+  getProjectColor,
+  getDateKey,
+  formatDateLabel,
+  formatDuration,
+  formatUsd
+} from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
+import { useReportingTimeZone } from '../settings/use-reporting-time-zone'
+import { calendarDate, calendarDayStart } from '../../../../shared/reporting-calendar'
 import type { Session } from '../../../../shared/types/session'
 import { estimateCostUsd } from '../../../../shared/pricing'
 import { computeEarnings } from '../../../../shared/earnings'
@@ -46,20 +56,38 @@ function SessionListSkeleton(): React.JSX.Element {
 }
 
 export function SessionsPage(): React.JSX.Element {
-  const datePreset = useFilterStore((s) => s.datePreset)
-  const startDate = useFilterStore((s) => s.startDate)
-  const endDate = useFilterStore((s) => s.endDate)
-  const filterClientId = useFilterStore((s) => s.clientId)
-  const filterProjectId = useFilterStore((s) => s.projectId)
-  const filterTool = useFilterStore((s) => s.tool)
-  const storeWeekStartDay = useFilterStore((s) => s.weekStartDay)
-  const filters = useMemo(
-    () => useFilterStore.getState().toSessionFilters(),
-    [datePreset, startDate, endDate, filterClientId, filterProjectId, filterTool, storeWeekStartDay]
-  )
+  const timeZone = useReportingTimeZone()
+  const { toSessionFilters } = useFilterStore()
+  const [, setCurrentDate] = useState(() => getDateKey(new Date().toISOString()))
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const refreshDate = (): void => {
+      const now = calendarDate(new Date(), timeZone)
+      setCurrentDate(getDateKey(now.toISOString(), timeZone))
+      clearTimeout(timer)
+      const midnight = calendarDayStart(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+        timeZone
+      )
+      timer = setTimeout(refreshDate, midnight.getTime() - now.getTime())
+    }
+    refreshDate()
+    // Focus/visibility also catch a suspended window waking on a later day.
+    window.addEventListener('focus', refreshDate)
+    document.addEventListener('visibilitychange', refreshDate)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('focus', refreshDate)
+      document.removeEventListener('visibilitychange', refreshDate)
+    }
+  }, [timeZone])
+  const filters = toSessionFilters(timeZone)
   const { data: rawSessions, isLoading, error } = useSessions(filters)
   const { data: clients } = useClients()
   const { data: allProjects } = useProjects()
+  const { data: machines } = useSourceMachines()
 
   const { data: settingsData } = useQuery({
     queryKey: ['settings', 'all'],
@@ -77,10 +105,10 @@ export function SessionsPage(): React.JSX.Element {
   const sessions = useMemo(() => {
     if (!rawSessions || !afterHoursMode) return rawSessions
     return rawSessions.filter((s) => {
-      const hour = new Date(s.startedAt).getHours()
+      const hour = calendarDate(s.startedAt, timeZone).getHours()
       return hour < 7 || hour >= 18
     })
-  }, [rawSessions, afterHoursMode])
+  }, [rawSessions, afterHoursMode, timeZone])
 
   const { data: sessionIdsWithCommits } = useSessionIdsWithCommits()
   const stats = useSessionStats(sessions, clients, sessionIdsWithCommits)
@@ -182,12 +210,12 @@ export function SessionsPage(): React.JSX.Element {
       const groupKey =
         group.projectId != null ? `project:${group.projectId}` : `path:${group.projectPath}`
       for (const session of group.sessions) {
-        const dk = `${groupKey}:${getDateKey(session.startedAt)}`
+        const dk = `${groupKey}:${getDateKey(session.startedAt, timeZone)}`
         if (!keys.includes(dk)) keys.push(dk)
       }
     }
     return keys
-  }, [groups])
+  }, [groups, timeZone])
 
   const expandAll = useCallback(() => {
     setExpandedGroups(new Set(allGroupKeys))
@@ -238,6 +266,7 @@ export function SessionsPage(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
+      <HistoryReviewPanel />
       <StatsBar
         humanHours={stats.humanHours}
         totalHours={stats.totalHours}
@@ -252,7 +281,12 @@ export function SessionsPage(): React.JSX.Element {
       />
 
       {!isLoading && (hasResults || hasFilters) && (
-        <SessionFilterBar clients={clients ?? []} projects={allProjects ?? []} />
+        <SessionFilterBar
+          timeZone={timeZone}
+          clients={clients ?? []}
+          projects={allProjects ?? []}
+          machines={machines ?? []}
+        />
       )}
 
       {hasResults && (
@@ -371,7 +405,7 @@ export function SessionsPage(): React.JSX.Element {
                         Map this directory to a client in Clients view
                       </button>
                     )}
-                    {groupSessionsByDay(group.sessions).map((dayGroup) => {
+                    {groupSessionsByDay(group.sessions, timeZone).map((dayGroup) => {
                       const dayKey = `${groupKey}:${dayGroup.dateKey}`
                       const isDayExpanded = expandedDays.has(dayKey)
                       return (
@@ -403,6 +437,7 @@ export function SessionsPage(): React.JSX.Element {
                             dayGroup.sessions.map((session) => (
                               <React.Fragment key={session.id}>
                                 <SessionRow
+                                  timeZone={timeZone}
                                   session={session}
                                   projectColor={color}
                                   isSelected={selectedSessionId === session.id}
@@ -443,10 +478,10 @@ interface DayGroup {
   totalMinutes: number
 }
 
-function groupSessionsByDay(sessions: Session[]): DayGroup[] {
+function groupSessionsByDay(sessions: Session[], timeZone?: string): DayGroup[] {
   const groups = new Map<string, Session[]>()
   for (const session of sessions) {
-    const key = getDateKey(session.startedAt)
+    const key = getDateKey(session.startedAt, timeZone)
     const existing = groups.get(key) ?? []
     existing.push(session)
     groups.set(key, existing)
@@ -456,7 +491,7 @@ function groupSessionsByDay(sessions: Session[]): DayGroup[] {
     .sort(([a], [b]) => b.localeCompare(a)) // newest day first
     .map(([dateKey, daySessions]) => ({
       dateKey,
-      label: formatDateLabel(daySessions[0].startedAt),
+      label: formatDateLabel(daySessions[0].startedAt, timeZone),
       sessions: daySessions,
       totalMinutes: computeBucketedHumanMinutes(daySessions)
     }))

@@ -10,7 +10,8 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           // Parse worker runs session-file parsing off the main thread
-          'parse-worker': resolve('src/main/workers/parse-worker.ts')
+          'parse-worker': resolve('src/main/workers/parse-worker.ts'),
+          'folder-sync-read-worker': resolve('src/main/workers/folder-sync-read-worker.ts')
         }
       }
     }

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import {
   Dialog,
@@ -45,25 +46,42 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
   const [billableRate, setBillableRate] = useState('')
   const [email, setEmail] = useState('')
   const [error, setError] = useState('')
+  // Folder sync freshness: the version this editor opened on, kept until the user reloads.
+  const [syncVersion, setSyncVersion] = useState<string | undefined>()
+  const [stale, setStale] = useState(false)
+  const openedFor = useRef<number | null | undefined>(undefined)
+  const queryClient = useQueryClient()
+
+  const load = useCallback((source: Client | null): void => {
+    if (source) {
+      setName(source.name)
+      setStageName(source.stageName ?? '')
+      setColor(source.color)
+      setBillableRate(source.billableRate != null ? String(source.billableRate) : '')
+      setEmail(source.email ?? '')
+    } else {
+      setName('')
+      setStageName('')
+      setColor(CLIENT_COLORS[0])
+      setBillableRate('')
+      setEmail('')
+    }
+    setSyncVersion(source?.syncVersion)
+    setStale(false)
+    setError('')
+  }, [])
 
   useEffect(() => {
-    if (open) {
-      if (client) {
-        setName(client.name)
-        setStageName(client.stageName ?? '')
-        setColor(client.color)
-        setBillableRate(client.billableRate != null ? String(client.billableRate) : '')
-        setEmail(client.email ?? '')
-      } else {
-        setName('')
-        setStageName('')
-        setColor(CLIENT_COLORS[0])
-        setBillableRate('')
-        setEmail('')
-      }
-      setError('')
+    if (!open) {
+      openedFor.current = undefined
+      return
     }
-  }, [open, client])
+    // A query refresh hands in a new object for the same client: keep the draft and its version.
+    const key = client?.id ?? null
+    if (openedFor.current === key) return
+    openedFor.current = key
+    load(client)
+  }, [open, client, load])
 
   const handleSubmit = async (): Promise<void> => {
     const trimmedName = name.trim()
@@ -84,7 +102,8 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
             stageName: stageName.trim() || null,
             color,
             billableRate: rateValue,
-            email: trimmedEmail
+            email: trimmedEmail,
+            ...(syncVersion !== undefined && { expectedSyncVersion: syncVersion })
           }
         })
         toast.success('Client updated')
@@ -101,7 +120,14 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
       onClose()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save client'
-      if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('already')) {
+      if (message.includes('SYNC_STALE_EDIT')) {
+        // Keep the draft; refresh the list so "Load latest" shows what changed.
+        setStale(true)
+        queryClient.invalidateQueries({ queryKey: ['clients'] })
+      } else if (
+        message.toLowerCase().includes('unique') ||
+        message.toLowerCase().includes('already')
+      ) {
         setError('A client with this name already exists')
       } else {
         toast.error(message)
@@ -247,11 +273,23 @@ export function ClientForm({ open, onClose, client }: ClientFormProps): React.JS
           </div>
         </div>
 
+        {stale && (
+          <div className="flex items-center justify-between gap-2 text-[12px] text-amber-400">
+            <span>
+              This client changed on another computer since you opened it. Your changes are kept
+              until you load the latest values.
+            </span>
+            <Button variant="outline" size="sm" onClick={() => load(client)}>
+              Load latest
+            </Button>
+          </div>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!isValid || isPending}>
+          <Button onClick={handleSubmit} disabled={!isValid || isPending || stale}>
             {isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Client'}
           </Button>
         </DialogFooter>

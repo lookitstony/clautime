@@ -20,8 +20,8 @@ export function readExcludedPathsSetting(): string[] {
 
 /**
  * Apply the persisted excluded folders to the shared path predicates. Called at
- * startup and whenever the setting changes; existing sessions under a newly
- * excluded folder are purged by the next scan (purgeExcludedSessions).
+ * startup and whenever the setting changes. Exclusions stop future collection;
+ * sessions and activity already imported remain in history.
  */
 export function applyExcludedPaths(): void {
   setCustomExcludedPaths(readExcludedPathsSetting())

@@ -101,7 +101,10 @@ import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { invoices, invoiceLineItems } from '../db/schema/invoices'
-import { sessionService, purgeExcludedSessions } from './session-service'
+import { sessionService } from './session-service'
+import { adoptInitialWorkspacePolicy } from './workspace-policy'
+import { workspacePolicy } from '../db/schema/workspace-policy'
+import { reconciliationFingerprint } from './session-reconciliation'
 import type { ParsedSessionData, ParsedMessage } from '../parsers/types'
 
 const schema = {
@@ -127,7 +130,7 @@ function setupTestDb(): void {
     .insert(rawMessages)
     .values({
       sourceFile: '__seed__',
-      type: 'user',
+      type: 'assistant',
       timestamp: '2026-01-01T00:00:00Z'
     })
     .run()
@@ -195,7 +198,547 @@ describe('sessionService', () => {
     if (testSqlite) testSqlite.close()
   })
 
+  it('uses the saved workspace idle timeout and reporting midnight for scan and rebuild', async () => {
+    const policy = {
+      version: 1,
+      normalizationVersion: 1,
+      detectorVersion: 1,
+      idleTimeoutMinutes: 30,
+      reportingTimeZone: 'America/Halifax'
+    }
+    adoptInitialWorkspacePolicy(testDb, {
+      workspaceId: 'fb751832-c62e-4f27-bc3f-b6a7a8e31214',
+      revisionId: 'fbd24e8f-4aa9-4420-889a-574e83cdd267',
+      policy
+    })
+    mockSettings.idle_timeout_minutes = '1'
+    const file = '/fixtures/workspace-policy.jsonl'
+    mockDiscoverFiles.mockResolvedValue([file])
+    mockStat.mockResolvedValue({ mtime: new Date('2026-09-26T05:00:00Z'), size: 100 })
+    mockParseFile.mockResolvedValue(
+      makeParsedSession(file, [
+        makeMessage('2026-09-26T02:50:00Z'),
+        makeMessage('2026-09-26T03:10:00Z')
+      ])
+    )
+    expect((await sessionService.scanSessions()).errors).toBeUndefined()
+    const before = testDb.select().from(sessions).all()
+    expect(before.map((row) => [row.startedAt, row.endedAt, row.durationMinutes])).toEqual([
+      ['2026-09-26T02:50:00.000Z', '2026-09-26T03:00:00.000Z', 10],
+      ['2026-09-26T03:00:00.000Z', '2026-09-26T03:10:00.000Z', 10]
+    ])
+    mockSettings.idle_timeout_minutes = '50'
+    expect((await sessionService.rebuildSessionsFromRaw()).errors).toBeUndefined()
+    expect(testDb.select().from(sessions).all()).toEqual(before)
+    expect(sessionService._getIdleTimeout()).toBe(30)
+  })
+
+  it('uses a policy changed while asynchronous parsing was in flight', async () => {
+    const policy = {
+      version: 1,
+      normalizationVersion: 1,
+      detectorVersion: 1,
+      idleTimeoutMinutes: 5,
+      reportingTimeZone: 'UTC'
+    }
+    adoptInitialWorkspacePolicy(testDb, {
+      workspaceId: 'fb751832-c62e-4f27-bc3f-b6a7a8e31214',
+      revisionId: 'fbd24e8f-4aa9-4420-889a-574e83cdd267',
+      policy
+    })
+    const file = '/fixtures/policy-changed.jsonl'
+    mockDiscoverFiles.mockResolvedValue([file])
+    mockStat.mockResolvedValue({ mtime: new Date('2026-09-26T12:00:00Z'), size: 100 })
+    mockParseFile.mockImplementation(async () => {
+      testDb
+        .update(workspacePolicy)
+        .set({ policyJson: JSON.stringify({ ...policy, idleTimeoutMinutes: 20 }) })
+        .run()
+      return makeParsedSession(file, [
+        makeMessage('2026-09-26T11:00:00Z'),
+        makeMessage('2026-09-26T11:10:00Z')
+      ])
+    })
+    expect((await sessionService.scanSessions()).errors).toBeUndefined()
+    expect(testDb.select().from(sessions).all()).toMatchObject([
+      { durationMinutes: 10, promptCount: 2 }
+    ])
+  })
+
+  it('binds reconciliation receipts to workspace policy instead of host timezone', () => {
+    const policy = {
+      version: 1,
+      normalizationVersion: 1,
+      detectorVersion: 1,
+      idleTimeoutMinutes: 30,
+      reportingTimeZone: 'UTC'
+    }
+    adoptInitialWorkspacePolicy(testDb, {
+      workspaceId: 'fb751832-c62e-4f27-bc3f-b6a7a8e31214',
+      revisionId: 'fbd24e8f-4aa9-4420-889a-574e83cdd267',
+      policy
+    })
+    const before = reconciliationFingerprint(testDb, '/fixtures/policy', [], 30)
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ timeZone: 'Pacific/Honolulu' } as Intl.ResolvedDateTimeFormatOptions)
+    try {
+      expect(reconciliationFingerprint(testDb, '/fixtures/policy', [], 30)).toBe(before)
+      testDb
+        .update(workspacePolicy)
+        .set({ revisionId: 'bccccccc-cccc-4ccc-accc-cccccccccccc' })
+        .run()
+      expect(reconciliationFingerprint(testDb, '/fixtures/policy', [], 30)).not.toBe(before)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  describe('getPromptTimings', () => {
+    it.each(['database', 'file'] as const)(
+      'uses the explicitly mapped activity from the %s while preserving saved times',
+      async (storage) => {
+        const sourceFile = '/fixtures/mapped-timeline.jsonl'
+        const timestamp = (minute: number) =>
+          new Date(Date.UTC(2026, 2, 4, 10, minute)).toISOString()
+        const messages = [
+          ...[0, 10, 40, 45, 50].map((minute) => makeMessage(timestamp(minute))),
+          makeMessage(timestamp(41), { type: 'assistant' }),
+          makeMessage(timestamp(46), { isToolResult: true })
+        ].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        for (const message of messages)
+          testDb
+            .insert(rawMessages)
+            .values({
+              sourceFile,
+              claudeSessionId: 'sess-1',
+              type: message.type,
+              timestamp: message.timestamp,
+              isToolResult: Number(message.isToolResult)
+            })
+            .run()
+        const saved = [0, 40].map((minute) =>
+          testDb
+            .insert(sessions)
+            .values({
+              sourceFile,
+              claudeSessionId: 'sess-1',
+              projectPath: '/projects/test',
+              startedAt: timestamp(minute),
+              endedAt: timestamp(minute + 10),
+              durationMinutes: 10,
+              promptCount: 100
+            })
+            .returning()
+            .get()
+        )
+        await sessionService.rebuildSessionsFromRaw()
+        const review = sessionService.getReconciliationCases()[0]
+        sessionService.mapSavedHistory(sourceFile, review.fingerprint!, [
+          { sessionId: saved[0].id, detectedIndex: 1 },
+          { sessionId: saved[1].id, detectedIndex: 0 }
+        ])
+        if (storage === 'file') {
+          testDb.delete(rawMessages).where(eq(rawMessages.sourceFile, sourceFile)).run()
+          mockParseFile.mockResolvedValue(makeParsedSession(sourceFile, messages))
+        }
+        expect(await sessionService.getPromptTimings(saved[0].id)).toEqual([
+          { promptAt: timestamp(40), responseAt: timestamp(41), latencySeconds: 60 },
+          { promptAt: timestamp(45), responseAt: null, latencySeconds: null },
+          { promptAt: timestamp(50), responseAt: null, latencySeconds: null }
+        ])
+        expect((await sessionService.getPromptTimings(saved[1].id)).map((t) => t.promptAt)).toEqual(
+          [timestamp(0), timestamp(10)]
+        )
+        expect(sessionService.getSessionById(saved[0].id)).toMatchObject({
+          startedAt: saved[0].startedAt,
+          endedAt: saved[0].endedAt,
+          durationMinutes: 10,
+          promptCount: 3
+        })
+        if (storage === 'database') expect(mockParseFile).not.toHaveBeenCalled()
+        else expect(mockParseFile).toHaveBeenCalledWith(sourceFile)
+      }
+    )
+
+    it.each(['database', 'file'] as const)(
+      'uses saved bounds for legacy sessions without a baseline in the %s',
+      async (storage) => {
+        const sourceFile = '/fixtures/legacy-timeline.jsonl'
+        const messages = [0, 10, 40].map((minute) =>
+          makeMessage(new Date(Date.UTC(2026, 2, 4, 10, minute)).toISOString())
+        )
+        const session = testDb
+          .insert(sessions)
+          .values({
+            sourceFile,
+            projectPath: '/projects/test',
+            startedAt: messages[0].timestamp,
+            endedAt: messages[1].timestamp,
+            durationMinutes: 10
+          })
+          .returning()
+          .get()
+        if (storage === 'database') {
+          for (const message of messages)
+            testDb
+              .insert(rawMessages)
+              .values({ sourceFile, type: message.type, timestamp: message.timestamp })
+              .run()
+        } else mockParseFile.mockResolvedValue(makeParsedSession(sourceFile, messages))
+        expect((await sessionService.getPromptTimings(session.id)).map((t) => t.promptAt)).toEqual(
+          messages.slice(0, 2).map((message) => message.timestamp)
+        )
+      }
+    )
+  })
+
   describe('scanSessions', () => {
+    it('uses indexed lookups for retained child history instead of scanning all history', async () => {
+      const queries: Array<{ query: string; params: unknown[] }> = []
+      testDb = drizzle(testSqlite, {
+        schema,
+        logger: {
+          logQuery(query, params) {
+            if (
+              /from "(raw_messages|progress_events)"/.test(query) &&
+              query.includes('order by') &&
+              query.includes(' or ')
+            )
+              queries.push({ query, params })
+          }
+        }
+      })
+      const file = '/fixtures/first.jsonl'
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [makeMessage('2026-03-04T10:00:00Z')])
+      )
+      await sessionService.scanSessions()
+      expect(queries).toHaveLength(2)
+      for (const { query, params } of queries) {
+        const plan = testSqlite.prepare(`EXPLAIN QUERY PLAN ${query}`).all(...params) as Array<{
+          detail: string
+        }>
+        expect(
+          plan.some((row) => /SEARCH (raw_messages|progress_events) USING/.test(row.detail))
+        ).toBe(true)
+        expect(plan.some((row) => /SCAN (raw_messages|progress_events)/.test(row.detail))).toBe(
+          false
+        )
+      }
+    })
+
+    it('serves event-loop callbacks between source commits without yielding inside a transaction', async () => {
+      const files = ['/fixtures/first.jsonl', '/fixtures/second.jsonl', '/fixtures/third.jsonl']
+      mockDiscoverFiles.mockResolvedValue(files)
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockImplementation(async (file: string) =>
+        makeParsedSession(file, [makeMessage('2026-03-04T10:00:00Z', { uuid: file })])
+      )
+      const turns: Array<{ raw: number; checkpoints: number; transaction: boolean }> = []
+      let heartbeat: NodeJS.Immediate
+      const tick = (): void => {
+        turns.push({
+          raw: testDb.select().from(rawMessages).all().length - 1,
+          checkpoints: testDb.select().from(scanState).all().length,
+          transaction: testSqlite.inTransaction
+        })
+        heartbeat = setImmediate(tick)
+      }
+      heartbeat = setImmediate(tick)
+      try {
+        const result = await sessionService.scanSessions()
+        expect(result.updatedFiles).toBe(3)
+        expect(result.newSessions).toBe(3)
+        expect(turns.some((turn) => turn.raw > 0 && turn.raw < 3)).toBe(true)
+        expect(turns.some((turn) => turn.checkpoints > 0 && turn.checkpoints < 3)).toBe(true)
+        expect(turns.every((turn) => !turn.transaction)).toBe(true)
+      } finally {
+        clearImmediate(heartbeat)
+      }
+    })
+
+    it('preserves row identity, edits and invoice references as a transcript grows', async () => {
+      const file = '/fixtures/growing.jsonl'
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:00:00Z', { uuid: 'first' }),
+          makeMessage('2026-03-04T10:05:00Z', { uuid: 'second' })
+        ])
+      )
+      await sessionService.scanSessions()
+      const original = testDb.select().from(sessions).get()!
+      const client = testDb
+        .insert(clients)
+        .values({ name: 'Client', color: '#fff' })
+        .returning()
+        .get()
+      sessionService.updateSession(original.id, {
+        description: 'Keep me',
+        billable: false,
+        clientId: client.id
+      })
+      const invoice = testDb
+        .insert(invoices)
+        .values({ clientId: client.id, stripeInvoiceId: 'in_fixture' })
+        .returning()
+        .get()
+      testDb
+        .insert(invoiceLineItems)
+        .values({
+          invoiceId: invoice.id,
+          description: 'Saved work',
+          amountCents: 1234,
+          sessionIds: String(original.id)
+        })
+        .run()
+      testDb
+        .insert(aiSummariesSchema.aiSummaries)
+        .values({ sessionId: original.id, summary: 'Saved summary' })
+        .run()
+      testDb
+        .insert(gitCommitsSchema.gitCommits)
+        .values({
+          sessionId: original.id,
+          hash: 'abc',
+          message: 'work',
+          authorName: 'Test',
+          authorEmail: 'test@example.com',
+          committedAt: original.startedAt
+        })
+        .run()
+      const invoiceBefore = testDb.select().from(invoiceLineItems).all()
+
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 200 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:10:00Z', {
+            uuid: 'third',
+            type: 'assistant',
+            model: 'test-model',
+            usage: {
+              inputTokens: 100,
+              outputTokens: 50,
+              cacheCreationInputTokens: 20,
+              cacheReadInputTokens: 30
+            }
+          })
+        ])
+      )
+      await sessionService.scanSessions()
+      await sessionService.rebuildSessionsFromRaw()
+
+      expect(testDb.select().from(sessions).all()).toEqual([
+        expect.objectContaining({
+          id: original.id,
+          createdAt: original.createdAt,
+          description: 'Keep me',
+          billable: 0,
+          clientId: client.id,
+          durationMinutes: 10,
+          promptCount: 2,
+          inputTokens: 100,
+          outputTokens: 50
+        })
+      ])
+      expect(testDb.select().from(invoiceLineItems).all()).toEqual(invoiceBefore)
+      expect(testDb.select().from(aiSummariesSchema.aiSummaries).get()?.sessionId).toBe(original.id)
+      expect(testDb.select().from(gitCommitsSchema.gitCommits).get()?.sessionId).toBe(original.id)
+      expect(testDb.select().from(sessionModelUsage).all()).toEqual([
+        expect.objectContaining({
+          sessionId: original.id,
+          inputTokens: 100,
+          cacheReadInputTokens: 30
+        })
+      ])
+    })
+
+    it('retains imported and legacy history when files disappear and providers are disabled', async () => {
+      const file = '/fixtures/retained.jsonl'
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:05:00Z')
+        ])
+      )
+      await sessionService.scanSessions()
+      const legacy = testDb
+        .insert(sessions)
+        .values({
+          projectPath: '/legacy',
+          sourceFile: '/gone.jsonl',
+          startedAt: '2026-01-01T10:00:00Z',
+          endedAt: '2026-01-01T11:00:00Z',
+          durationMinutes: 60,
+          inputTokens: 500,
+          description: 'Legacy edit',
+          billable: 0
+        })
+        .returning()
+        .get()
+      testDb
+        .insert(sessionModelUsage)
+        .values({ sessionId: legacy.id, model: 'legacy-model', inputTokens: 500 })
+        .run()
+      const before = testDb.select().from(sessions).all()
+      const usageBefore = testDb.select().from(sessionModelUsage).all()
+      mockDiscoverFiles.mockResolvedValue([]) // Source files no longer exist.
+      mockSettings.track_claude = 'false'
+      await sessionService.scanSessions()
+      await sessionService.rebuildSessionsFromRaw()
+      expect(testDb.select().from(sessions).all()).toEqual(before)
+      expect(testDb.select().from(sessionModelUsage).all()).toEqual(usageBefore)
+    })
+
+    it('preserves edited time fields during later scans and rebuilds', async () => {
+      const file = '/fixtures/edited.jsonl'
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:05:00Z')
+        ])
+      )
+      await sessionService.scanSessions()
+      const original = testDb.select().from(sessions).get()!
+      sessionService.updateSession(original.id, {
+        startedAt: '2026-03-04T09:00:00Z',
+        endedAt: '2026-03-04T09:30:00Z',
+        durationMinutes: 30
+      })
+      await sessionService.rebuildSessionsFromRaw()
+      expect(testDb.select().from(sessions).all()).toEqual([
+        expect.objectContaining({
+          id: original.id,
+          startedAt: '2026-03-04T09:00:00Z',
+          endedAt: '2026-03-04T09:30:00Z',
+          durationMinutes: 30
+        })
+      ])
+    })
+
+    it.each([
+      ['split', '15', '5'],
+      ['merge', '5', '15']
+    ])(
+      'leaves saved history intact and reports an ambiguous policy %s',
+      async (_change, beforeTimeout, afterTimeout) => {
+        const file = '/fixtures/split.jsonl'
+        mockSettings.idle_timeout_minutes = beforeTimeout
+        mockDiscoverFiles.mockResolvedValue([file])
+        mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+        mockParseFile.mockResolvedValue(
+          makeParsedSession(file, [
+            makeMessage('2026-03-04T10:00:00Z'),
+            makeMessage('2026-03-04T10:10:00Z')
+          ])
+        )
+        await sessionService.scanSessions()
+        const before = testDb.select().from(sessions).all()
+        mockSettings.idle_timeout_minutes = afterTimeout
+        expect((await sessionService.rebuildSessionsFromRaw()).errors).toEqual([
+          expect.objectContaining({
+            sourceFile: file,
+            message: expect.stringMatching(/reconciliation/i)
+          })
+        ])
+        expect(testDb.select().from(sessions).all()).toEqual(before)
+        expect(sessionService._scanInProgress).toBe(false)
+      }
+    )
+
+    it('keeps legacy edited times when first mapping a saved row to retained activity', async () => {
+      const file = '/fixtures/legacy-edited.jsonl'
+      const original = testDb
+        .insert(sessions)
+        .values({
+          sourceFile: file,
+          claudeSessionId: 'sess-1',
+          projectPath: '/projects/test',
+          startedAt: '2026-03-04T10:00:00Z',
+          endedAt: '2026-03-04T10:30:00Z',
+          durationMinutes: 25,
+          billable: 0,
+          description: 'Existing edit'
+        })
+        .returning()
+        .get()
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:05:00Z')
+        ])
+      )
+      await sessionService.scanSessions()
+      await sessionService.rebuildSessionsFromRaw()
+      expect(testDb.select().from(sessions).all()).toEqual([
+        expect.objectContaining({
+          id: original.id,
+          startedAt: original.startedAt,
+          endedAt: original.endedAt,
+          durationMinutes: 25,
+          billable: 0,
+          description: 'Existing edit',
+          promptCount: 2
+        })
+      ])
+    })
+
+    it('refuses to replace legacy totals with an incomplete surviving transcript', async () => {
+      const file = '/fixtures/partial-legacy.jsonl'
+      const original = testDb
+        .insert(sessions)
+        .values({
+          sourceFile: file,
+          claudeSessionId: 'sess-1',
+          projectPath: '/projects/test',
+          startedAt: '2026-03-04T10:00:00Z',
+          endedAt: '2026-03-04T10:05:00Z',
+          durationMinutes: 5,
+          promptCount: 20,
+          inputTokens: 1000
+        })
+        .returning()
+        .get()
+      testDb
+        .insert(sessionModelUsage)
+        .values({ sessionId: original.id, model: 'saved-model', inputTokens: 1000 })
+        .run()
+      const usage = testDb.select().from(sessionModelUsage).all()
+      mockDiscoverFiles.mockResolvedValue([file])
+      mockStat.mockResolvedValue({ mtime: new Date('2026-03-04T12:00:00Z'), size: 100 })
+      mockParseFile.mockResolvedValue(
+        makeParsedSession(file, [
+          makeMessage('2026-03-04T10:00:00Z'),
+          makeMessage('2026-03-04T10:05:00Z')
+        ])
+      )
+      expect((await sessionService.scanSessions()).errors).toEqual([
+        expect.objectContaining({
+          sourceFile: file,
+          message: expect.stringMatching(/legacy.*reconciliation/i)
+        })
+      ])
+      expect(testDb.select().from(sessions).all()).toEqual([original])
+      expect(testDb.select().from(sessionModelUsage).all()).toEqual(usage)
+      expect(testDb.select().from(scanState).all()).toEqual([])
+      expect((await sessionService.scanSessions()).errors).toEqual([
+        expect.objectContaining({
+          sourceFile: file,
+          message: expect.stringMatching(/legacy.*reconciliation/i)
+        })
+      ])
+    })
+
     it('rescans appended logs even when Windows leaves the modification time unchanged', async () => {
       const file = '/home/user/.claude/projects/test/session1.jsonl'
       testDb
@@ -492,6 +1035,72 @@ describe('sessionService', () => {
       })
       expect(result).toHaveLength(1)
       expect(result[0].projectPath).toBe('/projects/beta')
+    })
+
+    it('includes a session ending at midnight without including the next day', () => {
+      const midnight = new Date(2026, 8, 15).toISOString()
+      const [previous, next, point] = testDb
+        .insert(sessions)
+        .values([
+          {
+            projectPath: '/projects/midnight',
+            startedAt: new Date(2026, 8, 14, 23, 50).toISOString(),
+            endedAt: midnight,
+            durationMinutes: 10
+          },
+          {
+            projectPath: '/projects/midnight',
+            startedAt: midnight,
+            endedAt: new Date(2026, 8, 15, 0, 10).toISOString(),
+            durationMinutes: 10
+          },
+          {
+            projectPath: '/projects/midnight',
+            startedAt: midnight,
+            endedAt: midnight,
+            durationMinutes: 0
+          }
+        ])
+        .returning()
+        .all()
+      for (const s of [previous, next, point]) {
+        testDb
+          .insert(sessionModelUsage)
+          .values({
+            sessionId: s.id,
+            model: 'test-model',
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0
+          })
+          .run()
+      }
+      const filters = {
+        startDate: new Date(2026, 8, 14).toISOString(),
+        endDate: new Date(2026, 8, 14, 23, 59, 59, 999).toISOString()
+      }
+
+      expect(sessionService.getAllSessions(filters).map((s) => s.id)).toEqual([previous.id])
+      expect(sessionService.getModelUsage(filters)).toEqual([
+        {
+          model: 'test-model',
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          sessionCount: 1
+        }
+      ])
+      expect(
+        sessionService
+          .getAllSessions({
+            startDate: midnight,
+            endDate: new Date(2026, 8, 15, 23, 59, 59, 999).toISOString()
+          })
+          .map((s) => s.id)
+          .sort()
+      ).toEqual([next.id, point.id].sort())
     })
 
     it('should return sessions ordered by startedAt', () => {
@@ -842,7 +1451,7 @@ describe('sessionService', () => {
       expect(sessionService.getModelUsage()).toEqual([])
     })
 
-    it('deleteSession should remove its session_model_usage rows', () => {
+    it('deleteSession retains model usage for audit but excludes it from totals', () => {
       testDb
         .insert(sessions)
         .values([
@@ -851,7 +1460,7 @@ describe('sessionService', () => {
             startedAt: '2026-03-01T10:00:00Z',
             endedAt: '2026-03-01T11:00:00Z',
             durationMinutes: 60,
-            source: 'auto',
+            source: 'manual',
             status: 'completed'
           },
           {
@@ -859,7 +1468,7 @@ describe('sessionService', () => {
             startedAt: '2026-03-02T10:00:00Z',
             endedAt: '2026-03-02T11:00:00Z',
             durationMinutes: 60,
-            source: 'auto',
+            source: 'manual',
             status: 'completed'
           }
         ])
@@ -891,16 +1500,21 @@ describe('sessionService', () => {
       sessionService.deleteSession(target.id)
 
       const remaining = testDb.select().from(sessionModelUsage).all()
-      expect(remaining).toHaveLength(1)
-      expect(remaining[0].sessionId).toBe(keep.id)
+      expect(remaining).toHaveLength(2)
+      expect(sessionService.getModelUsage()).toEqual([
+        expect.objectContaining({ inputTokens: 300, outputTokens: 400, sessionCount: 1 })
+      ])
+      expect(sessionService.getAllSessions().map((s) => s.id)).toEqual([keep.id])
     })
   })
 })
 
-describe('purgeExcludedSessions', () => {
+describe('excluded history retention', () => {
   beforeEach(() => {
     setupTestDb()
     vi.clearAllMocks()
+    Object.keys(mockSettings).forEach((key) => delete mockSettings[key])
+    mockDiscoverFiles.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -930,8 +1544,8 @@ describe('purgeExcludedSessions', () => {
       .get().id
   }
 
-  it('purges auto sessions in excluded dirs and cleans orphaned file rows', () => {
-    insertSession()
+  it('retains excluded sessions and their captured activity on scan', async () => {
+    const excludedId = insertSession()
     const keptId = insertSession({ projectPath: 'C:\\apps\\RealProject', sourceFile: 'real.jsonl' })
     testDb
       .insert(scanState)
@@ -946,27 +1560,26 @@ describe('purgeExcludedSessions', () => {
       .values({ sourceFile: EXCLUDED_FILE, timestamp: '2026-01-01T00:00:00Z' })
       .run()
 
-    purgeExcludedSessions(testDb as Parameters<typeof purgeExcludedSessions>[0])
+    await sessionService.scanSessions()
 
     const remaining = testDb.select().from(sessions).all()
-    expect(remaining).toHaveLength(1)
-    expect(remaining[0].id).toBe(keptId)
-    expect(testDb.select().from(scanState).all()).toHaveLength(0)
+    expect(remaining.map((s) => s.id)).toEqual([excludedId, keptId])
+    expect(testDb.select().from(scanState).all()).toHaveLength(1)
     expect(
       testDb
         .select()
         .from(rawMessages)
         .all()
         .filter((r) => r.sourceFile === EXCLUDED_FILE)
-    ).toHaveLength(0)
-    expect(testDb.select().from(progressEvents).all()).toHaveLength(0)
+    ).toHaveLength(1)
+    expect(testDb.select().from(progressEvents).all()).toHaveLength(1)
   })
 
-  it('spares manual, described, and invoiced sessions — and their file rows', () => {
+  it('retains manual, described, invoiced and unedited sessions with their file rows', async () => {
     const manualId = insertSession({ source: 'manual' })
     const describedId = insertSession({ description: 'user note' })
     const invoicedId = insertSession()
-    insertSession() // purgeable
+    const uneditedId = insertSession()
 
     const client = testDb
       .insert(clients)
@@ -993,7 +1606,7 @@ describe('purgeExcludedSessions', () => {
       .values({ filePath: EXCLUDED_FILE, lastModifiedAt: '1', lastScannedAt: '1' })
       .run()
 
-    purgeExcludedSessions(testDb as Parameters<typeof purgeExcludedSessions>[0])
+    await sessionService.scanSessions()
 
     const remainingIds = testDb
       .select({ id: sessions.id })
@@ -1001,12 +1614,12 @@ describe('purgeExcludedSessions', () => {
       .all()
       .map((r) => r.id)
       .sort()
-    expect(remainingIds).toEqual([manualId, describedId, invoicedId].sort())
+    expect(remainingIds).toEqual([manualId, describedId, invoicedId, uneditedId].sort())
     // Spared sessions still reference the file — file-level rows must survive
     expect(testDb.select().from(scanState).all()).toHaveLength(1)
   })
 
-  it('aborts the purge entirely when invoice session_ids is malformed (fail closed)', () => {
+  it('retains history even with malformed legacy invoice session IDs', async () => {
     insertSession()
 
     const client = testDb
@@ -1029,7 +1642,7 @@ describe('purgeExcludedSessions', () => {
       })
       .run()
 
-    purgeExcludedSessions(testDb as Parameters<typeof purgeExcludedSessions>[0])
+    await sessionService.scanSessions()
 
     expect(testDb.select().from(sessions).all()).toHaveLength(1)
   })

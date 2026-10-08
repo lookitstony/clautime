@@ -11,8 +11,10 @@ import { getClaudeConfigDirs } from './discovery-service'
 import { decodeProjectPath, encodeProjectPath } from './session-detector'
 import { getCodexSessionsDir, readCodexSessionMeta } from '../parsers/codex-parser'
 import { mainProjectPath } from './worktree-paths'
+import { setMarkedFolderListener } from './project-folder-marker'
 import { isProviderEnabled } from './provider-tracking'
 import { isExcludedProjectDir, isExcludedProjectPath } from '../../shared/paths'
+import type { Project } from '../../shared/types/client-project'
 
 // Per-project debounce before an incremental scan. Kept high because each scan
 // re-parses the project's (often large, actively-growing) JSONL and writes to
@@ -31,12 +33,17 @@ export const fileWatcherService = {
   _watchers: [] as FSWatcher[],
   _mainWindow: null as BrowserWindow | null,
   _debounceTimers: new Map<string, ReturnType<typeof setTimeout>>(),
+  _pendingCodexFiles: new Set<string>(),
   _knownDirs: new Set<string>(),
 
   async start(mainWindow: BrowserWindow): Promise<void> {
     if (this._watchers.length > 0) return
 
     this._mainWindow = mainWindow
+    setMarkedFolderListener((event) => this._sendToRenderer('watcher:projectFolder', event))
+    clientProjectService.setDiscoveredProjectListener((project) =>
+      this._onDiscoveredProject(project)
+    )
 
     // Watch every Claude profile (~/.claude, ~/.claude-vss, …) so switching
     // accounts keeps live tracking working. A claude_dir override pins to one.
@@ -94,7 +101,8 @@ export const fileWatcherService = {
   },
 
   stop(): void {
-    if (this._watchers.length === 0) return
+    setMarkedFolderListener(undefined)
+    clientProjectService.setDiscoveredProjectListener(undefined)
     for (const watcher of this._watchers) {
       watcher.close()
     }
@@ -103,13 +111,14 @@ export const fileWatcherService = {
       clearTimeout(timer)
     }
     this._debounceTimers.clear()
+    this._pendingCodexFiles.clear()
     log.info('File watcher stopped')
   },
 
   async _runStartupScan(): Promise<void> {
     try {
       log.info('File watcher: running startup scan to catch missed changes')
-      await sessionService.scanSessions()
+      const result = await sessionService.scanSessions()
 
       // Auto-create projects for all unregistered directories
       let autoCreated = 0
@@ -123,6 +132,7 @@ export const fileWatcherService = {
       }
 
       clientProjectService.attributeSessions()
+      clientProjectService.writeProjectMarkers()
       gitService
         .scanCommits()
         .then((r) => {
@@ -132,7 +142,7 @@ export const fileWatcherService = {
         .catch((err) => {
           log.warn('Startup git scan failed (non-critical):', err)
         })
-      this._notifyRenderer()
+      this._notifyRenderer(result.errors)
       log.info('File watcher: startup scan complete')
     } catch (err) {
       log.warn('File watcher: startup scan failed:', err)
@@ -185,7 +195,8 @@ export const fileWatcherService = {
   },
 
   _debouncedCodexScan(filePath: string): void {
-    const key = `codex:${filePath}`
+    this._pendingCodexFiles.add(filePath)
+    const key = 'codex'
     // Keep the first deadline so continuous writes still update the displayed time.
     if (this._debounceTimers.has(key)) return
     this._debounceTimers.set(
@@ -197,18 +208,34 @@ export const fileWatcherService = {
           this._debouncedCodexScan(filePath)
           return
         }
-        try {
-          const meta = await readCodexSessionMeta(filePath)
-          if (!meta?.cwd || isExcludedProjectPath(meta.cwd)) return
-          if (sessionService._scanInProgress) {
-            this._debouncedCodexScan(filePath)
-            return
+        const files = [...this._pendingCodexFiles]
+        this._pendingCodexFiles.clear()
+        const projects = new Map<string, string[]>()
+        for (const changedFile of files) {
+          try {
+            const meta = await readCodexSessionMeta(changedFile)
+            if (!meta?.cwd || isExcludedProjectPath(meta.cwd)) continue
+            const directory = mainProjectPath(meta.cwd)
+            const related = projects.get(directory) ?? []
+            related.push(changedFile)
+            projects.set(directory, related)
+          } catch (err) {
+            log.warn('Codex incremental scan failed:', err)
           }
-          const directory = mainProjectPath(meta.cwd)
-          clientProjectService.autoCreateProject(directory)
-          await this._runIncrementalScan(encodeProjectPath(directory), directory)
-        } catch (err) {
-          log.warn('Codex incremental scan failed:', err)
+        }
+        // Many changed transcripts can belong to one project. Scan that project
+        // once per batch, retaining new writes for the next deadline.
+        for (const [directory, changedFiles] of projects) {
+          if (sessionService._scanInProgress) {
+            for (const changedFile of changedFiles) this._debouncedCodexScan(changedFile)
+            continue
+          }
+          try {
+            clientProjectService.autoCreateProject(directory)
+            await this._runIncrementalScan(encodeProjectPath(directory), directory)
+          } catch (err) {
+            log.warn('Codex incremental scan failed:', err)
+          }
         }
       }, DEBOUNCE_MS)
     )
@@ -220,7 +247,7 @@ export const fileWatcherService = {
       log.info(`File watcher: incremental scan for project ${decodedPath}`)
 
       // Run incremental scan filtered to just this project's files
-      await sessionService.scanSessions(undefined, [projectDirName])
+      const result = await sessionService.scanSessions(undefined, [projectDirName])
       clientProjectService.attributeSessions()
 
       // Pick up any new git commits for THIS project only, then correlate.
@@ -240,10 +267,27 @@ export const fileWatcherService = {
       }
 
       // Notify renderer to refresh data
-      this._notifyRenderer()
+      this._notifyRenderer(result.errors)
     } catch (err) {
       log.warn('File watcher: incremental scan failed:', err)
     }
+  },
+
+  /** A git-history check released a held folder: finish what discovery would have done. */
+  _onDiscoveredProject(project: Project): void {
+    const decodedPath = project.directoryPath ?? ''
+    this._sendToRenderer('watcher:newProject', {
+      dirName: encodeProjectPath(decodedPath),
+      decodedPath,
+      projectName: project.name
+    })
+    this._notifyRenderer()
+    gitService
+      .scanCommits([project.id])
+      .then((r) => {
+        if (r.newCommits > 0) gitService.correlateCommitsWithSessions()
+      })
+      .catch((err) => log.warn('Git scan of a discovered project failed:', err))
   },
 
   _handleNewProject(dirName: string): void {
@@ -260,8 +304,8 @@ export const fileWatcherService = {
     }
   },
 
-  _notifyRenderer(): void {
-    this._sendToRenderer('watcher:sessionsUpdated', {})
+  _notifyRenderer(errors?: import('../../shared/types/session').SessionScanError[]): void {
+    this._sendToRenderer('watcher:sessionsUpdated', { errors })
   },
 
   _sendToRenderer(channel: string, data: unknown): void {

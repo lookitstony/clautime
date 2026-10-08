@@ -1,9 +1,10 @@
 import { readdir } from 'node:fs/promises'
 import { readJsonlLinesFrom, isLineBoundary } from './line-reader'
 import { join, basename, dirname } from 'node:path'
-import log from 'electron-log/main.js'
+import log from 'electron-log'
 import { isExcludedProjectDir } from '../../shared/paths'
 import { mainProjectEncoded } from '../services/worktree-paths'
+import { claudeActivityIdentity, claudeProgressActivity } from './claude-activity-identity'
 import type {
   ParsedSessionData,
   ParsedMessage,
@@ -35,7 +36,7 @@ function parseJsonlLine(line: string): Record<string, unknown> | null {
   }
 }
 
-function extractMessage(raw: Record<string, unknown>): ParsedMessage {
+function extractMessage(raw: Record<string, unknown>, isSubagent = false): ParsedMessage {
   const message = raw.message as Record<string, unknown> | undefined
   const usage = message?.usage as Record<string, number> | undefined
 
@@ -64,7 +65,8 @@ function extractMessage(raw: Record<string, unknown>): ParsedMessage {
     parentUuid: (raw.parentUuid as string) || null,
     isToolResult: !!raw.toolUseResult,
     hasToolUse,
-    toolNames
+    toolNames,
+    activityIdentity: claudeActivityIdentity(raw, isSubagent)
   }
 }
 
@@ -140,6 +142,7 @@ export async function parseSessionFile(
 ): Promise<ParsedSessionData | null> {
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
+  const progressEvidence: NonNullable<ParsedSessionData['claudeProgressEvidence']> = []
   const totalUsage = emptyTokenUsage()
   const modelsSet = new Set<string>()
   let sessionId = ''
@@ -181,6 +184,8 @@ export async function parseSessionFile(
     if (type === PROGRESS_TYPE) {
       const ts = raw.timestamp as string
       if (ts) progressTimestamps.push(ts)
+      const activity = claudeProgressActivity(raw)
+      if (activity) progressEvidence.push({ ...activity, sourceFile: filePath, isSubagent: false })
       continue
     }
 
@@ -255,6 +260,7 @@ export async function parseSessionFile(
     summary,
     subagentMessages: subagentData.messages,
     subagentProgressTimestamps: subagentData.progressTimestamps,
+    claudeProgressEvidence: [...progressEvidence, ...subagentData.progressEvidence],
     fileOffsets: { [filePath]: consumedOffset, ...subagentData.fileOffsets }
   }
 }
@@ -264,6 +270,7 @@ interface SubagentData {
   messages: ParsedMessage[]
   progressTimestamps: string[]
   fileOffsets: Record<string, number>
+  progressEvidence: NonNullable<ParsedSessionData['claudeProgressEvidence']>
 }
 
 /**
@@ -280,13 +287,14 @@ async function collectSubagentData(
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
   const fileOffsets: Record<string, number> = {}
+  const progressEvidence: SubagentData['progressEvidence'] = []
   const sessionDir = join(dirname(mainFilePath), sessionId, 'subagents')
 
   let entries: import('node:fs').Dirent<string>[]
   try {
     entries = await readdir(sessionDir, { withFileTypes: true, encoding: 'utf8' })
   } catch {
-    return { tokenUsage, messages, progressTimestamps, fileOffsets }
+    return { tokenUsage, messages, progressTimestamps, fileOffsets, progressEvidence }
   }
 
   for (const entry of entries) {
@@ -312,12 +320,15 @@ async function collectSubagentData(
         if (type === PROGRESS_TYPE) {
           const ts = raw.timestamp as string
           if (ts) progressTimestamps.push(ts)
+          const activity = claudeProgressActivity(raw)
+          if (activity)
+            progressEvidence.push({ ...activity, sourceFile: subagentFilePath, isSubagent: true })
           continue
         }
 
         if (!RELEVANT_TYPES.has(type)) continue
 
-        const msg = extractMessage(raw)
+        const msg = extractMessage(raw, true)
         // Tag with the subagent's own source file for dedup
         ;(msg as ParsedMessage & { sourceFile?: string }).sourceFile = subagentFilePath
         messages.push(msg)
@@ -336,7 +347,7 @@ async function collectSubagentData(
   }
 
   progressTimestamps.sort()
-  return { tokenUsage, messages, progressTimestamps, fileOffsets }
+  return { tokenUsage, messages, progressTimestamps, fileOffsets, progressEvidence }
 }
 
 /**

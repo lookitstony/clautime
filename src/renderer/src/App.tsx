@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, Outlet, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { showFolderSuggestion } from '@/features/clients/folder-suggestion-toast'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
 import { Toaster } from '@/components/ui/sonner'
@@ -12,6 +13,7 @@ import { SessionsPage } from '@/features/sessions/SessionsPage'
 import { ClientsPage } from '@/features/clients/ClientsPage'
 import { WelcomeWizard } from '@/features/onboarding/WelcomeWizard'
 import { SettingsPage } from '@/features/settings/SettingsPage'
+import { LocalFoldersSettings } from '@/features/settings/LocalFoldersSettings'
 import { ReportsPage } from '@/features/reports/ReportsPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { LivePage } from '@/features/live/LivePage'
@@ -23,6 +25,7 @@ import { ManualTimerDialog } from '@/features/live/ManualTimerDialog'
 import { useLiveBroadcastSync } from '@/features/live/use-live'
 import { useUpdaterNotifications } from '@/features/settings/use-updater'
 import type { ProjectLiveStatus } from '../../shared/types/live'
+import { reportScanErrors } from '@/lib/scan-errors'
 
 // While you're actively coding, the file watcher emits a scan-complete event
 // every few seconds (across every Claude profile). Invalidating on each one
@@ -59,7 +62,10 @@ function useFileWatcherEvents(): void {
       }
     }
 
-    window.api.live.onSessionsUpdated(schedule)
+    window.api.live.onSessionsUpdated((errors) => {
+      reportScanErrors(errors)
+      schedule()
+    })
 
     window.api.live.onNewProject((info) => {
       toast.info(`New project detected: ${info.projectName}`, {
@@ -68,6 +74,39 @@ function useFileWatcherEvents(): void {
       })
       qc.invalidateQueries({ queryKey: ['projects'] })
       qc.invalidateQueries({ queryKey: ['live'] })
+    })
+
+    void window.api.projects.getFolderSuggestions().then((result) => {
+      if (!result.success) return
+      for (const event of result.data)
+        if (event.kind === 'suggested') showFolderSuggestion(event, qc)
+    })
+
+    window.api.projects.onFolderMarker((event) => {
+      if (event.kind === 'suggested') {
+        showFolderSuggestion(event, qc)
+        return
+      }
+      if (event.kind === 'copy') {
+        toast.warning(`${event.projectName}: this folder looks like a copy`, {
+          description: `${event.directoryPath} has the project's ID file, but the project is still at ${event.currentPath}. Use "Change folder on this computer" if this copy is the real one. A worktree outside its main folder may need \`git worktree repair\`.`,
+          duration: 15000
+        })
+      } else {
+        toast.info(
+          event.kind === 'moved'
+            ? `${event.projectName} moved to ${event.directoryPath}`
+            : `${event.projectName} linked to ${event.directoryPath}`,
+          {
+            description:
+              event.kind === 'moved'
+                ? `Found its ID file after the folder left ${event.previousPath}. History is unchanged.`
+                : 'Found its ID file in this folder.',
+            duration: 8000
+          }
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['projects'] })
     })
 
     return () => {
@@ -136,6 +175,7 @@ function RootLayout(): React.JSX.Element {
         <div className="flex flex-1 overflow-hidden">
           <ActivityBar />
           <div className="flex flex-1 flex-col overflow-hidden">
+            <LocalFoldersSettings noticeOnly onConfigure={() => navigate('/settings')} />
             <main className="flex-1 overflow-auto">
               <ErrorBoundary>
                 <Outlet />

@@ -1,3 +1,4 @@
+import { sourceMachineOptionLabel } from '@/lib/source-machine'
 import { useState } from 'react'
 import { X, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -18,13 +19,18 @@ import {
   type DatePreset
 } from '@/lib/format'
 import { usePresentationMode } from '../settings/use-presentation-mode'
+import { calendarDate, calendarDayStart } from '../../../../shared/reporting-calendar'
 import { PROVIDERS } from '../../../../shared/providers'
 import type { Client, Project } from '../../../../shared/types/client-project'
 import type { SessionTool } from '../../../../shared/types/session'
+import type { SourceMachineSummary } from '../../../../shared/types/source-machine'
 
 interface SessionFilterBarProps {
   clients: Client[]
   projects: Project[]
+  /** Every known machine; the filter appears once there is a choice to make. */
+  machines?: SourceMachineSummary[]
+  timeZone?: string
 }
 
 const DATE_PRESETS: { value: DatePreset; label: string }[] = [
@@ -34,7 +40,12 @@ const DATE_PRESETS: { value: DatePreset; label: string }[] = [
   { value: 'this-month', label: 'This Month' }
 ]
 
-export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): React.JSX.Element {
+export function SessionFilterBar({
+  clients,
+  projects,
+  machines = [],
+  timeZone
+}: SessionFilterBarProps): React.JSX.Element {
   const {
     datePreset,
     startDate,
@@ -42,11 +53,13 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
     clientId,
     projectId,
     tool,
+    sourceMachine,
     setDatePreset,
     setCustomRange,
     setClientId,
     setProjectId,
     setTool,
+    setSourceMachine,
     clearFilters,
     hasActiveFilters
   } = useFilterStore()
@@ -68,16 +81,19 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
 
   const handleCustomSelect = (range: { from?: Date; to?: Date } | undefined): void => {
     if (range?.from && range?.to) {
-      const start = new Date(range.from.getFullYear(), range.from.getMonth(), range.from.getDate())
-      const end = new Date(
+      const start = calendarDayStart(
+        range.from.getFullYear(),
+        range.from.getMonth(),
+        range.from.getDate(),
+        timeZone
+      )
+      const nextDay = calendarDayStart(
         range.to.getFullYear(),
         range.to.getMonth(),
-        range.to.getDate(),
-        23,
-        59,
-        59,
-        999
+        range.to.getDate() + 1,
+        timeZone
       )
+      const end = new Date(nextDay.getTime() - 1)
       setCustomRange(start.toISOString(), end.toISOString())
       setCustomOpen(false)
     } else if (range?.from) {
@@ -87,12 +103,16 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
 
   const customRangeLabel =
     isCustomRange && startDate && endDate
-      ? `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`
+      ? `${formatShortDate(startDate, timeZone)} – ${formatShortDate(endDate, timeZone)}`
       : 'Custom'
 
+  const pickerDate = (value: string): Date => {
+    const date = calendarDate(value, timeZone)
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  }
   const selectedRange =
     isCustomRange && startDate && endDate
-      ? { from: new Date(startDate), to: new Date(endDate) }
+      ? { from: pickerDate(startDate), to: pickerDate(endDate) }
       : undefined
 
   return (
@@ -197,6 +217,30 @@ export function SessionFilterBar({ clients, projects }: SessionFilterBarProps): 
           ))}
         </SelectContent>
       </Select>
+
+      {/* Source Machine dropdown (Sessions view only; never limits invoices) */}
+      {(machines.length > 1 || sourceMachine != null) && (
+        <Select
+          value={sourceMachine ?? '__all__'}
+          onValueChange={(val) => setSourceMachine(val === '__all__' ? null : val)}
+        >
+          <SelectTrigger
+            size="sm"
+            className="h-8 min-w-[130px]"
+            aria-label="Filter by source machine"
+          >
+            <SelectValue placeholder="All Machines" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Machines</SelectItem>
+            {machines.map((m) => (
+              <SelectItem key={m.deviceId} value={m.deviceId}>
+                {sourceMachineOptionLabel(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {/* Clear filters */}
       {hasActiveFilters() && (

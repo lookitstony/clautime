@@ -1,0 +1,132 @@
+// @vitest-environment node
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { eq } from 'drizzle-orm'
+import { join } from 'node:path'
+import { sessions } from '../db/schema/sessions'
+import { sessionModelUsage } from '../db/schema/session-model-usage'
+import { sessionLegacyRecords } from '../db/schema/session-legacy'
+import { sessionDerivations } from '../db/schema/session-derivations'
+import {
+  sessionReconciliationCases,
+  sessionReconciliationResolutions
+} from '../db/schema/session-reconciliation'
+import {
+  sessionBillingRefs,
+  sessionRevisions,
+  sessionSplits,
+  sessionReplacements
+} from '../db/schema/session-history'
+import { rawMessages } from '../db/schema/raw-messages'
+import { invoices, invoiceLineItems } from '../db/schema/invoices'
+import { aiSummaries } from '../db/schema/ai-summaries'
+import { gitCommits } from '../db/schema/git-commits'
+
+let sqlite: Database.Database
+let db: ReturnType<typeof drizzle>
+const settings: Record<string, string> = {}
+let testMode = false
+vi.mock('../db', () => ({ getDb: () => db }))
+vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() }, Notification: vi.fn(), shell: {} }))
+vi.mock('electron-log/main.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
+}))
+vi.mock('./settings-service', () => ({
+  settingsService: { getSetting: (key: string) => settings[key] ?? null }
+}))
+vi.mock('../providers', () => ({
+  enabledProviders: () => [],
+  providerForFile: () => ({ id: 'claude' })
+}))
+vi.mock('./credential-service', () => ({
+  credentialService: { getApiKey: () => null, isStripeTestMode: () => testMode }
+}))
+vi.mock('./stripe-service', () => ({ stripeService: {} }))
+vi.mock('./ai-service', () => ({
+  aiService: { summarizeSessionGroup: vi.fn().mockResolvedValue(null) }
+}))
+import { sessionService } from './session-service'
+import { clientProjectService } from './client-project-service'
+import { invoiceService } from './invoice-service'
+import { reportService } from './report-service'
+import { gitService } from './git-service'
+import { ipcMain } from 'electron'
+import { registerSessionHandlers } from '../ipc/session-handlers'
+import { retainLegacySession } from './session-legacy'
+
+beforeEach(() => {
+  sqlite = new Database(':memory:')
+  db = drizzle(sqlite)
+  migrate(db, { migrationsFolder: join(__dirname, '../db/migrations') })
+  for (const key of Object.keys(settings)) delete settings[key]
+  testMode = false
+})
+afterEach(() => {
+  vi.restoreAllMocks()
+  sqlite.close()
+})
+
+function manual(durationMinutes = 60) {
+  return sessionService.createSession({
+    projectPath: 'C:\\fixture',
+    startedAt: '2026-03-04T10:00:00.000Z',
+    endedAt: '2026-03-04T11:00:00.000Z',
+    durationMinutes,
+    description: 'Saved work'
+  })
+}
+function capture(file: string, minutes: number[]) {
+  for (const minute of minutes)
+    db.insert(rawMessages)
+      .values({
+        sourceFile: file,
+        uuid: `${file}-${minute}`,
+        type: 'user',
+        timestamp: new Date(Date.UTC(2026, 2, 4, 10, minute)).toISOString(),
+        claudeSessionId: file,
+        cwd: 'C:\\fixture'
+      })
+      .run()
+}
+function invoice(clientId: number, sessionId: number) {
+  return invoiceService.saveInvoice({
+    clientId,
+    stripeInvoiceId: 'in_fixture',
+    status: 'open',
+    amountDueCents: 10000,
+    amountPaidCents: 0,
+    currency: 'usd',
+    lineItems: [
+      {
+        description: 'Original billed work',
+        amountCents: 10000,
+        sessionIds: [sessionId],
+        sortOrder: 0
+      }
+    ]
+  })
+}
+
+it.each([false, true])('review: keeps chosen assignment after normal attribution (client-only %s)', async (clientOnly) => {
+  const sourceFile = '/review/chosen-unassigned'
+  settings.idle_timeout_minutes = '10'
+  capture(sourceFile, [0, 5, 20, 25])
+  await sessionService.rebuildSessionsFromRaw()
+  const client = clientProjectService.createClient({ name: 'Default client' })
+  const project = clientProjectService.createProject({ name: 'Default project', clientId: client.id, directoryPath: 'C:\\fixture' })
+  const chosenClientId = clientOnly ? clientProjectService.createClient({ name: 'Chosen client' }).id : null
+  const rows = sessionService.getAllSessions()
+  sessionService.updateSession(rows[0].id, { projectId: project.id, clientId: client.id })
+  sessionService.updateSession(rows[1].id, { projectId: null, clientId: chosenClientId })
+  settings.idle_timeout_minutes = '30'
+  await sessionService.rebuildSessionsFromRaw()
+  const review = sessionService.getReconciliationCases()[0]
+  sessionService.replaceSavedHistory(sourceFile, review.fingerprint!, [{ detectedIndex: 0, sessionId: rows[1].id }])
+  expect(sessionService.getAllSessions()[0]).toMatchObject({ projectId: null, clientId: chosenClientId })
+  // Both the watcher and normal scan/rebuild IPC invoke attribution afterward.
+  await sessionService.rebuildSessionsFromRaw()
+  clientProjectService.attributeSessions()
+  expect(sessionService.getAllSessions()[0]).toMatchObject({ projectId: null, clientId: chosenClientId })
+})

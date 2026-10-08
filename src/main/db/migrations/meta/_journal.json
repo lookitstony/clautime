@@ -162,6 +162,216 @@
       "when": 1784574587122,
       "tag": "0022_sessions_tool_index",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1789516800000,
+      "tag": "0023_session_derivations",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789516800001,
+      "tag": "0024_session_time_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1789516800002,
+      "tag": "0025_session_deletions",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1789603200000,
+      "tag": "0026_session_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1789603200001,
+      "tag": "0027_session_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1789603200002,
+      "tag": "0028_session_reconciliation_resolutions",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1789603200003,
+      "tag": "0029_session_legacy_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1789603200004,
+      "tag": "0030_session_billing_ranges",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1789603200005,
+      "tag": "0031_session_legacy_splits",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1789603200006,
+      "tag": "0032_session_replacements",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1789603200007,
+      "tag": "0033_activity_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1789603200008,
+      "tag": "0034_client_project_sync_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1789603200009,
+      "tag": "0035_project_folder_mappings",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1790294400000,
+      "tag": "0036_local_project_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1790294400001,
+      "tag": "0037_local_folder_discovery_blocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1790380800000,
+      "tag": "0038_activity_observers",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1790380800001,
+      "tag": "0039_manual_time_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1790380800002,
+      "tag": "0040_workspace_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1790467200000,
+      "tag": "0041_session_activity_mappings",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1790467200001,
+      "tag": "0042_session_mapping_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1790467200002,
+      "tag": "0043_folder_sync_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1790467200003,
+      "tag": "0044_provider_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1790467200004,
+      "tag": "0045_shared_builtin_client",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1790467200005,
+      "tag": "0046_invoice_provider_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1790467200006,
+      "tag": "0047_portable_legacy_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1790467200007,
+      "tag": "0048_provider_operation_resolutions",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1790640000000,
+      "tag": "0049_activity_conversation_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1790640000001,
+      "tag": "0050_sync_history_type_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1790640000002,
+      "tag": "0051_legacy_conversation_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1790640000003,
+      "tag": "0052_project_root_commit",
+      "breakpoints": true
     }
   ]
 }

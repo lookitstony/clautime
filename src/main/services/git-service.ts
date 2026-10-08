@@ -1,18 +1,21 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { clientProjectService } from './client-project-service'
 import { access, constants } from 'node:fs/promises'
 import { join } from 'node:path'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { gitCommits } from '../db/schema/git-commits'
-import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
+import { sessionDerivations } from '../db/schema/session-derivations'
+import { sessionReplacements, sessionSplits } from '../db/schema/session-history'
 import { settingsService } from './settings-service'
+import { runGit } from './git-exec'
 import type { UnconfiguredAuthor } from '../../shared/types/git'
 
-const execFileAsync = promisify(execFile)
 const BATCH_SIZE = 100
+// Commits often happen shortly after a session ends.
+const COMMIT_BUFFER_MS = 5 * 60 * 1000
 
 interface ParsedCommit {
   hash: string
@@ -40,7 +43,7 @@ export const gitService = {
    */
   async isGitAvailable(): Promise<boolean> {
     try {
-      await execFileAsync('git', ['--version'])
+      await runGit(['--version'])
       return true
     } catch {
       return false
@@ -61,7 +64,7 @@ export const gitService = {
     } catch {
       // Also try git rev-parse as fallback (works in subdirs)
       try {
-        await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dirPath })
+        await runGit(['rev-parse', '--git-dir'], { cwd: dirPath })
         isRepo = true
       } catch {
         isRepo = false
@@ -89,7 +92,13 @@ export const gitService = {
       }
     }
 
-    const args = ['log', '--branches', '--format=%H|%s|%an|%ae|%aI', '--no-merges']
+    const args = [
+      'log',
+      '--no-show-signature',
+      '--branches',
+      '--format=%H|%s|%an|%ae|%aI',
+      '--no-merges'
+    ]
 
     if (since) {
       args.push(`--since=${since}`)
@@ -103,7 +112,7 @@ export const gitService = {
     }
 
     try {
-      const { stdout } = await execFileAsync('git', args, {
+      const { stdout } = await runGit(args, {
         cwd: dirPath,
         maxBuffer: 10 * 1024 * 1024 // 10MB
       })
@@ -136,8 +145,8 @@ export const gitService = {
         ? { cwd: dirPath, encoding: 'utf8' as const }
         : { encoding: 'utf8' as const }
       const [nameResult, emailResult] = await Promise.all([
-        execFileAsync('git', ['config', 'user.name'], opts),
-        execFileAsync('git', ['config', 'user.email'], opts)
+        runGit(['config', 'user.name'], opts),
+        runGit(['config', 'user.email'], opts)
       ])
       return {
         name: nameResult.stdout.trim(),
@@ -210,8 +219,7 @@ export const gitService = {
         .filter((e) => e.length > 0)
     )
 
-    const db = getDb()
-    const allProjects = db.select().from(projects).all()
+    const allProjects = clientProjectService.getLocalProjects()
     const found = new Map<string, UnconfiguredAuthor>()
 
     for (const project of allProjects) {
@@ -224,9 +232,15 @@ export const gitService = {
       )
 
       try {
-        const { stdout } = await execFileAsync(
-          'git',
-          ['log', '--branches', '--no-merges', '--since=90 days ago', '--format=%ae|%an'],
+        const { stdout } = await runGit(
+          [
+            'log',
+            '--no-show-signature',
+            '--branches',
+            '--no-merges',
+            '--since=90 days ago',
+            '--format=%ae|%an'
+          ],
           { cwd: project.directoryPath, maxBuffer: 10 * 1024 * 1024 }
         )
         for (const line of stdout.trim().split('\n')) {
@@ -284,7 +298,7 @@ export const gitService = {
       }
     }
 
-    const allProjects = db.select().from(projects).all()
+    const allProjects = clientProjectService.getLocalProjects()
     const targetProjects = projectFilter
       ? allProjects.filter((p) => projectFilter.includes(p.id))
       : allProjects
@@ -366,63 +380,115 @@ export const gitService = {
    */
   correlateCommitsWithSessions(): number {
     const db = getDb()
-    const allSessions = db.select().from(sessions).all()
-
-    // Build a set of valid session IDs for stale detection
-    const validSessionIds = new Set(allSessions.map((s) => s.id))
 
     // Reset stale correlations (sessionId points to a deleted/recreated session)
-    const allCommits = db.select().from(gitCommits).all()
-    for (const commit of allCommits) {
-      if (commit.sessionId != null && !validSessionIds.has(commit.sessionId)) {
-        db.update(gitCommits).set({ sessionId: null }).where(eq(gitCommits.id, commit.id)).run()
-      }
+    db.update(gitCommits)
+      .set({ sessionId: null })
+      .where(
+        and(
+          isNotNull(gitCommits.sessionId),
+          notInArray(gitCommits.sessionId, db.select({ id: sessions.id }).from(sessions))
+        )
+      )
+      .run()
+
+    // Commits outside any session stay uncorrelated, so index sessions by project once
+    // instead of rescanning every session for every such commit.
+    const byProject = new Map<number | null, { id: number; startMs: number; endMs: number }[]>()
+    for (const s of db
+      .select({
+        id: sessions.id,
+        projectId: sessions.projectId,
+        startedAt: sessions.startedAt,
+        endedAt: sessions.endedAt
+      })
+      .from(sessions)
+      .where(activeSessionCondition)
+      .all()) {
+      const list = byProject.get(s.projectId) ?? []
+      list.push({
+        id: s.id,
+        startMs: new Date(s.startedAt).getTime(),
+        endMs: new Date(s.endedAt).getTime() + COMMIT_BUFFER_MS
+      })
+      byProject.set(s.projectId, list)
     }
 
-    // Re-fetch after cleanup
     const uncorrelated = db
-      .select()
+      .select({
+        id: gitCommits.id,
+        projectId: gitCommits.projectId,
+        committedAt: gitCommits.committedAt
+      })
       .from(gitCommits)
+      .where(isNull(gitCommits.sessionId))
       .all()
-      .filter((c) => c.sessionId == null)
     let correlated = 0
 
-    // 5-minute buffer: commits often happen shortly after a session ends
-    const BUFFER_MS = 5 * 60 * 1000
+    db.transaction((tx) => {
+      for (const commit of uncorrelated) {
+        const commitTime = new Date(commit.committedAt).getTime()
+        const matchingSession = byProject
+          .get(commit.projectId)
+          ?.find((s) => commitTime >= s.startMs && commitTime <= s.endMs)
 
-    for (const commit of uncorrelated) {
-      const commitTime = new Date(commit.committedAt).getTime()
-
-      const matchingSession = allSessions.find((s) => {
-        if (s.projectId !== commit.projectId) return false
-        const startMs = new Date(s.startedAt).getTime()
-        const endMs = new Date(s.endedAt).getTime() + BUFFER_MS
-        return commitTime >= startMs && commitTime <= endMs
-      })
-
-      if (matchingSession) {
-        db.update(gitCommits)
-          .set({ sessionId: matchingSession.id })
-          .where(eq(gitCommits.id, commit.id))
-          .run()
-        correlated++
+        if (matchingSession) {
+          tx.update(gitCommits)
+            .set({ sessionId: matchingSession.id })
+            .where(eq(gitCommits.id, commit.id))
+            .run()
+          correlated++
+        }
       }
-    }
+    })
 
     return correlated
   },
 
   /**
-   * Get commits correlated with a specific session.
+   * Read direct and applicable predecessor commits without moving their audit links.
    */
   getCommitsForSession(sessionId: number) {
     const db = getDb()
+    const session = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()
+    const relatedIds = new Set([sessionId])
+    if (session) {
+      // Set iteration visits newly discovered ancestors once, including merge diamonds.
+      for (const id of relatedIds) {
+        for (const edge of db
+          .select()
+          .from(sessionReplacements)
+          .where(eq(sessionReplacements.successorSessionId, id))
+          .all()) {
+          relatedIds.add(edge.predecessorSessionId)
+        }
+        const split = db
+          .select()
+          .from(sessionSplits)
+          .where(or(eq(sessionSplits.firstSessionId, id), eq(sessionSplits.secondSessionId, id)))
+          .get()
+        if (split) relatedIds.add(split.parentSessionId)
+      }
+    }
+    const range =
+      db
+        .select()
+        .from(sessionDerivations)
+        .where(eq(sessionDerivations.sessionId, sessionId))
+        .get() ?? session
+    const startMs = Date.parse(range?.startedAt ?? '')
+    const endMs = Date.parse(range?.endedAt ?? '') + COMMIT_BUFFER_MS
     return db
       .select()
       .from(gitCommits)
-      .where(eq(gitCommits.sessionId, sessionId))
+      .where(inArray(gitCommits.sessionId, [...relatedIds]))
       .orderBy(gitCommits.committedAt)
       .all()
+      .filter((commit) => {
+        if (commit.sessionId === sessionId) return true
+        const timestamp = Date.parse(commit.committedAt)
+        return commit.projectId === session?.projectId && timestamp >= startMs && timestamp <= endMs
+      })
   },
 
   /**
@@ -444,7 +510,7 @@ export const gitService = {
    */
   async getRemoteUrl(dirPath: string): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
+      const { stdout } = await runGit(['remote', 'get-url', 'origin'], {
         cwd: dirPath
       })
       const raw = stdout.trim()
@@ -463,9 +529,8 @@ export const gitService = {
    * Get the remote URL for a project by its DB ID.
    */
   async getRemoteUrlForProject(projectId: number): Promise<string | null> {
-    const db = getDb()
-    const project = db.select().from(projects).where(eq(projects.id, projectId)).get()
-    if (!project) return null
+    const project = clientProjectService.getProjectById(projectId)
+    if (!project?.directoryPath) return null
     return this.getRemoteUrl(project.directoryPath)
   },
 

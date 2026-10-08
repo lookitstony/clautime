@@ -1,5 +1,9 @@
+import { registerFolderSyncConflictHandlers } from './folder-sync-conflict-handlers'
 import log from 'electron-log/main.js'
+import { registerFolderSyncHandlers } from './folder-sync-handlers'
+import { registerMachineHandlers } from './machine-handlers'
 import { registerSettingsHandlers } from './settings-handlers'
+import { registerWorkspaceHandlers } from './workspace-handlers'
 import { registerSessionHandlers } from './session-handlers'
 import { registerDialogHandlers } from './dialog-handlers'
 import { registerClientProjectHandlers } from './client-project-handlers'
@@ -15,6 +19,10 @@ import { registerInvoiceHandlers } from './invoice-handlers'
 export function registerIpcHandlers(): void {
   log.info('Registering IPC handlers')
   registerSettingsHandlers()
+  registerMachineHandlers()
+  registerFolderSyncHandlers()
+  registerFolderSyncConflictHandlers()
+  registerWorkspaceHandlers()
   registerSessionHandlers()
   registerDialogHandlers()
   registerClientProjectHandlers()

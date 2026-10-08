@@ -35,3 +35,11 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Disposable renderer QA profile
+review-notes/qa-renderer-data/
+review-notes/parse-worker-qa-profile/
+review-notes/parse-worker-qa-build/
+review-notes/freeze-profile-shared/
+review-notes/freeze-test-profile/
+review-notes/freeze-final-qa-build/

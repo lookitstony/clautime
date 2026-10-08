@@ -1,0 +1,19 @@
+# Step 0 code review — Codex
+
+Verdict: request changes for the implemented retention/edit-preservation slice. This review does not treat the documented absence of transport, tombstones, or a full split/merge workflow as a newly discovered bug.
+
+## Findings
+
+1. **High — A saved time override is forgotten when measured time catches up.** `src/main/services/session-service.ts:1269` and `:1307`. The implementation infers edit ownership by comparing the session value with the latest detector baseline, then replaces that baseline on every reconciliation. Reproduction: import 5 minutes, explicitly edit the end/duration to 20 minutes, let activity reach 20 minutes, then append another 5 minutes. The last scan sees equality with the preceding baseline and changes the user override to 25 minutes. A durable per-field override/revision is needed; equality with a moving measurement cannot establish that the user never edited the field. The isolated reproduction failed with `expected 25 to be 20`.
+
+2. **High — Deleting a subagent source log removes its retained usage from the next incremental result.** `src/main/services/session-service.ts:382` and `:1275`, with model replacement at `:1325`. Incremental reconstruction includes subagent paths reported by the current parse; a deleted subagent file is absent from that list even though its raw rows are still in SQLite. The reconciler then replaces session/model totals using the incomplete reconstruction, and the legacy guard does not apply to sessions that already have a baseline. Reproduction: import a main log and a subagent log (200 input tokens combined), delete only the subagent log, append a human prompt to the main log, and scan. Input tokens fall to 100 while the captured subagent row still exists. Reconstruct all retained subagent streams associated with each main source, independently of current filesystem discovery. The path-selection weakness predates this patch, but it remains a direct failure of the retention behavior this slice implements; the new reconciliation does not protect against it.
+
+3. **Medium — One unresolved file rolls back unrelated files in the same scan/rebuild.** `src/main/services/session-service.ts:391`, `:506`, and `:1251`. Both callers put the entire batch in one transaction; a single legacy mismatch or ambiguous interval throws out of that transaction. A fixture with incomplete legacy file A and ordinary new file B rejects rebuilding and leaves B absent from active sessions despite having captured B's raw activity. Isolate per-file reconciliation (or savepoints) and retain an explicit unresolved status for A while committing independent B. The implementation notes already disclose that policy changes can block scans; this finding demonstrates the broader effect on unrelated files, including without any policy change.
+
+## Evidence and scope
+
+- Three focused reproduction tests fail against the implementation; details are in `folder-sync-step0-review-repros.json`.
+- Reproduction source is retained in `folder-sync-step0-review-repros.ts`. To run it, copy it to `src/main/services/session-step0-review-repros.test.ts`, then use Electron as Node with Vitest `--pool=threads --maxWorkers=1`. It only creates disposable temporary files/databases and has guarded cleanup. Remove that temporary test copy afterward; it intentionally asserts the missing correct behavior.
+- A suspected midnight-boundary issue was discarded: its setup did not produce the hypothesized detector output. It is not a finding.
+- Existing passing tests did not cover these three cases. No production data was read or changed. Application source was not edited during review.
+- Claude's review completed; see `folder-sync-step0-review-assessment.md` for the combined assessment and rejected suggestions. This file records Codex's own validated findings.

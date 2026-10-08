@@ -4,11 +4,23 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { join } from 'path'
+import { randomUUID } from 'node:crypto'
+import { eq, sql } from 'drizzle-orm'
+import { folderSyncSettings, syncChanges } from '../db/schema/folder-sync'
+import { recordLocalSyncChanges } from './folder-sync-store'
+import type { RevisionChange } from './folder-sync-revisions'
+import {
+  directoryRecordsAdapter,
+  getDirectoryRecordView,
+  planDirectoryRevision
+} from './folder-sync-directory-records'
+import { UNASSIGNED_CLIENT_SYNC_ID } from './folder-sync-builtin-client'
 import * as sessionsSchema from '../db/schema/sessions'
 import * as appSettingsSchema from '../db/schema/app-settings'
 import * as scanStateSchema from '../db/schema/scan-state'
 import * as clientsSchema from '../db/schema/clients'
 import * as projectsSchema from '../db/schema/projects'
+import { completeLocalProjectSetup, isLocalProjectSetupComplete } from './local-project-setup'
 
 const schema = {
   ...sessionsSchema,
@@ -41,7 +53,9 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  if (!isLocalProjectSetupComplete()) completeLocalProjectSetup([])
   // Clean all tables before each test
+  db.delete(folderSyncSettings).run()
   db.delete(sessionsSchema.sessions).run()
   db.delete(projectsSchema.projects).run()
   db.delete(clientsSchema.clients).run()
@@ -328,7 +342,7 @@ describe('ClientProjectService — Directory Mapping', () => {
 })
 
 describe('ClientProjectService — Session Attribution', () => {
-  it('rolls worktree sessions into the main project and removes empty automatic worktree projects', () => {
+  it('maps unassigned worktrees while preserving already assigned legacy project identities', () => {
     const client = clientProjectService.createClient({ name: 'Trident client' })
     const project = clientProjectService.createProject({
       clientId: client.id,
@@ -348,7 +362,7 @@ describe('ClientProjectService — Session Attribution', () => {
       .get()
     for (const [path, projectId] of [
       ['C:\\repo\\.claude\\worktrees\\feature', null],
-      [oldWorktree.directoryPath, oldWorktree.id]
+      [oldWorktree.directoryPath!, oldWorktree.id]
     ] as const) {
       db.insert(sessionsSchema.sessions)
         .values({
@@ -360,15 +374,11 @@ describe('ClientProjectService — Session Attribution', () => {
         })
         .run()
     }
-    expect(clientProjectService.attributeSessions()).toBe(2)
-    expect(
-      db
-        .select()
-        .from(sessionsSchema.sessions)
-        .all()
-        .every((s) => s.projectId === project.id && s.clientId === client.id)
-    ).toBe(true)
-    expect(db.select().from(projectsSchema.projects).all()).toHaveLength(1)
+    expect(clientProjectService.attributeSessions()).toBe(1)
+    const history = db.select().from(sessionsSchema.sessions).all()
+    expect(history[0]).toMatchObject({ projectId: project.id, clientId: client.id })
+    expect(history[1]).toMatchObject({ projectId: oldWorktree.id })
+    expect(db.select().from(projectsSchema.projects).all()).toHaveLength(2)
     expect(
       clientProjectService.autoCreateProject('C:\\repo\\.claude\\worktrees\\another')
     ).toBeNull()
@@ -466,6 +476,44 @@ describe('ClientProjectService — Auto-Detection', () => {
     const first = clientProjectService.getOrCreateUnassignedClient()
     const second = clientProjectService.getOrCreateUnassignedClient()
     expect(second.id).toBe(first.id)
+  })
+
+  const builtInRows = () =>
+    db
+      .select()
+      .from(clientsSchema.clients)
+      .where(eq(clientsSchema.clients.systemRole, 'unassigned'))
+      .all()
+
+  it('identifies the built-in by role, so a rename never creates a second one', () => {
+    const builtIn = clientProjectService.getOrCreateUnassignedClient()
+    clientProjectService.updateClient(builtIn.id, { name: 'Inbox' })
+    expect(clientProjectService.getOrCreateUnassignedClient()).toMatchObject({
+      id: builtIn.id,
+      name: 'Inbox'
+    })
+    const project = clientProjectService.autoCreateProject('C:\\apps\\AfterRename')!
+    expect(project.clientId).toBe(builtIn.id)
+    expect(builtInRows()).toHaveLength(1)
+  })
+
+  it('never promotes an ordinary client that happens to be named Unassigned', () => {
+    const ordinary = clientProjectService.createClient({ name: 'Unassigned' })
+    const builtIn = clientProjectService.getOrCreateUnassignedClient()
+    expect(builtIn.id).not.toBe(ordinary.id)
+    expect(builtIn.name).toBe('Unassigned 2')
+    expect(builtInRows().map((row) => row.id)).toEqual([builtIn.id])
+    expect(clientProjectService.getClientById(ordinary.id)).toMatchObject({ name: 'Unassigned' })
+  })
+
+  it('rejects deleting the built-in client instead of stranding auto-created projects', () => {
+    const builtIn = clientProjectService.getOrCreateUnassignedClient()
+    const project = clientProjectService.autoCreateProject('C:\\apps\\KeepsTarget')!
+    expect(() => clientProjectService.deleteClient(builtIn.id)).toThrow(
+      /built-in client for auto-created projects/
+    )
+    expect(clientProjectService.getClientById(builtIn.id)).toMatchObject({ isActive: true })
+    expect(clientProjectService.getProjectById(project.id)!.clientId).toBe(builtIn.id)
   })
 
   it('autoCreateProject creates project with correct fields', () => {
@@ -590,7 +638,7 @@ describe('ClientProjectService — purgeExcludedProjects', () => {
       .run()
   }
 
-  it('deletes untouched auto-created projects on excluded paths', () => {
+  it('retains project identities when a local path is excluded', () => {
     const keeper = clientProjectService.autoCreateProject('C:\\apps\\Keeper')!
     // Simulate a pre-exclusion auto-created row by inserting directly
     const unassigned = clientProjectService.getOrCreateUnassignedClient()
@@ -609,8 +657,8 @@ describe('ClientProjectService — purgeExcludedProjects', () => {
       .get()
 
     const deleted = clientProjectService.purgeExcludedProjects()
-    expect(deleted).toBe(1)
-    expect(clientProjectService.getProjectById(row.id)).toBeNull()
+    expect(deleted).toBe(0)
+    expect(clientProjectService.getProjectById(row.id)).not.toBeNull()
     // Non-excluded auto project untouched
     expect(clientProjectService.getProjectById(keeper.id)).not.toBeNull()
   })
@@ -663,5 +711,203 @@ describe('ClientProjectService — purgeExcludedProjects', () => {
     const deleted = clientProjectService.purgeExcludedProjects()
     expect(deleted).toBe(0)
     expect(clientProjectService.getProjectById(project.id)).not.toBeNull()
+  })
+})
+
+describe('ClientProjectService — Folder sync journal', () => {
+  // Journal rows are immutable, so each test uses its own workspace.
+  function connect(enabled = 0): string {
+    const workspaceId = randomUUID()
+    db.insert(folderSyncSettings)
+      .values({ slot: 1, workspaceId, folderPath: 'G:\\My Drive\\ClauTime', enabled })
+      .run()
+    return workspaceId
+  }
+  const journal = (workspaceId: string): RevisionChange[] =>
+    db
+      .select()
+      .from(syncChanges)
+      .where(eq(syncChanges.workspaceId, workspaceId))
+      .orderBy(sql`rowid`)
+      .all()
+      .map((row) => JSON.parse(row.changeJson) as RevisionChange)
+  const syncIdOf = (id: number): string =>
+    db
+      .select({ syncId: projectsSchema.projects.syncId })
+      .from(projectsSchema.projects)
+      .where(eq(projectsSchema.projects.id, id))
+      .get()!.syncId
+  function errorCode(action: () => unknown): unknown {
+    try {
+      action()
+    } catch (error) {
+      return (error as { code?: unknown }).code
+    }
+    throw new Error('Expected the action to fail')
+  }
+
+  it('records nothing and hard-deletes as before without a workspace connection', () => {
+    const before = db.select().from(syncChanges).all().length
+    const client = clientProjectService.createClient({ name: 'Local only' })
+    clientProjectService.autoCreateProject('C:\\apps\\LocalOnlyAuto')
+    clientProjectService.updateClient(client.id, { billableRate: 90 })
+    clientProjectService.deleteClient(client.id)
+    expect(clientProjectService.getClientById(client.id)).toBeNull()
+    expect(db.select().from(syncChanges).all()).toHaveLength(before)
+  })
+
+  it.each([
+    ['disabled or offline', 0],
+    ['enabled', 1]
+  ])(
+    'journals manual, moved and auto-detected directory records while transfer is %s',
+    (_label, enabled) => {
+      const workspaceId = connect(enabled)
+      const acme = clientProjectService.createClient({ name: 'Acme' })
+      const beta = clientProjectService.createClient({ name: 'Beta' })
+      const site = clientProjectService.createProject({
+        clientId: acme.id,
+        name: 'Site',
+        directoryPath: `C:\\apps\\JournalSite${enabled}`
+      })
+      clientProjectService.updateClient(acme.id, { billableRate: 125 })
+      const auto = clientProjectService.autoCreateProject(`C:\\apps\\JournalAuto${enabled}`)!
+      // Creating a project for an existing folder moves it to the new client.
+      clientProjectService.createProject({
+        clientId: beta.id,
+        name: 'Site v2',
+        directoryPath: `C:\\apps\\JournalSite${enabled}`
+      })
+
+      const changes = journal(workspaceId)
+      const roots = changes.filter((change) => !change.payload.fields.$present.parents.length)
+      expect(roots.map((change) => change.entityType)).toEqual([
+        'client',
+        'client',
+        'project',
+        'client',
+        'project'
+      ])
+      const unassigned = clientProjectService.getOrCreateUnassignedClient()
+      expect(roots[3].payload.fields.name.value).toBe(unassigned.name)
+      // The built-in travels under the reserved ID shared by every computer.
+      expect(roots[3].entityId).toBe(UNASSIGNED_CLIENT_SYNC_ID)
+      expect(roots[4]).toMatchObject({ entityId: syncIdOf(auto.id), dependencies: [roots[3].id] })
+      expect(roots[4].payload.fields.clientSyncId.value).toBe(roots[3].entityId)
+      const move = changes.at(-1)!
+      expect(move.entityId).toBe(syncIdOf(site.id))
+      expect(Object.keys(move.payload.fields).sort()).toEqual(['$present', 'clientSyncId', 'name'])
+      expect(move.dependencies).toContain(roots[1].id)
+      // Folder paths stay local; only the auto-detected project's name derives from one.
+      expect(JSON.stringify(changes)).not.toMatch(/apps|JournalSite/)
+      expect(
+        getDirectoryRecordView(db, workspaceId, 'client', changes[0].entityId).fields.billableRate
+          .value
+      ).toBe(125)
+    }
+  )
+
+  it('rolls back the business change when its journal entry cannot be recorded', () => {
+    const workspaceId = connect()
+    const client = clientProjectService.createClient({ name: 'Durable' })
+    const recorded = journal(workspaceId).length
+    sqlite.exec(
+      "CREATE TEMP TRIGGER fail_journal BEFORE INSERT ON sync_changes BEGIN SELECT RAISE(ABORT, 'journal unavailable'); END"
+    )
+    try {
+      expect(() => clientProjectService.createClient({ name: 'Lost' })).toThrow(/journal/)
+      expect(() => clientProjectService.updateClient(client.id, { name: 'Renamed' })).toThrow(
+        /journal/
+      )
+      expect(() => clientProjectService.autoCreateProject('C:\\apps\\JournalFails')).toThrow(
+        /journal/
+      )
+      expect(() => clientProjectService.deleteClient(client.id)).toThrow(/journal/)
+    } finally {
+      sqlite.exec('DROP TRIGGER temp.fail_journal')
+    }
+    expect(clientProjectService.getClients().map((row) => row.name)).toEqual(['Durable'])
+    expect(clientProjectService.getClientById(client.id)).toMatchObject({ isActive: true })
+    expect(clientProjectService.findProjectByDirectory('C:\\apps\\JournalFails')).toBeNull()
+    expect(journal(workspaceId)).toHaveLength(recorded)
+  })
+
+  it('deletes causally by deactivating, without cascading into projects or sessions', () => {
+    const client = clientProjectService.createClient({ name: 'Causal' })
+    const project = clientProjectService.createProject({
+      clientId: client.id,
+      name: 'Causal site',
+      directoryPath: 'C:\\apps\\CausalSite'
+    })
+    const now = new Date().toISOString()
+    const session = db
+      .insert(sessionsSchema.sessions)
+      .values({
+        projectPath: 'C:\\apps\\CausalSite',
+        startedAt: now,
+        endedAt: now,
+        durationMinutes: 45,
+        projectId: project.id,
+        clientId: client.id
+      })
+      .returning()
+      .get()
+    // Rows created before connecting are bootstrapped before their deletion is recorded.
+    const workspaceId = connect()
+
+    clientProjectService.deleteProject(project.id)
+    expect(clientProjectService.getProjectById(project.id)).toMatchObject({
+      isActive: false,
+      directoryPath: 'C:\\apps\\CausalSite'
+    })
+    expect(clientProjectService.getExcludedProjectIds()).toEqual([project.id])
+    clientProjectService.deleteClient(client.id)
+    expect(clientProjectService.getClientById(client.id)).toMatchObject({ isActive: false })
+    expect(db.select().from(sessionsSchema.sessions).all()).toEqual([session])
+    expect(getDirectoryRecordView(db, workspaceId, 'project', syncIdOf(project.id)).lifecycle).toBe(
+      'deleted'
+    )
+    expect(
+      errorCode(() => clientProjectService.updateProject(project.id, { name: 'Back again' }))
+    ).toBe('SYNC_CONFLICT')
+    expect(clientProjectService.getProjectById(project.id)!.name).toBe('Causal site')
+  })
+
+  it('keeps folder changes local and blocks only edits of conflicted fields', () => {
+    const workspaceId = connect(1)
+    const client = clientProjectService.createClient({ name: 'Conflicted' })
+    const project = clientProjectService.createProject({
+      clientId: client.id,
+      name: 'Rates',
+      hourlyRate: 100,
+      directoryPath: 'C:\\apps\\RatesOld'
+    })
+    const recorded = journal(workspaceId).length
+    clientProjectService.updateProject(project.id, { directoryPath: 'D:\\moved\\Rates' })
+    expect(clientProjectService.getProjectById(project.id)!.directoryPath).toBe('D:\\moved\\Rates')
+    expect(journal(workspaceId)).toHaveLength(recorded)
+
+    const syncId = syncIdOf(project.id)
+    const heads = getDirectoryRecordView(db, workspaceId, 'project', syncId).heads
+    // Two computers changed the rate concurrently from the same observed heads.
+    const concurrent = [150, 175].map((hourlyRate) =>
+      planDirectoryRevision(db, workspaceId, {
+        id: randomUUID(),
+        entityType: 'project',
+        entityId: syncId,
+        action: { type: 'edit', observedHeads: heads, values: { hourlyRate } }
+      })
+    )
+    recordLocalSyncChanges(db, workspaceId, concurrent, directoryRecordsAdapter)
+
+    expect(
+      errorCode(() => clientProjectService.updateProject(project.id, { hourlyRate: 160 }))
+    ).toBe('SYNC_CONFLICT')
+    expect(clientProjectService.getProjectById(project.id)!.hourlyRate).toBe(100)
+    const renamed = clientProjectService.updateProject(project.id, { name: 'Rates v2' })
+    expect(renamed).toMatchObject({ name: 'Rates v2', hourlyRate: 100 })
+    const current = getDirectoryRecordView(db, workspaceId, 'project', syncId)
+    expect(current.conflicts).toEqual(['hourlyRate'])
+    expect(current.fields.name.value).toBe('Rates v2')
   })
 })

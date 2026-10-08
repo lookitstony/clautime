@@ -1,8 +1,9 @@
 import { open, readdir } from 'node:fs/promises'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
-import log from 'electron-log/main.js'
+import log from 'electron-log'
 import { readJsonlLines } from './line-reader'
+import { CodexIdentityCapture } from './codex-activity-identity'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from './types'
 
 /**
@@ -218,6 +219,7 @@ function readUsageTotals(info: Record<string, unknown> | undefined): CodexUsageT
  * Returns null for unreadable files; skips malformed/unknown lines with a log.
  */
 export async function parseCodexSessionFile(filePath: string): Promise<ParsedSessionData | null> {
+  const identityCapture = new CodexIdentityCapture()
   const messages: ParsedMessage[] = []
   const progressTimestamps: string[] = []
   const totalUsage = emptyTokenUsage()
@@ -268,9 +270,11 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
       raw = JSON.parse(line)
     } catch {
       log.warn(`Malformed JSONL line in ${filePath}, skipping`)
+      identityCapture.invalidate()
       continue
     }
 
+    const activityIdentity = identityCapture.observe(raw)
     const timestamp = (raw.timestamp as string) || ''
     const envelopeType = raw.type as string | undefined
     const payload = raw.payload as Record<string, unknown> | undefined
@@ -363,7 +367,8 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
             parentUuid: null,
             isToolResult: false,
             hasToolUse: false,
-            toolNames: []
+            toolNames: [],
+            activityIdentity
           })
         } else if (role === 'assistant') {
           messages.push({
@@ -378,7 +383,8 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
             parentUuid: null,
             isToolResult: false,
             hasToolUse: false,
-            toolNames: []
+            toolNames: [],
+            activityIdentity
           })
           lastAssistantIdx = messages.length - 1
           if (pendingUsage) {
@@ -410,7 +416,8 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
           parentUuid: null,
           isToolResult: false,
           hasToolUse: true,
-          toolNames: [toolName]
+          toolNames: [toolName],
+          activityIdentity
         })
         lastAssistantIdx = messages.length - 1
         if (pendingUsage) {
@@ -433,7 +440,8 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
           parentUuid: null,
           isToolResult: true,
           hasToolUse: false,
-          toolNames: []
+          toolNames: [],
+          activityIdentity
         })
         continue
       }
@@ -456,6 +464,10 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
   progressTimestamps.sort()
 
   const timestamps = messages.filter((m) => m.timestamp).map((m) => m.timestamp)
+  const codexActivityEvidence = identityCapture.finish()
+  if (codexActivityEvidence.status === 'unavailable') {
+    for (const message of messages) message.activityIdentity = null
+  }
 
   return {
     sessionId,
@@ -473,7 +485,8 @@ export async function parseCodexSessionFile(filePath: string): Promise<ParsedSes
     messageCount: messages.length,
     summary: null,
     subagentMessages: [],
-    subagentProgressTimestamps: []
+    subagentProgressTimestamps: [],
+    codexActivityEvidence
   }
 }
 
@@ -542,13 +555,13 @@ export async function tailReadCodexState(filePath: string): Promise<CodexLiveSta
         } else if (t === 'function_call_output' || t === 'custom_tool_call_output') {
           state = 'processing'
         } else if (t === 'message' && payload.role === 'assistant') {
-          state = 'idle'
+          state = payload.phase === 'commentary' ? 'processing' : 'idle'
         }
         continue
       }
       if (obj.type === 'event_msg') {
         const t = payload.type as string
-        if (t === 'agent_message') state = 'idle'
+        if (t === 'agent_message') state = payload.phase === 'commentary' ? 'processing' : 'idle'
         else if (t === 'task_complete' || t === 'turn_aborted') state = 'idle'
         // token_count / reasoning deltas don't change turn state
       }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { reportScanErrors } from '@/lib/scan-errors'
 import type {
   Session,
   SessionFilters,
@@ -37,11 +38,34 @@ export function usePromptTimings(sessionId: number | null) {
   })
 }
 
-export function useSessions(filters?: SessionFilters) {
+export function useSessions(filters?: SessionFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['sessions', 'list', filters],
-    queryFn: () => fetchSessions(filters)
+    queryFn: () => fetchSessions(filters),
+    enabled: options?.enabled
   })
+}
+
+/** A save refused because the record changed after its editor opened (folder sync). */
+export function isStaleEditError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    ((error as Error & { code?: string }).code === 'SYNC_STALE_EDIT' ||
+      error.message.includes('SYNC_STALE_EDIT'))
+  )
+}
+
+/**
+ * Fresh single read when an editor opens: it carries the syncVersion that session lists omit.
+ * Null when unavailable; a connected save without a version is then refused, never applied.
+ */
+export async function fetchSessionForEdit(id: number): Promise<Session | null> {
+  try {
+    const result = await window.api.sessions.getById(id)
+    return result.success ? result.data : null
+  } catch {
+    return null
+  }
 }
 
 export function useUpdateSession() {
@@ -49,11 +73,16 @@ export function useUpdateSession() {
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: UpdateSession }) => {
       const result = await window.api.sessions.update(id, data)
-      if (!result.success) throw new Error(result.error.message)
+      if (!result.success)
+        throw Object.assign(new Error(result.error.message), { code: result.error.code })
       return result.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    },
+    onError: (error) => {
+      // Refresh what the user sees; open editors keep their drafts and captured versions.
+      if (isStaleEditError(error)) queryClient.invalidateQueries({ queryKey: ['sessions'] })
     }
   })
 }
@@ -61,26 +90,43 @@ export function useUpdateSession() {
 export function useDeleteSession() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id: number) => {
-      const result = await window.api.sessions.delete(id)
+    mutationFn: async ({
+      id,
+      expectedSyncVersion
+    }: {
+      id: number
+      expectedSyncVersion?: string
+    }) => {
+      const result = await window.api.sessions.delete(id, expectedSyncVersion)
       if (!result.success) throw new Error(result.error.message)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
-    }
+      queryClient.invalidateQueries({ queryKey: ['live'] })
+    },
+    onError: (error) => toast.error(error.message)
   })
 }
 
 export function useSplitSession() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, splitAt }: { id: number; splitAt: string }) => {
-      const result = await window.api.sessions.split(id, splitAt)
+    mutationFn: async ({
+      id,
+      splitAt,
+      expectedSyncVersion
+    }: {
+      id: number
+      splitAt: string
+      expectedSyncVersion?: string
+    }) => {
+      const result = await window.api.sessions.split(id, splitAt, expectedSyncVersion)
       if (!result.success) throw new Error(result.error.message)
       return result.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['live'] })
     }
   })
 }
@@ -145,6 +191,7 @@ export function useScanSessions() {
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['git'] })
       }, 3000)
+      if (reportScanErrors(result.errors)) return
       const parts: string[] = [`${result.newSessions} sessions found`]
       if (result.attributedCount > 0) {
         parts.push(`${result.attributedCount} attributed`)

@@ -9,7 +9,10 @@ export function mainProjectPath(directory: string): string {
   const conventional = normalized
     .replace(/\\/g, '/')
     .match(/^(.*?)[/]+(?:\.?claude\/worktrees|\.?review[-/]worktrees|pipes)\//i)
-  if (conventional) return normalizePath(conventional[1])
+  if (conventional) {
+    const parent = conventional[1] || '/'
+    return normalizePath(/^[a-z]:$/i.test(parent) ? `${parent}/` : parent)
+  }
 
   let current = normalized
   while (true) {
@@ -17,7 +20,8 @@ export function mainProjectPath(directory: string): string {
     try {
       if (statSync(marker).isDirectory()) return normalized
       const gitdir = readFileSync(marker, 'utf8').match(/^gitdir:\s*(.+)\s*$/m)?.[1]
-      if (!gitdir) return normalized
+      // A network gitdir would make this read connect out (and send Windows credentials).
+      if (!gitdir || /^(?:\\\\|\/\/)/.test(gitdir.trim())) return normalized
       const adminDir = resolve(current, gitdir.trim())
       const commonDir = resolve(adminDir, readFileSync(join(adminDir, 'commondir'), 'utf8').trim())
       if (commonDir !== adminDir && /[/\\]\.git$/i.test(commonDir)) {

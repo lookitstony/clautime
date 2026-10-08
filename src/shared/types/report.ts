@@ -93,6 +93,7 @@ export interface ReportResult {
   format: ReportFormat
   filters: ReportFilters
   generatedAt: string
+  reportingTimeZone?: string
   summary: ReportSummary
   sessionBreakdown?: SessionLineItem[]
   dailySummary?: DailySummaryItem[]

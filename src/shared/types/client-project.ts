@@ -14,6 +14,13 @@ export interface Client {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  /**
+   * Built-in role; identifies the Unassigned client even after it is renamed.
+   * Absent on older fixtures, null for user-created clients.
+   */
+  systemRole?: 'unassigned' | null
+  /** Edit freshness token while folder sync is connected; absent otherwise. */
+  syncVersion?: string
 }
 
 /** Data for creating a new client. */
@@ -36,6 +43,8 @@ export interface UpdateClient {
   billableRate?: number | null
   email?: string | null
   isActive?: boolean
+  /** syncVersion captured when the editor opened; never a stored field. */
+  expectedSyncVersion?: string
 }
 
 /** Project row shape matching the projects table schema. */
@@ -49,11 +58,14 @@ export interface Project {
   stageName: string | null
   /** Per-project hourly rate in dollars. Null = use the client's rate. */
   hourlyRate: number | null
-  directoryPath: string
+  /** Folder on this computer; null when the project has no local mapping. */
+  directoryPath: string | null
   isBillable: boolean
   isActive: boolean
   createdAt: string
   updatedAt: string
+  /** Edit freshness token while folder sync is connected; absent otherwise. */
+  syncVersion?: string
 }
 
 /** Data for creating a new project. */
@@ -73,10 +85,12 @@ export interface UpdateProject {
   invoiceName?: string | null
   stageName?: string | null
   hourlyRate?: number | null
-  directoryPath?: string
+  directoryPath?: string | null
   isBillable?: boolean
   isActive?: boolean
   clientId?: number
+  /** syncVersion captured when the editor opened; never a stored field. */
+  expectedSyncVersion?: string
 }
 
 /** The 8 fixed project colors for visual identification. */
@@ -90,3 +104,20 @@ export const CLIENT_COLORS = [
   'var(--project-7)',
   'var(--project-8)'
 ] as const
+
+/** The `.clautime` project ID file in this computer's folder for a project. */
+export interface ProjectMarkerStatus {
+  /** The folder is a main Git checkout, so the Git setting applies. */
+  gitRepo: boolean
+  markerPresent: boolean
+  /** Not listed in `.git/info/exclude`, so Git can track it. */
+  keepInGit: boolean
+}
+
+/** A folder linked, moved or found to be a copy through its `.clautime` file. */
+export type MarkedFolderEvent =
+  | { kind: 'linked'; projectName: string; directoryPath: string }
+  | { kind: 'moved'; projectName: string; directoryPath: string; previousPath: string }
+  | { kind: 'copy'; projectName: string; directoryPath: string; currentPath: string }
+  /** An unmarked folder with the same git history as one project; linked only if accepted. */
+  | { kind: 'suggested'; projectId: number; projectName: string; directoryPath: string }

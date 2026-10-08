@@ -43,7 +43,9 @@ beforeEach(() => {
         .fn()
         .mockResolvedValue({ success: true, data: { ...mockProject, name: 'Updated' } }),
       delete: vi.fn(),
-      attributeSessions: vi.fn()
+      attributeSessions: vi.fn(),
+      getMarkerStatus: vi.fn().mockResolvedValue({ success: true, data: null }),
+      setMarkerInGit: vi.fn().mockResolvedValue({ success: true, data: null })
     },
     dialog: {
       openFolder: vi.fn().mockResolvedValue({ success: true, data: 'C:\\selected\\path' })
@@ -52,6 +54,40 @@ beforeEach(() => {
 })
 
 describe('ProjectForm', () => {
+  it('edits a project without requiring a folder on this computer', async () => {
+    const user = userEvent.setup()
+    render(
+      <ProjectForm
+        open={true}
+        onClose={vi.fn()}
+        clientId={1}
+        project={{ ...mockProject, directoryPath: null }}
+      />,
+      { wrapper: createWrapper() }
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(window.api.projects.update).toHaveBeenCalled())
+    expect(vi.mocked(window.api.projects.update).mock.calls[0][1]).not.toHaveProperty(
+      'directoryPath'
+    )
+  })
+
+  it('disconnects the local folder without deleting the project', async () => {
+    const user = userEvent.setup()
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={mockProject} />, {
+      wrapper: createWrapper()
+    })
+    await user.clear(screen.getByLabelText('Folder on this computer'))
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(window.api.projects.update).toHaveBeenCalledWith(
+        mockProject.id,
+        expect.objectContaining({ directoryPath: null })
+      )
+    )
+    expect(window.api.projects.delete).not.toHaveBeenCalled()
+  })
+
   it('renders create mode with empty fields', () => {
     render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={null} />, {
       wrapper: createWrapper()
@@ -66,6 +102,30 @@ describe('ProjectForm', () => {
     })
     expect(screen.getByText('Edit Project')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Project name')).toHaveValue('ClauTime')
+  })
+
+  it('keeps the ID file in Git when the toggle is turned on for a Git folder', async () => {
+    vi.mocked(window.api.projects.getMarkerStatus).mockResolvedValue({
+      success: true,
+      data: { gitRepo: true, markerPresent: true, keepInGit: false }
+    })
+    const user = userEvent.setup()
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={mockProject} />, {
+      wrapper: createWrapper()
+    })
+    await user.click(await screen.findByRole('switch', { name: /Keep ID file in Git/ }))
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(window.api.projects.setMarkerInGit).toHaveBeenCalledWith(mockProject.id, true)
+    )
+  })
+
+  it('hides the Git toggle for folders that are not Git checkouts', async () => {
+    render(<ProjectForm open={true} onClose={vi.fn()} clientId={1} project={mockProject} />, {
+      wrapper: createWrapper()
+    })
+    await waitFor(() => expect(window.api.projects.getMarkerStatus).toHaveBeenCalled())
+    expect(screen.queryByRole('switch', { name: /Keep ID file in Git/ })).toBeNull()
   })
 
   it('Browse button calls dialog.openFolder and populates path', async () => {

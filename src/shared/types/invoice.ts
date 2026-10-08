@@ -5,6 +5,23 @@ export interface StripeCustomerInfo {
   name: string
 }
 
+export interface PendingInvoiceOperation {
+  operationId: string
+  clientName: string
+  accountId: string
+  testMode: boolean
+  periodStart: string | null
+  periodEnd: string | null
+  amountCents: number
+  providerInvoiceId: string | null
+  /**
+   * 'rejected': Stripe definitely refused a step, so resuming the unchangeable request cannot
+   * succeed; cancel it (proof required) and create a new draft. 'unfinished': resume it.
+   */
+  state: 'unfinished' | 'rejected' | 'conflict'
+  rejectionMessage: string | null
+}
+
 /** A single line item for an invoice */
 export interface InvoiceLineItem {
   description: string
@@ -18,6 +35,11 @@ export interface InvoiceLineItem {
 
 /** Request to create a draft invoice */
 export interface CreateInvoiceRequest {
+  /**
+   * UUID generated once per draft attempt and reused for double-clicks and retries.
+   * Required: the same ID with a changed draft is rejected rather than creating anew.
+   */
+  operationId: string
   clientId: number
   lineItems: InvoiceLineItem[]
   /** Optional memo/note on the invoice */
@@ -35,6 +57,7 @@ export interface CreateInvoiceRequest {
     lineDate?: string
     durationMinutes?: number
     sessionIds?: number[]
+    billedRanges?: InvoiceBillingRange[]
   }>
 }
 
@@ -83,6 +106,15 @@ export interface GenerateLineItemsRequest {
   projectId?: number
 }
 
+/** Local billed-work snapshot; ranges survive edits to the invoice preview. */
+export interface InvoiceBillingRange {
+  sessionId: number
+  projectId: number | null
+  clientId: number | null
+  startedAt: string
+  endedAt: string
+}
+
 /** A generated line item (before sending to Stripe) */
 export interface GeneratedLineItem {
   /** The calendar date this covers (YYYY-MM-DD) */
@@ -95,6 +127,8 @@ export interface GeneratedLineItem {
   durationMinutes: number
   /** Session IDs that compose this line item */
   sessionIds: number[]
+  /** Frozen eligible intervals, preserved while the user edits the preview. */
+  billedRanges?: InvoiceBillingRange[]
   /** Project name(s) for display */
   projectNames: string[]
 }

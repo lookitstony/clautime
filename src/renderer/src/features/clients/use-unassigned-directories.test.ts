@@ -32,6 +32,24 @@ beforeEach(() => {
 })
 
 describe('useUnassignedDirectories', () => {
+  it('keeps already assigned history out of unassigned folders after a move or disconnect', () => {
+    mockUseSessions.mockReturnValue(
+      mockQuery([
+        { projectPath: 'C:/old', projectId: 1 },
+        { projectPath: 'D:/other', projectId: 2 },
+        { projectPath: 'C:/old', projectId: null }
+      ]) as any
+    )
+    mockUseProjects.mockReturnValue(
+      mockQuery([
+        { id: 1, clientId: 1, directoryPath: 'C:/new' },
+        { id: 2, clientId: 1, directoryPath: null }
+      ]) as any
+    )
+    const { result } = renderHook(() => useUnassignedDirectories())
+    expect(result.current).toEqual([{ path: 'C:/old', name: 'old', sessionCount: 1 }])
+  })
+
   it('returns empty array when no sessions', () => {
     mockUseSessions.mockReturnValue(mockQuery([]) as any)
     mockUseProjects.mockReturnValue(mockQuery([]) as any)
@@ -117,6 +135,40 @@ describe('useUnassignedDirectories', () => {
     const { result } = renderHook(() => useUnassignedDirectories())
     expect(result.current[0].name).toBe('Many')
     expect(result.current[1].name).toBe('Few')
+  })
+
+  it('treats a renamed built-in Unassigned client by role, not by name', () => {
+    mockUseSessions.mockReturnValue(
+      mockQuery([
+        { projectPath: 'C:/inbox', projectId: 1 },
+        { projectPath: 'C:/real', projectId: 2 }
+      ]) as any
+    )
+    mockUseProjects.mockReturnValue(
+      mockQuery([
+        { id: 1, clientId: 7, directoryPath: 'C:/inbox' },
+        { id: 2, clientId: 8, directoryPath: 'C:/real' }
+      ]) as any
+    )
+    mockUseClients.mockReturnValue(
+      mockQuery([
+        { id: 7, name: 'Inbox', systemRole: 'unassigned' },
+        // A user client that merely has the old built-in name is an ordinary client.
+        { id: 8, name: 'Unassigned', systemRole: null }
+      ]) as any
+    )
+    const { result } = renderHook(() => useUnassignedDirectories())
+    expect(result.current).toEqual([{ path: 'C:/inbox', name: 'inbox', sessionCount: 1 }])
+  })
+
+  it('falls back to the name only for older client payloads without a role', () => {
+    mockUseSessions.mockReturnValue(mockQuery([{ projectPath: 'C:/inbox', projectId: 1 }]) as any)
+    mockUseProjects.mockReturnValue(
+      mockQuery([{ id: 1, clientId: 7, directoryPath: 'C:/inbox' }]) as any
+    )
+    mockUseClients.mockReturnValue(mockQuery([{ id: 7, name: 'Unassigned' }]) as any)
+    const { result } = renderHook(() => useUnassignedDirectories())
+    expect(result.current).toHaveLength(1)
   })
 
   it('matches projects case-insensitively with backslash normalization', () => {

@@ -40,6 +40,12 @@ import {
 import { useClients } from '../clients/use-clients'
 import { useProjects } from '../clients/use-projects'
 import { usePresentationMode } from '../settings/use-presentation-mode'
+import { useWorkspacePolicy } from '../settings/use-reporting-time-zone'
+import {
+  calendarDate,
+  calendarDayStart,
+  calendarDayRange
+} from '../../../../shared/reporting-calendar'
 import { useGenerateReport } from './use-reports'
 import { computeHumanMinutes } from '../../../../shared/earnings'
 import type {
@@ -53,15 +59,17 @@ import type {
 
 type ReportDatePreset = DatePreset | 'last-month' | 'custom' | 'all-time'
 
-function getLastMonthRange(): { startDate: string; endDate: string } {
-  const now = new Date()
-  const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+function getLastMonthRange(timeZone?: string): { startDate: string; endDate: string } {
+  const now = calendarDate(new Date(), timeZone)
+  const firstDayLastMonth = calendarDayStart(now.getFullYear(), now.getMonth() - 1, 1, timeZone)
+  const lastDayLastMonth = new Date(
+    calendarDayStart(now.getFullYear(), now.getMonth(), 1, timeZone).getTime() - 1
+  )
   return { startDate: firstDayLastMonth.toISOString(), endDate: lastDayLastMonth.toISOString() }
 }
 
-function formatTimeOnly(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString([], {
+function formatTimeOnly(isoString: string, timeZone?: string): string {
+  return calendarDate(isoString, timeZone).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
@@ -112,7 +120,13 @@ function groupByClientAndProject(items: SessionLineItem[]): ClientGroup[] {
     .sort((a, b) => b.totalDuration - a.totalDuration)
 }
 
-function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.JSX.Element {
+function SessionBreakdownTable({
+  items,
+  timeZone
+}: {
+  items: SessionLineItem[]
+  timeZone?: string
+}): React.JSX.Element {
   const clientGroups = useMemo(() => groupByClientAndProject(items), [items])
   const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set())
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
@@ -230,9 +244,9 @@ function SessionBreakdownTable({ items }: { items: SessionLineItem[] }): React.J
                                 {item.date}
                               </td>
                               <td className="whitespace-nowrap px-3 py-1.5 text-right font-mono">
-                                {formatTimeOnly(item.startedAt)}
+                                {formatTimeOnly(item.startedAt, timeZone)}
                                 {'\u2013'}
-                                {formatTimeOnly(item.endedAt)}
+                                {formatTimeOnly(item.endedAt, timeZone)}
                               </td>
                               <td className="px-3 py-1.5 text-right font-mono text-[var(--accent)]">
                                 {formatDuration(item.durationMinutes)}
@@ -723,8 +737,14 @@ function reportToMarkdown(
   includeBilling = true
 ): string {
   const lines: string[] = []
-  const startDate = new Date(report.filters.startDate).toLocaleDateString()
-  const endDate = new Date(report.filters.endDate).toLocaleDateString()
+  const startDate = calendarDate(
+    report.filters.startDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
+  const endDate = calendarDate(
+    report.filters.endDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
   lines.push(`# Time Report: ${startDate} \u2013 ${endDate}`)
   lines.push(`Generated: ${new Date(report.generatedAt).toLocaleString()}`)
   lines.push('')
@@ -751,7 +771,7 @@ function reportToMarkdown(
         lines.push('|------|------|----------|---------|--------|--------|')
         for (const item of project.sessions) {
           lines.push(
-            `| ${item.date} | ${formatTimeOnly(item.startedAt)}\u2013${formatTimeOnly(item.endedAt)} | ${formatDuration(item.durationMinutes)} | ${item.promptCount} | ${formatCompactNumber(item.inputTokens + item.outputTokens)} | ${item.source === 'auto' ? 'Auto' : 'Manual'} |`
+            `| ${item.date} | ${formatTimeOnly(item.startedAt, report.reportingTimeZone)}\u2013${formatTimeOnly(item.endedAt, report.reportingTimeZone)} | ${formatDuration(item.durationMinutes)} | ${item.promptCount} | ${formatCompactNumber(item.inputTokens + item.outputTokens)} | ${item.source === 'auto' ? 'Auto' : 'Manual'} |`
           )
         }
       }
@@ -854,8 +874,8 @@ function reportToCsv(report: ReportResult): string {
         item.date,
         item.projectName,
         item.clientName ?? '',
-        formatTimeOnly(item.startedAt),
-        formatTimeOnly(item.endedAt),
+        formatTimeOnly(item.startedAt, report.reportingTimeZone),
+        formatTimeOnly(item.endedAt, report.reportingTimeZone),
         String(item.durationMinutes),
         String(item.promptCount),
         String(item.inputTokens),
@@ -923,8 +943,14 @@ function reportToHtml(
   aiSummary?: string | null,
   includeBilling = true
 ): string {
-  const startDate = new Date(report.filters.startDate).toLocaleDateString()
-  const endDate = new Date(report.filters.endDate).toLocaleDateString()
+  const startDate = calendarDate(
+    report.filters.startDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
+  const endDate = calendarDate(
+    report.filters.endDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
   const s = report.summary
 
   let tableHtml = ''
@@ -932,7 +958,7 @@ function reportToHtml(
   if (report.sessionBreakdown) {
     tableHtml = `<table><thead><tr><th>Date</th><th>Project</th><th>Client</th><th>Time</th><th>Duration</th><th>Prompts</th><th>Tokens</th><th>Source</th></tr></thead><tbody>`
     for (const item of report.sessionBreakdown) {
-      tableHtml += `<tr><td>${item.date}</td><td>${item.projectName}</td><td>${item.clientName ?? '\u2014'}</td><td>${formatTimeOnly(item.startedAt)}\u2013${formatTimeOnly(item.endedAt)}</td><td><strong>${formatDuration(item.durationMinutes)}</strong></td><td>${item.promptCount}</td><td>${formatCompactNumber(item.inputTokens + item.outputTokens)}</td><td>${item.source}</td></tr>`
+      tableHtml += `<tr><td>${item.date}</td><td>${item.projectName}</td><td>${item.clientName ?? '\u2014'}</td><td>${formatTimeOnly(item.startedAt, report.reportingTimeZone)}\u2013${formatTimeOnly(item.endedAt, report.reportingTimeZone)}</td><td><strong>${formatDuration(item.durationMinutes)}</strong></td><td>${item.promptCount}</td><td>${formatCompactNumber(item.inputTokens + item.outputTokens)}</td><td>${item.source}</td></tr>`
     }
     tableHtml += '</tbody></table>'
   }
@@ -1073,8 +1099,14 @@ function buildTimesheetRows(report: ReportResult): TimesheetRow[] {
       }
     }
   } else if (report.periodSummary) {
-    const startDate = new Date(report.filters.startDate).toLocaleDateString()
-    const endDate = new Date(report.filters.endDate).toLocaleDateString()
+    const startDate = calendarDate(
+      report.filters.startDate,
+      report.reportingTimeZone
+    ).toLocaleDateString()
+    const endDate = calendarDate(
+      report.filters.endDate,
+      report.reportingTimeZone
+    ).toLocaleDateString()
     const dateLabel = `${startDate} \u2013 ${endDate}`
     for (const p of report.periodSummary.projects) {
       agg.set(key(dateLabel, p.clientName ?? '\u2014', p.projectName), {
@@ -1100,8 +1132,14 @@ function timesheetToMarkdown(
   aiSummary?: string | null,
   includeBilling = true
 ): string {
-  const startDate = new Date(report.filters.startDate).toLocaleDateString()
-  const endDate = new Date(report.filters.endDate).toLocaleDateString()
+  const startDate = calendarDate(
+    report.filters.startDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
+  const endDate = calendarDate(
+    report.filters.endDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
   const s = report.summary
   const lines: string[] = []
   lines.push(`# Timesheet: ${startDate} \u2013 ${endDate}`)
@@ -1150,8 +1188,14 @@ function timesheetToHtml(
   aiSummary?: string | null,
   includeBilling = true
 ): string {
-  const startDate = new Date(report.filters.startDate).toLocaleDateString()
-  const endDate = new Date(report.filters.endDate).toLocaleDateString()
+  const startDate = calendarDate(
+    report.filters.startDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
+  const endDate = calendarDate(
+    report.filters.endDate,
+    report.reportingTimeZone
+  ).toLocaleDateString()
   const s = report.summary
   let totalHours = 0
   let tableHtml =
@@ -1619,6 +1663,8 @@ function buildReportFilename(
 }
 
 export function ReportsPage(): React.JSX.Element {
+  const workspacePolicy = useWorkspacePolicy()
+  const timeZone = workspacePolicy.data?.policy.reportingTimeZone
   const [datePreset, setDatePreset] = useState<ReportDatePreset>('this-week')
   const [format, setFormat] = useState<ReportFormat>('session-breakdown')
   const [clientId, setClientId] = useState<string>('__all__')
@@ -1653,16 +1699,16 @@ export function ReportsPage(): React.JSX.Element {
         endDate: new Date().toISOString()
       }
     }
-    if (datePreset === 'last-month') return getLastMonthRange()
+    if (datePreset === 'last-month') return getLastMonthRange(timeZone)
     if (datePreset === 'custom') {
       if (!customStart || !customEnd) return null
       return {
-        startDate: new Date(customStart + 'T00:00:00').toISOString(),
-        endDate: new Date(customEnd + 'T23:59:59.999').toISOString()
+        startDate: calendarDayRange(customStart, timeZone).startDate,
+        endDate: calendarDayRange(customEnd, timeZone).endDate
       }
     }
-    return getDateRangeForPreset(datePreset as DatePreset, weekStartDay)
-  }, [datePreset, customStart, customEnd, weekStartDay])
+    return getDateRangeForPreset(datePreset as DatePreset, weekStartDay, timeZone)
+  }, [datePreset, customStart, customEnd, weekStartDay, timeZone])
 
   const handleGenerate = useCallback(() => {
     if (!dateRange) return
@@ -1816,7 +1862,12 @@ export function ReportsPage(): React.JSX.Element {
             size="sm"
             className="h-8 bg-[var(--accent)] text-white hover:brightness-[1.15]"
             onClick={handleGenerate}
-            disabled={generateMutation.isPending || !dateRange}
+            disabled={
+              generateMutation.isPending ||
+              !dateRange ||
+              workspacePolicy.isPending ||
+              workspacePolicy.isError
+            }
           >
             {generateMutation.isPending ? (
               <Loader2 className="mr-1 h-3 w-3 animate-spin" />
@@ -1825,6 +1876,9 @@ export function ReportsPage(): React.JSX.Element {
             )}
             Generate
           </Button>
+          {workspacePolicy.isError && (
+            <p role="alert">Unable to load tracking policy. {workspacePolicy.error.message}</p>
+          )}
 
           {report && (
             <Button
@@ -1885,7 +1939,10 @@ export function ReportsPage(): React.JSX.Element {
         )}
 
         {report && !isEmpty && report.format === 'session-breakdown' && report.sessionBreakdown && (
-          <SessionBreakdownTable items={report.sessionBreakdown} />
+          <SessionBreakdownTable
+            items={report.sessionBreakdown}
+            timeZone={report.reportingTimeZone}
+          />
         )}
 
         {report && !isEmpty && report.format === 'daily-summary' && report.dailySummary && (

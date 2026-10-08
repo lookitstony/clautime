@@ -3,7 +3,9 @@ import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { aiSummaries } from '../db/schema/ai-summaries'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
 import { gitCommits } from '../db/schema/git-commits'
+import { gitService } from './git-service'
 import { projects } from '../db/schema/projects'
 import { credentialService } from './credential-service'
 import { settingsService } from './settings-service'
@@ -39,12 +41,7 @@ export const aiService = {
     }
 
     // Tier 2: Git commits as description
-    const commits = db
-      .select()
-      .from(gitCommits)
-      .where(eq(gitCommits.sessionId, sessionId))
-      .orderBy(gitCommits.committedAt)
-      .all()
+    const commits = gitService.getCommitsForSession(sessionId)
 
     if (commits.length > 0) {
       const summary = commits.map((c) => c.message).join('; ')
@@ -67,7 +64,11 @@ export const aiService = {
     }
 
     const db = getDb()
-    const session = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()
+    const session = db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), activeSessionCondition))
+      .get()
     if (!session) return null
 
     // Gather context
@@ -75,7 +76,7 @@ export const aiService = {
       ? db.select().from(projects).where(eq(projects.id, session.projectId)).get()
       : null
 
-    const commits = db.select().from(gitCommits).where(eq(gitCommits.sessionId, sessionId)).all()
+    const commits = gitService.getCommitsForSession(sessionId)
 
     const prompt = buildPrompt(session, project?.name ?? null, commits)
 
@@ -470,6 +471,7 @@ export const aiService = {
     if (opts.includeDailyBreakdown) {
       // Get session days in the range
       const sessionConditions: SQL[] = [
+        activeSessionCondition,
         lte(sessions.startedAt, filters.endDate),
         gte(sessions.endedAt, filters.startDate)
       ]
@@ -593,6 +595,7 @@ export const aiService = {
 
     // Check for cached session AI summaries to reduce token usage
     const sessionConditionsForCache: SQL[] = [
+      activeSessionCondition,
       lte(sessions.startedAt, filters.endDate + 'T23:59:59.999Z'),
       gte(sessions.endedAt, filters.startDate)
     ]

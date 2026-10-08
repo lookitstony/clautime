@@ -54,6 +54,39 @@ describe('SessionRow', () => {
     expect(screen.getByText('Claude')).toBeInTheDocument()
   })
 
+  it('lists every observing machine and labels imported history by its importing machine', () => {
+    render(
+      <SessionRow
+        {...defaultProps}
+        session={{
+          ...mockSession,
+          sourceMachines: [
+            { deviceId: '9b95ec41-b3b6-4cbb-b1b6-e7ce607ef222', label: 'Desk', basis: 'observed' },
+            {
+              deviceId: '7c8f7eab-af58-4cbb-9e74-d1e47f80d600',
+              label: 'Laptop',
+              basis: 'observed'
+            },
+            { deviceId: '2fd7cbd1-7f6b-4935-b18c-367ae5ff5fb9', label: 'Old PC', basis: 'imported' }
+          ]
+        }}
+      />
+    )
+    expect(screen.getByText('Desk, Laptop; Imported from Old PC')).toBeInTheDocument()
+    // Provenance is labels only; the local source path never reaches the row.
+    expect(screen.queryByText(/session\.jsonl/)).not.toBeInTheDocument()
+  })
+
+  it('says the origin was not recorded rather than inventing one', () => {
+    render(<SessionRow {...defaultProps} session={{ ...mockSession, sourceMachines: [] }} />)
+    expect(screen.getByText('Origin not recorded')).toBeInTheDocument()
+  })
+
+  it('renders no machine text for older payloads without provenance', () => {
+    render(<SessionRow {...defaultProps} />)
+    expect(screen.queryByText('Origin not recorded')).not.toBeInTheDocument()
+  })
+
   it('renders Codex tool badge for codex sessions', () => {
     render(<SessionRow {...defaultProps} session={{ ...mockSession, tool: 'codex' }} />)
     expect(screen.getByText('Codex')).toBeInTheDocument()

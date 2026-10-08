@@ -22,19 +22,27 @@ export function useUnassignedDirectories(): UnassignedDirectory[] {
   return useMemo(() => {
     if (!sessions || sessions.length === 0) return []
 
-    // Find the "Unassigned" client ID so we treat its projects as reassignable
-    const unassignedClientId = allClients?.find((c) => c.name === 'Unassigned')?.id
+    // Find the built-in Unassigned client so we treat its projects as reassignable. The role
+    // survives a rename; the name fallback only serves older payloads without the role.
+    const unassignedClientId = (
+      allClients?.find((c) => c.systemRole === 'unassigned') ??
+      allClients?.find((c) => c.systemRole === undefined && c.name === 'Unassigned')
+    )?.id
 
     // Collect assigned directory paths — exclude projects under "Unassigned" client
     const assignedPaths = new Set(
       (allProjects ?? [])
         .filter((p) => p.clientId !== unassignedClientId)
-        .map((p) => normalizePath(p.directoryPath))
+        .flatMap((p) => (p.directoryPath ? [normalizePath(p.directoryPath)] : []))
     )
 
     // Group sessions by normalized path, keep original path from first occurrence
+    const assignedProjectIds = new Set(
+      (allProjects ?? []).filter((p) => p.clientId !== unassignedClientId).map((p) => p.id)
+    )
     const dirMap = new Map<string, { path: string; count: number }>()
     for (const s of sessions) {
+      if (s.projectId != null && assignedProjectIds.has(s.projectId)) continue
       const norm = normalizePath(s.projectPath)
       if (assignedPaths.has(norm)) continue
       const existing = dirMap.get(norm)

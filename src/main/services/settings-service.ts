@@ -3,11 +3,16 @@ import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { appSettings } from '../db/schema/app-settings'
 import { AppError } from '../../shared/types/ipc'
+import { getWorkspacePolicy } from './workspace-policy'
 
 export const settingsService = {
   getSetting(key: string): string | null {
     log.debug(`settings-service: getSetting(${key})`)
     const db = getDb()
+    if (key === 'idle_timeout_minutes') {
+      const workspace = getWorkspacePolicy(db)
+      if (workspace) return String(workspace.policy.idleTimeoutMinutes)
+    }
     const row = db.select().from(appSettings).where(eq(appSettings.key, key)).get()
     return row?.value ?? null
   },
@@ -15,6 +20,11 @@ export const settingsService = {
   setSetting(key: string, value: string): void {
     log.debug(`settings-service: setSetting(${key})`)
     const db = getDb()
+    if (key === 'idle_timeout_minutes' && getWorkspacePolicy(db))
+      throw new AppError(
+        'WORKSPACE_POLICY_REVIEW_REQUIRED',
+        'Review the shared tracking policy before changing the idle timeout'
+      )
     db.insert(appSettings)
       .values({ key, value, updatedAt: new Date().toISOString() })
       .onConflictDoUpdate({
@@ -32,6 +42,8 @@ export const settingsService = {
     for (const row of rows) {
       result[row.key] = row.value
     }
+    const workspace = getWorkspacePolicy(db)
+    if (workspace) result.idle_timeout_minutes = String(workspace.policy.idleTimeoutMinutes)
     return result
   },
 

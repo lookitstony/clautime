@@ -11,6 +11,11 @@ afterEach(() =>
 )
 
 describe('worktree project paths', () => {
+  it('preserves absolute roots for worktrees directly below a drive or filesystem root', () => {
+    expect(mainProjectPath('C:/.claude/worktrees/task')).toBe('C:\\')
+    expect(mainProjectPath('/.claude/worktrees/task')).toBe('/')
+  })
+
   it('maps removed Claude and review worktrees, including lossy decoded paths', () => {
     for (const path of [
       'C:/repo/.claude/worktrees/issue+SOL-4192',

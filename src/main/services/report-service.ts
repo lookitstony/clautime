@@ -2,6 +2,7 @@ import { eq, and, gte, lte, or, isNull, notInArray, type SQL } from 'drizzle-orm
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { getProjectName } from '../../shared/paths'
@@ -9,6 +10,11 @@ import { computeEarnings, computeBucketedHumanMinutes } from '../../shared/earni
 import { clientAlias, projectAlias } from '../../shared/presentation-alias'
 import { clientProjectService } from './client-project-service'
 import { settingsService } from './settings-service'
+import {
+  currentReportingDate,
+  currentReportingDateKey,
+  currentReportingTimeZone
+} from './reporting-calendar'
 import type {
   ReportFilters,
   ReportFormat,
@@ -21,18 +27,33 @@ import type {
 } from '../../shared/types/report'
 
 function getDateKey(isoString: string): string {
-  const d = new Date(isoString)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return currentReportingDateKey(isoString)
 }
 
+// One formatter per time zone: toLocaleDateString with options builds a new one per call.
+const dateLabelFormats = new Map<string, Intl.DateTimeFormat>()
+
 function formatDateLabel(isoString: string): string {
-  const d = new Date(isoString)
-  return d.toLocaleDateString([], {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+  const calendarKey = /^\d{4}-\d{2}-\d{2}$/.test(isoString)
+  // Same as formatting currentReportingDate(), which applies the reporting zone.
+  const timeZone = calendarKey ? 'UTC' : currentReportingTimeZone()
+  const d = new Date(calendarKey ? isoString + 'T12:00:00Z' : isoString)
+  // Intl throws on an invalid date; toLocaleDateString returned this label instead.
+  if (Number.isNaN(d.getTime())) return 'Invalid Date'
+  // A host zone change through TZ must not reuse a formatter bound to the previous zone.
+  const key = `${timeZone ?? ''}|${process.env.TZ ?? ''}`
+  let format = dateLabelFormats.get(key)
+  if (!format) {
+    format = new Intl.DateTimeFormat([], {
+      ...(timeZone ? { timeZone } : {}),
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+    dateLabelFormats.set(key, format)
+  }
+  return format.format(d)
 }
 
 export const reportService = {
@@ -45,6 +66,7 @@ export const reportService = {
     // Include any session that overlaps the date range
     // (started before range end AND ended after range start)
     const conditions: SQL[] = [
+      activeSessionCondition,
       lte(sessions.startedAt, filters.endDate),
       gte(sessions.endedAt, filters.startDate)
     ]
@@ -100,7 +122,7 @@ export const reportService = {
     // After-hours filter: exclude sessions starting between 7am–6pm
     if (filters.afterHoursOnly) {
       rows = rows.filter((row) => {
-        const hour = new Date(row.startedAt).getHours()
+        const hour = currentReportingDate(row.startedAt).getHours()
         return hour < 7 || hour >= 18
       })
     }
@@ -133,9 +155,7 @@ export const reportService = {
       if (row.projectId != null) {
         const proj = projectMap.get(row.projectId)
         const rawName = proj?.name ?? getProjectName(row.projectPath)
-        const projName = presentationMode
-          ? proj?.stageName || projectAlias(row.projectId)
-          : rawName
+        const projName = presentationMode ? proj?.stageName || projectAlias(row.projectId) : rawName
         const clientName = row.clientId != null ? (clientMap.get(row.clientId) ?? null) : null
         return { projectName: projName, clientName }
       }
@@ -146,6 +166,7 @@ export const reportService = {
       format,
       filters,
       generatedAt: new Date().toISOString(),
+      ...(currentReportingTimeZone() ? { reportingTimeZone: currentReportingTimeZone() } : {}),
       summary: null as unknown as ReportSummary // computed after format switch
     }
 
@@ -238,7 +259,7 @@ export const reportService = {
         const items: DailySummaryItem[] = Array.from(dayMap.entries())
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([date, data]) => ({
-            date: formatDateLabel(date + 'T12:00:00'),
+            date: formatDateLabel(date),
             sessionCount: data.sessionCount,
             totalDurationMinutes: computeBucketedHumanMinutes(data.durationRows),
             totalPrompts: data.totalPrompts,

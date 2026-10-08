@@ -1,3 +1,5 @@
+import { projectFolderMappings } from '../db/schema/project-folder-mappings'
+import { getLocalDeviceSession } from './device-context'
 import { open, stat, readdir } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
@@ -6,11 +8,13 @@ import { eq, gte, and, count, or, isNull, notInArray } from 'drizzle-orm'
 import log from 'electron-log/main.js'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
+import { activeSessionCondition } from '../db/schema/session-deletions'
 import { projects } from '../db/schema/projects'
 import { clients } from '../db/schema/clients'
 import { projectAlertConfig } from '../db/schema/project-alert-config'
 import { gitCommits } from '../db/schema/git-commits'
 import { settingsService } from './settings-service'
+import { currentReportingDate } from './reporting-calendar'
 import { clientProjectService } from './client-project-service'
 import { getClaudeConfigDirs } from './discovery-service'
 import { encodeProjectPath } from './session-detector'
@@ -29,9 +33,9 @@ import type { TodayStats, ProjectLiveStatus, ProjectAlertConfig } from '../../sh
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 15
 
 function getTodayMidnightISO(): string {
-  const now = new Date()
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return midnight.toISOString()
+  const now = currentReportingDate(new Date())
+  now.setHours(0, 0, 0, 0)
+  return new Date(now.getTime()).toISOString()
 }
 
 function formatDuration(minutes: number): string {
@@ -82,13 +86,14 @@ export const liveMonitorService = {
     string,
     {
       mtime: number
+      size?: number
       lastPromptAt: string
       awaitingResponse: boolean
       state: 'idle' | 'awaiting' | 'tool-pending' | 'processing'
     }
   >(),
   // Track when each file's mtime last changed — to detect active writing vs stale
-  _lastMtimeChange: new Map<string, { prevMtime: number; changedAt: number }>(),
+  _lastMtimeChange: new Map<string, { prevMtime: number; prevSize?: number; changedAt: number }>(),
   _lastEvictionDate: '', // ISO date string for cache eviction on date rollover
   // Track when each project stopped processing — idle time starts from here, not from lastPromptAt
   _idleSince: new Map<number, number>(),
@@ -133,13 +138,13 @@ export const liveMonitorService = {
     let todaySessions = db
       .select()
       .from(sessions)
-      .where(excludeCondition ? and(todayFilter, excludeCondition) : todayFilter)
+      .where(and(activeSessionCondition, todayFilter, excludeCondition))
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
     if (settingsService.getSetting('after_hours_mode') === 'true') {
       todaySessions = todaySessions.filter((s) => {
-        const hour = new Date(s.startedAt).getHours()
+        const hour = currentReportingDate(s.startedAt).getHours()
         return hour < 7 || hour >= 18
       })
     }
@@ -215,7 +220,7 @@ export const liveMonitorService = {
         projectId: projects.id,
         projectName: projects.name,
         stageName: projects.stageName,
-        projectPath: projects.directoryPath,
+        projectPath: projectFolderMappings.directoryPath,
         clientName: clients.name,
         clientStageName: clients.stageName,
         clientId: projects.clientId,
@@ -223,6 +228,13 @@ export const liveMonitorService = {
         isWatching: projectAlertConfig.isWatching
       })
       .from(projects)
+      .leftJoin(
+        projectFolderMappings,
+        and(
+          eq(projectFolderMappings.projectSyncId, projects.syncId),
+          eq(projectFolderMappings.deviceId, getLocalDeviceSession().deviceId)
+        )
+      )
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(projectAlertConfig, eq(projects.id, projectAlertConfig.projectId))
       .where(eq(projects.isActive, true))
@@ -235,13 +247,18 @@ export const liveMonitorService = {
     let todaySessions = db
       .select()
       .from(sessions)
-      .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
+      .where(
+        and(
+          activeSessionCondition,
+          or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight))
+        )
+      )
       .all()
 
     // Respect after-hours mode: only keep sessions outside 7am-6pm
     if (afterHoursOnly) {
       todaySessions = todaySessions.filter((s) => {
-        const hour = new Date(s.startedAt).getHours()
+        const hour = currentReportingDate(s.startedAt).getHours()
         return hour < 7 || hour >= 18
       })
     }
@@ -252,7 +269,9 @@ export const liveMonitorService = {
       const matched = todaySessions.filter(
         (s) =>
           s.projectId === p.projectId ||
-          (s.projectId == null && s.projectPath.toLowerCase() === p.projectPath.toLowerCase())
+          (s.projectId == null &&
+            p.projectPath !== null &&
+            s.projectPath.toLowerCase() === p.projectPath.toLowerCase())
       )
       if (matched.length > 0) {
         projectSessionMap.set(p.projectId, matched)
@@ -267,7 +286,7 @@ export const liveMonitorService = {
       // Match JSONL timestamp data by encoded project path
       let lastPromptAt: string | null = null
       let isProcessing = false
-      const encodedProjectPath = encodeProjectPath(p.projectPath)
+      const encodedProjectPath = p.projectPath ? encodeProjectPath(p.projectPath) : null
       for (const [key, value] of timestamps) {
         if (key === encodedProjectPath) {
           lastPromptAt = value.lastPromptAt
@@ -314,7 +333,7 @@ export const liveMonitorService = {
       results.push({
         projectId: p.projectId,
         projectName: presentationMode ? p.stageName || projectAlias(p.projectId) : p.projectName,
-        projectPath: p.projectPath,
+        projectPath: p.projectPath ?? '',
         clientName: presentationMode
           ? p.clientStageName || (p.clientId != null ? clientAlias(p.clientId) : p.clientName)
           : p.clientName,
@@ -618,13 +637,19 @@ export const liveMonitorService = {
           const mtime = s.mtime.getTime()
           if (mtime < todayStart) continue // idle since before today
 
-          // Track mtime changes to detect active writing (same window as Claude)
+          // Windows can retain mtime while Codex holds the rollout open for appends.
+          // File growth must also invalidate cached state and refresh activity.
           const prev = this._lastMtimeChange.get(fp)
-          if (!prev || prev.prevMtime !== mtime) {
-            this._lastMtimeChange.set(fp, { prevMtime: mtime, changedAt: now.getTime() })
+          if (!prev || prev.prevMtime !== mtime || prev.prevSize !== s.size) {
+            this._lastMtimeChange.set(fp, {
+              prevMtime: mtime,
+              prevSize: s.size,
+              changedAt: now.getTime()
+            })
           }
-          const recentlyWritten = now.getTime() - this._lastMtimeChange.get(fp)!.changedAt < 30_000
-          const recentlyModified = now.getTime() - mtime < 3 * 60_000
+          const lastChanged = this._lastMtimeChange.get(fp)!.changedAt
+          const recentlyWritten = now.getTime() - lastChanged < 30_000
+          const recentlyModified = now.getTime() - Math.max(mtime, lastChanged) < 3 * 60_000
 
           let cwd = this._codexCwdCache.get(fp)
           if (cwd === undefined) {
@@ -637,7 +662,7 @@ export const liveMonitorService = {
 
           // Reuse the shared per-file cache when the file hasn't changed
           const cached = this._promptTimestampCache.get(fp)
-          if (cached && cached.mtime === mtime) {
+          if (cached && cached.mtime === mtime && cached.size === s.size) {
             const awaitingWindow =
               cached.state === 'tool-pending' ? recentlyWritten : recentlyModified
             const isActive = recentlyWritten || (cached.awaitingResponse && awaitingWindow)
@@ -649,6 +674,7 @@ export const liveMonitorService = {
           const effectivePromptAt = lastPromptAt ?? new Date(mtime).toISOString()
           this._promptTimestampCache.set(fp, {
             mtime,
+            size: s.size,
             lastPromptAt: effectivePromptAt,
             awaitingResponse,
             state
@@ -678,7 +704,12 @@ export const liveMonitorService = {
         const todaySessionRows = syncDb
           .select({ projectId: sessions.projectId })
           .from(sessions)
-          .where(or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight)))
+          .where(
+            and(
+              activeSessionCondition,
+              or(gte(sessions.startedAt, todayMidnight), gte(sessions.endedAt, todayMidnight))
+            )
+          )
           .all()
         const activeProjectIds = new Set(
           todaySessionRows.map((s) => s.projectId).filter((id): id is number => id != null)
@@ -701,8 +732,15 @@ export const liveMonitorService = {
           const notIdleIds = new Set<number>()
           const db2 = getDb()
           const allProjects = db2
-            .select({ id: projects.id, directoryPath: projects.directoryPath })
+            .select({ id: projects.id, directoryPath: projectFolderMappings.directoryPath })
             .from(projects)
+            .innerJoin(
+              projectFolderMappings,
+              and(
+                eq(projectFolderMappings.projectSyncId, projects.syncId),
+                eq(projectFolderMappings.deviceId, getLocalDeviceSession().deviceId)
+              )
+            )
             .where(eq(projects.isActive, true))
             .all()
           for (const p of allProjects) {
@@ -749,10 +787,17 @@ export const liveMonitorService = {
           .select({
             projectId: projectAlertConfig.projectId,
             alertSound: projectAlertConfig.alertSound,
-            directoryPath: projects.directoryPath
+            directoryPath: projectFolderMappings.directoryPath
           })
           .from(projectAlertConfig)
           .innerJoin(projects, eq(projectAlertConfig.projectId, projects.id))
+          .innerJoin(
+            projectFolderMappings,
+            and(
+              eq(projectFolderMappings.projectSyncId, projects.syncId),
+              eq(projectFolderMappings.deviceId, getLocalDeviceSession().deviceId)
+            )
+          )
           .where(eq(projectAlertConfig.isWatching, 1))
           .all()
 

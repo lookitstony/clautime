@@ -101,4 +101,82 @@ describe('ClientForm', () => {
     const svg = swatches[2].querySelector('svg')
     expect(svg).toBeInTheDocument()
   })
+
+  describe('folder sync freshness', () => {
+    const opened: Client = { ...mockClient, syncVersion: 'version-at-open' }
+
+    it('keeps the draft and the version captured at open when the list refreshes', async () => {
+      const user = userEvent.setup()
+      const { rerender } = render(<ClientForm open={true} onClose={vi.fn()} client={opened} />, {
+        wrapper: createWrapper()
+      })
+      const input = screen.getByPlaceholderText('Client name')
+      await user.clear(input)
+      await user.type(input, 'My draft')
+
+      // A query refresh delivers a newer object for the same client.
+      rerender(
+        <ClientForm
+          open={true}
+          onClose={vi.fn()}
+          client={{ ...opened, name: 'Renamed elsewhere', syncVersion: 'version-after-arrival' }}
+        />
+      )
+      expect(screen.getByPlaceholderText('Client name')).toHaveValue('My draft')
+
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() =>
+        expect(window.api.clients.update).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({ name: 'My draft', expectedSyncVersion: 'version-at-open' })
+        )
+      )
+    })
+
+    it('keeps unsaved values after a stale save and reloads only when asked', async () => {
+      const user = userEvent.setup()
+      vi.mocked(window.api.clients.update).mockResolvedValueOnce({
+        success: false,
+        error: { code: 'CLIENT_UPDATE_ERROR', message: 'AppError: SYNC_STALE_EDIT: changed' }
+      })
+      const onClose = vi.fn()
+      const { rerender } = render(<ClientForm open={true} onClose={onClose} client={opened} />, {
+        wrapper: createWrapper()
+      })
+      const input = screen.getByPlaceholderText('Client name')
+      await user.clear(input)
+      await user.type(input, 'My draft')
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+      expect(await screen.findByText(/changed on another computer/)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('Client name')).toHaveValue('My draft')
+      expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled()
+      expect(onClose).not.toHaveBeenCalled()
+
+      const latest = { ...opened, name: 'Renamed elsewhere', syncVersion: 'version-after-arrival' }
+      rerender(<ClientForm open={true} onClose={onClose} client={latest} />)
+      expect(screen.getByPlaceholderText('Client name')).toHaveValue('My draft')
+      await user.click(screen.getByRole('button', { name: 'Load latest' }))
+      expect(screen.getByPlaceholderText('Client name')).toHaveValue('Renamed elsewhere')
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() =>
+        expect(window.api.clients.update).toHaveBeenLastCalledWith(
+          1,
+          expect.objectContaining({ expectedSyncVersion: 'version-after-arrival' })
+        )
+      )
+    })
+
+    it('sends no version when folder sync is not connected', async () => {
+      const user = userEvent.setup()
+      render(<ClientForm open={true} onClose={vi.fn()} client={mockClient} />, {
+        wrapper: createWrapper()
+      })
+      await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() => expect(window.api.clients.update).toHaveBeenCalled())
+      expect(vi.mocked(window.api.clients.update).mock.calls[0][1]).not.toHaveProperty(
+        'expectedSyncVersion'
+      )
+    })
+  })
 })

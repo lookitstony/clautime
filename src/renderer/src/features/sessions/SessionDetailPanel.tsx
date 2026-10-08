@@ -11,9 +11,18 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { formatDuration, formatTimeRange, formatCompactNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { usePromptTimings, useUpdateSession, useDeleteSession } from './use-sessions'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  usePromptTimings,
+  useUpdateSession,
+  useDeleteSession,
+  fetchSessionForEdit,
+  isStaleEditError
+} from './use-sessions'
+import { SplitSessionForm } from './SplitSessionForm'
 import { useGitCommitsForSession, useGitRemoteUrl } from '../git/use-git'
 import { providerInfo } from '../../../../shared/providers'
+import { sourceMachineText } from './source-machine-label'
 import type { Session, PromptTiming } from '../../../../shared/types/session'
 
 interface SessionDetailPanelProps {
@@ -51,6 +60,13 @@ function timeStringToIso(timeStr: string, referenceIso: string): string | null {
   const ref = new Date(referenceIso)
   const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), h, m, s)
   return d.toISOString()
+}
+
+const STALE_EDIT_TEXT =
+  'This session changed on another computer since you opened it. Reload to see the latest values.'
+
+function staleText(err?: Error): string {
+  return !err || isStaleEditError(err) ? STALE_EDIT_TEXT : err.message
 }
 
 function formatLatency(seconds: number | null): string {
@@ -122,12 +138,47 @@ export function SessionDetailPanel({
   // Edit description state (manual sessions)
   const [isEditingDesc, setIsEditingDesc] = useState(false)
   const [editDesc, setEditDesc] = useState('')
+  // Folder sync freshness: the version captured when the editor opened. List refreshes never
+  // replace it; only an explicit reload does, after showing the latest saved value.
+  const [editVersion, setEditVersion] = useState<string | undefined>()
+  const [capturingVersion, setCapturingVersion] = useState(false)
+  const [staleEdit, setStaleEdit] = useState(false)
+  const [latestDesc, setLatestDesc] = useState<string | null | undefined>(undefined)
+  const editRequest = useRef(0)
 
-  // Delete confirmation state (manual sessions)
+  // Explicit history deletion confirmation
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+  const [isSplitting, setIsSplitting] = useState(false)
+  const [actionSession, setActionSession] = useState<Session | null>(null)
+  async function openHistoryAction(action: 'delete' | 'split') {
+    const latest = await fetchSessionForEdit(session.id)
+    if (!latest) {
+      toast.error('Could not load this session. Refresh before changing it.')
+      return
+    }
+    const fields = [
+      'startedAt',
+      'endedAt',
+      'durationMinutes',
+      'description',
+      'billable',
+      'clientId',
+      'projectId',
+      'status'
+    ] as const
+    if (fields.some((field) => latest[field] !== session[field])) {
+      toast.error('This session changed. Review the latest values before continuing.')
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      return
+    }
+    setActionSession(latest)
+    if (action === 'delete') setIsConfirmingDelete(true)
+    else setIsSplitting(true)
+  }
 
   const updateSession = useUpdateSession()
   const deleteSession = useDeleteSession()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     panelRef.current?.focus()
@@ -137,6 +188,11 @@ export function SessionDetailPanel({
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (isSplitting) {
+          setIsSplitting(false)
+          e.stopPropagation()
+          return
+        }
         if (isEditingTime) {
           setIsEditingTime(false)
           setEditError(null)
@@ -147,7 +203,7 @@ export function SessionDetailPanel({
         onClose()
       }
     },
-    [onClose, isEditingTime]
+    [onClose, isEditingTime, isSplitting]
   )
 
   // Edit time handlers
@@ -223,30 +279,96 @@ export function SessionDetailPanel({
 
   // Edit description handlers
   const startEditDesc = useCallback(() => {
-    setEditDesc(session.description ?? '')
+    const seen = session.description ?? ''
+    const request = ++editRequest.current
+    setEditDesc(seen)
     setIsEditingDesc(true)
-  }, [session.description])
+    setEditVersion(undefined)
+    setStaleEdit(false)
+    setLatestDesc(undefined)
+    setCapturingVersion(true)
+    void fetchSessionForEdit(session.id).then((latest) => {
+      if (request !== editRequest.current) return
+      setCapturingVersion(false)
+      if (!latest) return
+      // The list was already behind what is saved: never capture a version the user has not seen.
+      if ((latest.description ?? '') !== seen) setStaleEdit(true)
+      else setEditVersion(latest.syncVersion)
+    })
+  }, [session.id, session.description])
+
+  const reloadLatestDesc = useCallback(() => {
+    const request = ++editRequest.current
+    setCapturingVersion(true)
+    void fetchSessionForEdit(session.id).then((latest) => {
+      if (request !== editRequest.current) return
+      setCapturingVersion(false)
+      if (!latest) return
+      // The draft is kept; the user now sees the latest saved value before saving over it.
+      setLatestDesc(latest.description)
+      setEditVersion(latest.syncVersion)
+      setStaleEdit(false)
+    })
+  }, [session.id])
+
+  const cancelDescEdit = useCallback(() => {
+    editRequest.current++
+    setIsEditingDesc(false)
+    setCapturingVersion(false)
+    setStaleEdit(false)
+  }, [])
 
   const saveDescEdit = useCallback(() => {
+    if (capturingVersion || staleEdit) return
     const prev = { description: session.description }
     updateSession.mutate(
-      { id: session.id, data: { description: editDesc || null } },
+      { id: session.id, data: { description: editDesc || null, expectedSyncVersion: editVersion } },
       {
-        onSuccess: () => {
+        onSuccess: (updated) => {
           setIsEditingDesc(false)
+          setLatestDesc(undefined)
           toast.success('Description updated', {
             action: {
               label: 'Undo',
               onClick: () => {
-                updateSession.mutate({ id: session.id, data: prev })
+                updateSession.mutate(
+                  {
+                    id: session.id,
+                    data: { ...prev, expectedSyncVersion: updated.syncVersion }
+                  },
+                  { onError: (err) => toast.error(staleText(err)) }
+                )
               }
             },
             duration: 5000
           })
+        },
+        onError: (err) => {
+          if (isStaleEditError(err)) setStaleEdit(true)
+          else toast.error(err.message)
         }
       }
     )
-  }, [editDesc, session, updateSession])
+  }, [capturingVersion, staleEdit, editDesc, editVersion, session, updateSession])
+
+  const toggleBillable = useCallback(() => {
+    const shown = session.billable
+    void fetchSessionForEdit(session.id).then((latest) => {
+      // One-click edits act on the value shown; a newer saved value is refreshed instead.
+      if (latest && latest.billable !== shown) {
+        toast.error(staleText())
+        queryClient.invalidateQueries({ queryKey: ['sessions'] })
+        return
+      }
+      updateSession.mutate(
+        { id: session.id, data: { billable: !shown, expectedSyncVersion: latest?.syncVersion } },
+        {
+          onSuccess: () => toast.success(shown ? 'Marked as non-billable' : 'Marked as billable'),
+          onError: (err) => toast.error(staleText(err))
+        }
+      )
+    })
+  }, [session.id, session.billable, updateSession, queryClient])
 
   const handleDescKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -255,21 +377,24 @@ export function SessionDetailPanel({
         saveDescEdit()
       } else if (e.key === 'Escape') {
         e.stopPropagation()
-        setIsEditingDesc(false)
+        cancelDescEdit()
       }
     },
-    [saveDescEdit]
+    [saveDescEdit, cancelDescEdit]
   )
 
   // Delete handler
   const handleDelete = useCallback(() => {
-    deleteSession.mutate(session.id, {
-      onSuccess: () => {
-        toast.success('Session deleted')
-        onClose()
+    deleteSession.mutate(
+      { id: session.id, expectedSyncVersion: actionSession?.syncVersion },
+      {
+        onSuccess: () => {
+          toast.success('Session deleted from history')
+          onClose()
+        }
       }
-    })
-  }, [session.id, deleteSession, onClose])
+    )
+  }, [session.id, actionSession, deleteSession, onClose])
 
   const isAuto = session.source === 'auto'
   const editDuration = isEditingTime ? computeEditDuration() : null
@@ -358,6 +483,12 @@ export function SessionDetailPanel({
         )}
         <StatCard label="Source" value={isAuto ? 'Auto-detected' : 'Manual'} />
         {isAuto && <StatCard label="Tool" value={providerInfo(session.tool).label} />}
+        {session.sourceMachines && (
+          <StatCard
+            label={session.sourceMachines.length > 1 ? 'Source Machines' : 'Source Machine'}
+            value={sourceMachineText(session.sourceMachines)}
+          />
+        )}
       </div>
 
       {/* Project / Client attribution */}
@@ -394,11 +525,28 @@ export function SessionDetailPanel({
               className="w-full rounded border border-[var(--surface-border)] bg-[var(--background-primary)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
               autoFocus
             />
+            {staleEdit ? (
+              <p className="mt-1 text-[11px] text-amber-400">
+                {STALE_EDIT_TEXT} Your text is kept.
+              </p>
+            ) : (
+              latestDesc !== undefined && (
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                  Latest saved: {latestDesc || 'No description'}
+                </p>
+              )
+            )}
             <div className="mt-1 flex gap-1">
-              <Button size="xs" onClick={saveDescEdit}>
-                Save
-              </Button>
-              <Button size="xs" variant="ghost" onClick={() => setIsEditingDesc(false)}>
+              {staleEdit ? (
+                <Button size="xs" onClick={reloadLatestDesc} disabled={capturingVersion}>
+                  Reload latest
+                </Button>
+              ) : (
+                <Button size="xs" onClick={saveDescEdit} disabled={capturingVersion}>
+                  Save
+                </Button>
+              )}
+              <Button size="xs" variant="ghost" onClick={cancelDescEdit}>
                 Cancel
               </Button>
             </div>
@@ -511,53 +659,76 @@ export function SessionDetailPanel({
       )}
 
       {/* Action buttons */}
-      <div className="flex items-center gap-2">
-        {isAuto ? null : (
-          <>
+      {isSplitting ? (
+        <SplitSessionForm
+          session={actionSession ?? session}
+          onCancel={() => setIsSplitting(false)}
+          onComplete={onClose}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void openHistoryAction('split')}
+            disabled={
+              isEditingTime ||
+              isEditingDesc ||
+              isConfirmingDelete ||
+              Date.parse(session.endedAt) <= Date.parse(session.startedAt)
+            }
+          >
+            Split session
+          </Button>
+          {!isAuto && (
             <Button variant="ghost" size="sm" onClick={startEditDesc} disabled={isEditingDesc}>
               <Pencil className="mr-1 h-3 w-3" />
               Edit Description
             </Button>
-            {isConfirmingDelete ? (
-              <div className="flex items-center gap-1">
-                <span className="text-[12px] text-[var(--text-muted)]">Delete this session?</span>
-                <Button variant="destructive" size="xs" onClick={handleDelete}>
-                  Confirm
-                </Button>
-                <Button variant="ghost" size="xs" onClick={() => setIsConfirmingDelete(false)}>
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setIsConfirmingDelete(true)}>
-                <Trash2 className="mr-1 h-3 w-3" />
-                Delete
-              </Button>
-            )}
-          </>
-        )}
-        <div className="flex-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            updateSession.mutate(
-              { id: session.id, data: { billable: !session.billable } },
-              {
-                onSuccess: () =>
-                  toast.success(session.billable ? 'Marked as non-billable' : 'Marked as billable')
-              }
-            )
-          }}
-          className={cn(
-            'text-[11px]',
-            session.billable ? 'text-[var(--text-muted)]' : 'text-amber-400'
           )}
-        >
-          <DollarSign className="mr-1 h-3 w-3" />
-          {session.billable ? 'Billable' : 'Non-billable'}
-        </Button>
-      </div>
+          {isConfirmingDelete ? (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[12px] text-[var(--text-muted)]">
+                Delete from history? Rescans will keep it deleted. Saved invoices are preserved.
+              </span>
+              {session.source === 'auto' && (
+                <span className="text-[12px] text-[var(--text-muted)]">
+                  Older activity may need review if its logs return.
+                </span>
+              )}
+              <Button
+                variant="destructive"
+                size="xs"
+                onClick={handleDelete}
+                disabled={deleteSession.isPending}
+              >
+                Confirm
+              </Button>
+              <Button variant="ghost" size="xs" onClick={() => setIsConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => void openHistoryAction('delete')}>
+              <Trash2 className="mr-1 h-3 w-3" />
+              Delete from history
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleBillable}
+            className={cn(
+              'text-[11px]',
+              session.billable ? 'text-[var(--text-muted)]' : 'text-amber-400'
+            )}
+          >
+            <DollarSign className="mr-1 h-3 w-3" />
+            {session.billable ? 'Billable' : 'Non-billable'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

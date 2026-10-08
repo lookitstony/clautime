@@ -1,7 +1,9 @@
+import { manualTimeEntries } from '../db/schema/manual-time-entries'
 import { ipcMain } from 'electron'
 import log from 'electron-log/main.js'
 import { sessionService } from '../services/session-service'
 import { clientProjectService } from '../services/client-project-service'
+import { withSourceMachines } from '../services/folder-sync-machine-view'
 import { gitService } from '../services/git-service'
 import { getDb } from '../db'
 import { sessions } from '../db/schema/sessions'
@@ -10,7 +12,17 @@ import { aiSummaries } from '../db/schema/ai-summaries'
 import { gitCommits } from '../db/schema/git-commits'
 import { rawMessages, progressEvents } from '../db/schema/raw-messages'
 import { sessionModelUsage } from '../db/schema/session-model-usage'
-import { ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
+import { sessionDeletions } from '../db/schema/session-deletions'
+import { sessionRevisions, sessionBillingRefs } from '../db/schema/session-history'
+import { sessionReconciliationCases } from '../db/schema/session-reconciliation'
+import { sessionLegacyRecords } from '../db/schema/session-legacy'
+import { activityIdentities } from '../db/schema/activity-evidence'
+import {
+  assertFreshSyncEdit,
+  readSyncEditVersion,
+  SYNC_STALE_EDIT
+} from '../services/folder-sync-edit-version'
+import { ipcSuccess, ipcError, AppError, type IpcResult } from '../../shared/types/ipc'
 import type {
   Session,
   SessionFilters,
@@ -28,7 +40,73 @@ function mapSession(row: Record<string, unknown>): Session {
   return { ...row, billable: row.billable !== undefined ? !!row.billable : true } as Session
 }
 
+/**
+ * Single-session reads carry the edit version editors capture when they open. Lists omit it:
+ * a mapped session's version scans its conversation's shared edits.
+ */
+function withSyncVersion(session: Session): Session {
+  const syncVersion = readSyncEditVersion(getDb(), { kind: 'session', id: session.id })
+  return syncVersion === undefined ? session : { ...session, syncVersion }
+}
+
 export function registerSessionHandlers(): void {
+  ipcMain.handle(
+    'session:replaceSavedHistory',
+    async (
+      _event,
+      sourceFile: string,
+      fingerprint: string,
+      choices?: import('../../shared/types/session').SessionReplacementChoice[]
+    ) => {
+      try {
+        sessionService.replaceSavedHistory(sourceFile, fingerprint, choices)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        return ipcError('SESSION_REPLACEMENT_ERROR', String(error))
+      }
+    }
+  )
+  ipcMain.handle(
+    'session:mapSavedHistory',
+    async (
+      _event,
+      sourceFile: string,
+      fingerprint: string,
+      mappings: import('../../shared/types/session').SessionActivityMapping[]
+    ) => {
+      try {
+        sessionService.mapSavedHistory(sourceFile, fingerprint, mappings)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        return ipcError('SESSION_MAPPING_ERROR', String(error))
+      }
+    }
+  )
+  ipcMain.handle(
+    'session:keepSavedHistory',
+    async (_event, sourceFile: string, fingerprint: string) => {
+      try {
+        sessionService.keepSavedHistory(sourceFile, fingerprint)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        return ipcError('SESSION_RESOLUTION_ERROR', String(error))
+      }
+    }
+  )
+  ipcMain.handle('session:getReconciliationCases', async () => {
+    try {
+      return ipcSuccess(sessionService.getReconciliationCases())
+    } catch (error) {
+      return ipcError('SESSION_REVIEW_ERROR', String(error))
+    }
+  })
+  ipcMain.handle('session:recheckReconciliation', async (_event, sourceFile: string) => {
+    try {
+      return ipcSuccess(await sessionService.recheckReconciliation(sourceFile))
+    } catch (error) {
+      return ipcError('SESSION_RECHECK_ERROR', String(error))
+    }
+  })
   ipcMain.handle(
     'session:scan',
     async (
@@ -63,8 +141,8 @@ export function registerSessionHandlers(): void {
     'session:getAll',
     async (_event, filters?: SessionFilters): Promise<IpcResult<Session[]>> => {
       try {
-        const result = sessionService.getAllSessions(filters).map(mapSession)
-        return ipcSuccess(result)
+        const rows = sessionService.getAllSessions(filters)
+        return ipcSuccess(withSourceMachines(getDb(), rows).map(mapSession))
       } catch (error) {
         log.error('IPC session:getAll failed:', error)
         return ipcError('SESSION_GET_ALL_ERROR', String(error))
@@ -75,6 +153,39 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('session:reset', async (): Promise<IpcResult<void>> => {
     try {
       const db = getDb()
+      if (db.select().from(sessionLegacyRecords).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while legacy history is retained. Use Rescan to refresh activity.'
+        )
+      }
+      if (db.select().from(sessionReconciliationCases).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while reconciliation history is retained. Use Rescan to refresh activity.'
+        )
+      }
+      if (db.select().from(sessionDeletions).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while history deletions are retained. Use Rescan to refresh activity without restoring deleted history.'
+        )
+      }
+      if (
+        db.select().from(sessionRevisions).limit(1).get() ||
+        db.select().from(sessionBillingRefs).limit(1).get()
+      ) {
+        throw new Error(
+          'Reset is unavailable while session revisions or billed-work audit records are retained. Use Rescan to refresh activity.'
+        )
+      }
+      if (db.select().from(activityIdentities).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while activity history is retained. Use Rescan to refresh activity.'
+        )
+      }
+      if (db.select().from(manualTimeEntries).limit(1).get()) {
+        throw new Error(
+          'Reset is unavailable while manual time history is retained. Use Rescan to refresh activity.'
+        )
+      }
       db.delete(aiSummaries).run()
       db.delete(sessionModelUsage).run()
       db.update(gitCommits).set({ sessionId: null }).run()
@@ -139,7 +250,9 @@ export function registerSessionHandlers(): void {
     async (_event, id: number): Promise<IpcResult<Session | null>> => {
       try {
         const row = sessionService.getSessionById(id)
-        return ipcSuccess(row ? mapSession(row) : null)
+        return ipcSuccess(
+          row ? withSyncVersion(mapSession(withSourceMachines(getDb(), [row])[0])) : null
+        )
       } catch (error) {
         log.error('IPC session:getById failed:', error)
         return ipcError('SESSION_GET_BY_ID_ERROR', String(error))
@@ -164,29 +277,44 @@ export function registerSessionHandlers(): void {
     'session:update',
     async (_event, id: number, data: UpdateSession): Promise<IpcResult<Session>> => {
       try {
-        const result = mapSession(sessionService.updateSession(id, data))
+        // Editors must prove what they saw; the check and the write share one synchronous turn.
+        const { expectedSyncVersion, ...changes } = data
+        assertFreshSyncEdit(getDb(), { kind: 'session', id }, expectedSyncVersion, true)
+        const result = withSyncVersion(mapSession(sessionService.updateSession(id, changes)))
         return ipcSuccess(result)
       } catch (error) {
         log.error('IPC session:update failed:', error)
+        if (error instanceof AppError && error.code === SYNC_STALE_EDIT)
+          return ipcError(SYNC_STALE_EDIT, error.message)
         return ipcError('SESSION_UPDATE_ERROR', String(error))
       }
     }
   )
 
-  ipcMain.handle('session:delete', async (_event, id: number): Promise<IpcResult<void>> => {
-    try {
-      sessionService.deleteSession(id)
-      return ipcSuccess(undefined)
-    } catch (error) {
-      log.error('IPC session:delete failed:', error)
-      return ipcError('SESSION_DELETE_ERROR', String(error))
+  ipcMain.handle(
+    'session:delete',
+    async (_event, id: number, expectedSyncVersion?: string): Promise<IpcResult<void>> => {
+      try {
+        assertFreshSyncEdit(getDb(), { kind: 'session', id }, expectedSyncVersion, true)
+        sessionService.deleteSession(id)
+        return ipcSuccess(undefined)
+      } catch (error) {
+        log.error('IPC session:delete failed:', error)
+        return ipcError('SESSION_DELETE_ERROR', String(error))
+      }
     }
-  })
+  )
 
   ipcMain.handle(
     'session:split',
-    async (_event, id: number, splitAt: string): Promise<IpcResult<Session[]>> => {
+    async (
+      _event,
+      id: number,
+      splitAt: string,
+      expectedSyncVersion?: string
+    ): Promise<IpcResult<Session[]>> => {
       try {
+        assertFreshSyncEdit(getDb(), { kind: 'session', id }, expectedSyncVersion, true)
         const [s1, s2] = sessionService.splitSession(id, splitAt)
         return ipcSuccess([mapSession(s1), mapSession(s2)])
       } catch (error) {

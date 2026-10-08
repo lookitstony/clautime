@@ -4,6 +4,10 @@ import type {
   Session,
   SessionFilters,
   ScanResult,
+  SessionScanError,
+  SessionReconciliationCase,
+  SessionActivityMapping,
+  SessionReplacementChoice,
   DiscoveredProject,
   PromptTiming,
   UpdateSession,
@@ -12,12 +16,7 @@ import type {
   ModelUsageAggregate,
   ModelUsageFilters
 } from '../shared/types/session'
-import type {
-  GitCommit,
-  GitScanResult,
-  GitIdentity,
-  UnconfiguredAuthor
-} from '../shared/types/git'
+import type { GitCommit, GitScanResult, GitIdentity, UnconfiguredAuthor } from '../shared/types/git'
 import type {
   Client,
   NewClient,
@@ -57,7 +56,36 @@ interface SettingsApi {
   getAll(): Promise<IpcResult<Record<string, string>>>
 }
 
+interface WorkspaceApi {
+  getPolicy(): Promise<
+    IpcResult<import('../shared/types/workspace-policy').WorkspacePolicyState | null>
+  >
+  reviewPolicy(
+    request: import('../shared/types/workspace-policy').WorkspacePolicyReviewRequest
+  ): Promise<IpcResult<import('../shared/types/workspace-policy').WorkspacePolicyReview>>
+  applyPolicy(
+    request: import('../shared/types/workspace-policy').WorkspacePolicyApplyRequest
+  ): Promise<IpcResult<void>>
+  reviewActivity(): Promise<
+    IpcResult<import('../shared/types/workspace-policy').WorkspaceActivityAdoptionReview>
+  >
+  adoptActivity(fingerprint: string, sessionIds: number[]): Promise<IpcResult<void>>
+}
+
 interface SessionsApi {
+  replaceSavedHistory(
+    sourceFile: string,
+    fingerprint: string,
+    choices?: SessionReplacementChoice[]
+  ): Promise<IpcResult<void>>
+  mapSavedHistory(
+    sourceFile: string,
+    fingerprint: string,
+    mappings: SessionActivityMapping[]
+  ): Promise<IpcResult<void>>
+  keepSavedHistory(sourceFile: string, fingerprint: string): Promise<IpcResult<void>>
+  getReconciliationCases(): Promise<IpcResult<SessionReconciliationCase[]>>
+  recheckReconciliation(sourceFile: string): Promise<IpcResult<ScanResult>>
   scan(claudeDir?: string, projectFilter?: string[]): Promise<IpcResult<ScanResult>>
   reset(): Promise<IpcResult<void>>
   rebuild(): Promise<IpcResult<ScanResult>>
@@ -66,8 +94,8 @@ interface SessionsApi {
   getById(id: number): Promise<IpcResult<Session | null>>
   getPromptTimings(sessionId: number): Promise<IpcResult<PromptTiming[]>>
   update(id: number, data: UpdateSession): Promise<IpcResult<Session>>
-  delete(id: number): Promise<IpcResult<void>>
-  split(id: number, splitAt: string): Promise<IpcResult<Session[]>>
+  delete(id: number, expectedSyncVersion?: string): Promise<IpcResult<void>>
+  split(id: number, splitAt: string, expectedSyncVersion?: string): Promise<IpcResult<Session[]>>
   getTimeBreakdown(startDate: string, endDate: string): Promise<IpcResult<TimeBreakdownDay[]>>
   getGapAnalysis(): Promise<IpcResult<GapAnalysis>>
   getModelUsage(filters?: ModelUsageFilters): Promise<IpcResult<ModelUsageAggregate[]>>
@@ -86,7 +114,7 @@ interface ClientsApi {
   getAll(): Promise<IpcResult<Client[]>>
   create(data: NewClient): Promise<IpcResult<Client>>
   update(id: number, data: UpdateClient): Promise<IpcResult<Client>>
-  delete(id: number): Promise<IpcResult<void>>
+  delete(id: number, expectedSyncVersion?: string): Promise<IpcResult<void>>
 }
 
 interface AiApi {
@@ -160,7 +188,7 @@ interface LiveApi {
   getAvailableSounds(): Promise<IpcResult<{ name: string; filename: string }[]>>
   playTestSound(): Promise<IpcResult<void>>
   selectCustomSound(): Promise<IpcResult<string | null>>
-  onSessionsUpdated(callback: () => void): void
+  onSessionsUpdated(callback: (errors?: SessionScanError[]) => void): void
   onNewProject(
     callback: (info: { dirName: string; decodedPath: string; projectName: string }) => void
   ): void
@@ -190,20 +218,48 @@ interface WindowApi {
 }
 
 interface ProjectsApi {
+  getLocalSetup(): Promise<
+    IpcResult<import('../shared/types/local-project-setup').LocalProjectSetupStatus>
+  >
+  completeLocalSetup(
+    selections: import('../shared/types/local-project-setup').LegacyFolderSelection[]
+  ): Promise<IpcResult<import('../shared/types/local-project-setup').LocalProjectSetupStatus>>
   getAll(clientId?: number): Promise<IpcResult<Project[]>>
   create(data: NewProject): Promise<IpcResult<Project>>
   update(id: number, data: UpdateProject): Promise<IpcResult<Project>>
-  delete(id: number): Promise<IpcResult<void>>
+  delete(id: number, expectedSyncVersion?: string): Promise<IpcResult<void>>
   attributeSessions(): Promise<IpcResult<number>>
+  getMarkerStatus(
+    id: number
+  ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>>
+  setMarkerInGit(
+    id: number,
+    keep: boolean
+  ): Promise<IpcResult<import('../shared/types/client-project').ProjectMarkerStatus | null>>
+  getFolderSuggestions(): Promise<
+    IpcResult<import('../shared/types/client-project').MarkedFolderEvent[]>
+  >
+  linkSuggestedFolder(projectId: number, directoryPath: string): Promise<IpcResult<void>>
+  declineSuggestedFolder(directoryPath: string): Promise<IpcResult<void>>
+  onFolderMarker(
+    callback: (event: import('../shared/types/client-project').MarkedFolderEvent) => void
+  ): void
 }
 
 interface InvoiceApi {
+  getPendingOperations(): Promise<
+    IpcResult<import('../shared/types/invoice').PendingInvoiceOperation[]>
+  >
+  resumeDraftInvoice(operationId: string): Promise<IpcResult<DraftInvoice>>
+  cancelInvoiceOperation(
+    operationId: string
+  ): Promise<IpcResult<{ basis: 'rejected-before-invoice' | 'draft-deleted' }>>
   hasStripeKey(): Promise<IpcResult<boolean>>
   isTestMode(): Promise<IpcResult<boolean>>
   storeStripeKey(key: string): Promise<IpcResult<void>>
   removeStripeKey(): Promise<IpcResult<void>>
   testConnection(): Promise<IpcResult<boolean>>
-  syncCustomer(clientId: number): Promise<IpcResult<StripeCustomerInfo>>
+  syncCustomer(clientId: number, operationId: string): Promise<IpcResult<StripeCustomerInfo>>
   createDraftInvoice(request: CreateInvoiceRequest): Promise<IpcResult<DraftInvoice>>
   sendInvoice(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
   getInvoiceStatus(invoiceId: string): Promise<IpcResult<InvoiceStatus>>
@@ -254,8 +310,12 @@ interface SecretScanApi {
 }
 
 interface Api {
+  machines: import('../shared/types/source-machine').SourceMachineApi
+  syncConflicts: import('../shared/types/sync-conflict').SyncConflictApi
+  folderSync: import('../shared/types/folder-sync').FolderSyncApi
   dialog: DialogApi
   settings: SettingsApi
+  workspace: WorkspaceApi
   sessions: SessionsApi
   clients: ClientsApi
   live: LiveApi

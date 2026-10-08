@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 // Mock electron-log before importing parser
-vi.mock('electron-log/main.js', () => ({
+vi.mock('electron-log', () => ({
   default: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('electron-log/main.js', () => ({
 }))
 
 import { discoverSessionFiles, parseSessionFile, parseAllSessions } from './session-parser'
-import log from 'electron-log/main.js'
+import log from 'electron-log'
 
 // Helper to build JSONL content
 function jsonl(...objects: Record<string, unknown>[]): string {

@@ -1,6 +1,18 @@
+import { TZDateMini } from '@date-fns/tz'
+import { readTrackingPolicy, requireExplicitTimestamp } from '../../shared/tracking-policy'
 import type { ParsedSessionData, ParsedMessage, TokenUsage } from '../parsers/types'
 import type { DetectedSession, SessionModelUsage } from '../../shared/types/session'
 import { normalizePath } from '../../shared/paths'
+
+export interface SessionDetectionTrace {
+  messageIds: Array<string | null>
+  continuity: Array<{
+    fromMessageId: string | null
+    toMessageId: string | null
+    startedAt: string
+    endedAt: string
+  }>
+}
 
 /**
  * Detect individual work sessions from parsed session data by identifying
@@ -11,6 +23,15 @@ import { normalizePath } from '../../shared/paths'
 export function detectSessions(
   parsed: ParsedSessionData,
   idleTimeoutMinutes: number
+): DetectedSession[] {
+  return detectSessionsInTimeZone(parsed, idleTimeoutMinutes)
+}
+
+function detectSessionsInTimeZone(
+  parsed: ParsedSessionData,
+  idleTimeoutMinutes: number,
+  reportingTimeZone?: string,
+  traces?: Map<DetectedSession, SessionDetectionTrace>
 ): DetectedSession[] {
   const messages = parsed.messages.filter((m) => m.timestamp)
   if (messages.length === 0) return []
@@ -25,17 +46,42 @@ export function detectSessions(
   let startOverride: string | null = null
 
   const pushSegment = (endIdx: number, endOverride: string | null): void => {
-    results.push(
-      buildDetectedSession(
-        parsed,
-        messages,
-        segmentStart,
-        endIdx,
-        projectPath,
-        startOverride,
-        endOverride
-      )
+    const session = buildDetectedSession(
+      parsed,
+      messages,
+      segmentStart,
+      endIdx,
+      projectPath,
+      startOverride,
+      endOverride
     )
+    results.push(session)
+    if (traces) {
+      const continuity: SessionDetectionTrace['continuity'] = []
+      // Include the adjacent pair across a clipped midnight on each side.
+      // Message membership still comes from the exact detector slice below.
+      for (
+        let i = segmentStart + (startOverride === null ? 1 : 0);
+        i <= endIdx + (endOverride === null ? 0 : 1);
+        i++
+      ) {
+        const from = messages[i - 1]
+        const to = messages[i]
+        const start = Math.max(Date.parse(from.timestamp), Date.parse(session.startedAt))
+        const end = Math.min(Date.parse(to.timestamp), Date.parse(session.endedAt))
+        if (end <= start) continue
+        continuity.push({
+          fromMessageId: from.uuid,
+          toMessageId: to.uuid,
+          startedAt: new Date(start).toISOString(),
+          endedAt: new Date(end).toISOString()
+        })
+      }
+      traces.set(session, {
+        messageIds: messages.slice(segmentStart, endIdx + 1).map((message) => message.uuid),
+        continuity
+      })
+    }
     clipped.push(startOverride !== null || endOverride !== null)
   }
 
@@ -53,10 +99,10 @@ export function detectSessions(
       continue
     }
 
-    // Continuous work. If it runs past local midnight, split there and clip
+    // Continuous work. If it runs past the selected calendar midnight, split there and clip
     // both halves to the boundary so each day gets its true share and no
     // minutes are dropped between them.
-    const midnight = midnightBetween(prevTs, currTs)
+    const midnight = midnightBetween(prevTs, currTs, reportingTimeZone)
     if (midnight) {
       pushSegment(i - 1, midnight)
       segmentStart = i
@@ -131,6 +177,57 @@ export function detectSessionsFromMultiple(
   return results
 }
 
+/** Read-only policy path; persistence, conflict resolution and UI adoption are separate. */
+export function detectSessionsWithPolicy(
+  parsedSessions: ParsedSessionData[],
+  value: unknown
+): DetectedSession[] {
+  return detectPolicySessions(parsedSessions, value)
+}
+
+/** Trace the detector's own slices; do not reconstruct membership from result timestamps. */
+export function detectSessionsWithPolicyTrace(parsed: ParsedSessionData, value: unknown) {
+  const traces = new Map<DetectedSession, SessionDetectionTrace>()
+  return detectPolicySessions([parsed], value, traces).map((session) => ({
+    session,
+    ...traces.get(session)!
+  }))
+}
+
+function detectPolicySessions(
+  parsedSessions: ParsedSessionData[],
+  value: unknown,
+  traces?: Map<DetectedSession, SessionDetectionTrace>
+): DetectedSession[] {
+  const policy = readTrackingPolicy(value)
+  const normalizeTimestamp = (timestamp: string): string => {
+    requireExplicitTimestamp(timestamp)
+    return new Date(timestamp).toISOString()
+  }
+  const normalizeMessage = (message: ParsedMessage): ParsedMessage => ({
+    ...message,
+    timestamp: message.timestamp ? normalizeTimestamp(message.timestamp) : message.timestamp
+  })
+  // The existing progress lookup compares timestamp strings. Canonical UTC
+  // formatting makes explicit offsets comparable without rewriting captured facts.
+  return parsedSessions.flatMap((parsed) =>
+    detectSessionsInTimeZone(
+      {
+        ...parsed,
+        messages: parsed.messages.map(normalizeMessage),
+        subagentMessages: (parsed.subagentMessages ?? []).map(normalizeMessage),
+        progressTimestamps: (parsed.progressTimestamps ?? []).map(normalizeTimestamp).sort(),
+        subagentProgressTimestamps: (parsed.subagentProgressTimestamps ?? [])
+          .map(normalizeTimestamp)
+          .sort()
+      },
+      policy.idleTimeoutMinutes,
+      policy.reportingTimeZone,
+      traces
+    )
+  )
+}
+
 /**
  * Resolve the project path from parsed data.
  * Priority: projectDirectory (cwd) > decode projectPathEncoded.
@@ -197,7 +294,7 @@ const MAX_CLIPPABLE_GAP_MS = 24 * 60 * 60_000
 const MIN_CLIPPED_FRAGMENT_MINUTES = 2
 
 /**
- * The local midnight separating two timestamps, or null if they fall on the
+ * The selected timezone midnight separating two timestamps, or null if they fall on the
  * same calendar day.
  *
  * Returns null for gaps over 24h as well: those can straddle more than one
@@ -205,9 +302,13 @@ const MIN_CLIPPED_FRAGMENT_MINUTES = 2
  * one side. Such gaps only survive a wildly large idle timeout, and leaving
  * them unclipped just preserves today's behaviour.
  */
-function midnightBetween(prevTs: string, currTs: string): string | null {
-  const prev = new Date(prevTs)
-  const curr = new Date(currTs)
+function midnightBetween(
+  prevTs: string,
+  currTs: string,
+  reportingTimeZone?: string
+): string | null {
+  const prev = reportingTimeZone ? new TZDateMini(prevTs, reportingTimeZone) : new Date(prevTs)
+  const curr = reportingTimeZone ? new TZDateMini(currTs, reportingTimeZone) : new Date(currTs)
   if (
     prev.getFullYear() === curr.getFullYear() &&
     prev.getMonth() === curr.getMonth() &&
@@ -216,6 +317,24 @@ function midnightBetween(prevTs: string, currTs: string): string | null {
     return null
   }
   if (curr.getTime() - prev.getTime() > MAX_CLIPPABLE_GAP_MS) return null
+
+  if (reportingTimeZone) {
+    const dayNumber = (date: Date): number =>
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+    const targetDay = dayNumber(curr)
+    // Preserve the guard against a clock rewind into the preceding calendar date.
+    if (targetDay <= dayNumber(prev)) return null
+    // Locate the actual date transition between known instants. Constructing a
+    // nonexistent wall-clock midnight can depend on the host timezone during DST.
+    let low = prev.getTime() + 1
+    let high = curr.getTime()
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2)
+      if (dayNumber(new TZDateMini(middle, reportingTimeZone)) < targetDay) low = middle + 1
+      else high = middle
+    }
+    return new Date(high).toISOString()
+  }
 
   const midnight = new Date(curr.getFullYear(), curr.getMonth(), curr.getDate())
   // Zones whose DST transition lands on 00:00 (America/Santiago, America/Havana)
