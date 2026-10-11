@@ -65,6 +65,18 @@ No disposable second computer/Drive/Stripe test setup has been identified in thi
 4. After explicit approval of the specific Stripe test actions, enter a test-mode key only in local credential storage. Use an owned QA email address. Create a draft for fake work on A, sync, switch to B, refresh and bill only new work. Test wrong-account keys, delayed folder delivery, repeated attempts, and a cancelled or uncertain operation. Sending a test invoice email is a separate explicit action; never use a real customer.
 5. Verify the Drive folder contains only the allowed compressed records/manifests, not the database, keys, transcript text or local source paths. Retain the original batches; do not prune.
 
+### Project folder markers and git-history links
+
+Both computers must run the same build: older builds reject the synced `rootCommit` field. Use a disposable git repository with at least one commit, pushed to a throwaway remote. New folders are found from AI sessions, so "run a session" below means a short synthetic provider session whose working folder is that folder.
+
+6. On A, add the repository as a project and assign it to a fake client. Verify `.clautime` appears in its folder, `git status` stays clean (listed in `.git/info/exclude`), and the log shows "Recorded git root commits". Sync to B.
+7. Clone the repository on B, where the project has no folder yet, and run a session there. Verify an "Is this <project>?" prompt appears and nothing is created or attributed until it is answered. Choose Link: the session counts toward the project, `.clautime` is written and excluded, and no Unassigned project appears.
+8. Make a second full clone on B (the project's folder now exists) and run a session. Verify no prompt appears and the clone becomes its own project; repeat with `git clone --depth 1` (no prompt).
+9. On B, delete or rename the folder linked in step 7 so the project's folder is missing, clone again and run a session. Choose Keep separate: verify the prompt closes, the clone becomes its own Unassigned project with its session, and it is not asked about again. Repeat with presentation mode on: the prompt shows the alias and no folder path. Leave one prompt unanswered, restart, and verify it is asked again or handled.
+10. Create a second project with the same history (a fork) and verify neither computer prompts for new clones of it.
+11. On A, turn on "Keep ID file in Git", commit and push `.clautime`. On B, again make the project's linked folder missing, clone fresh and run a session: verify it links automatically without a prompt. Then move the linked folder (rename it) and run a session: it relinks as a move. Copy it while the original still exists: verify a copy warning and that neither folder changes project.
+12. In the Drive folder, verify project records carry only the root commit hash, never a folder path.
+
 ## Missing billing records
 
 A connected workspace keeps billing blocked if an invoice's operation records are permanently missing. Recover them from the original database, a backup or retained batches. Stripe metadata alone cannot prove which activity was billed; waiting or voiding the invoice does not release that safety hold. Installations that never configured sync continue to support local-only invoicing.
