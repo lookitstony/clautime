@@ -247,6 +247,30 @@ export function InvoiceCreateFlow({
     }
   }, [doGenerate])
 
+  // A ClauTime draft in the way (e.g. one deleted only locally) can be deleted from Stripe too,
+  // which releases its time for this invoice.
+  const discardableOverlaps = overlaps.filter((o) => o.discardable)
+  const handleDiscardOverlaps = useCallback(async () => {
+    setShowOverlapWarning(false)
+    setIsGenerating(true)
+    try {
+      for (const overlap of discardableOverlaps) {
+        const r = await window.api.invoice.delete(overlap.invoiceId)
+        if (!r.success) throw new Error(r.error.message)
+      }
+      toast.success(
+        `Deleted ${discardableOverlaps.length} draft${discardableOverlaps.length > 1 ? 's' : ''}; its time is billable again`
+      )
+      setOverlaps([])
+      await doGenerate()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unable to delete the draft')
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      setIsGenerating(false)
+    }
+  }, [discardableOverlaps, doGenerate, queryClient])
+
   const addLineItem = useCallback(() => {
     setLineItems((prev) => [
       ...prev,
@@ -754,11 +778,13 @@ export function InvoiceCreateFlow({
       <ConfirmDialog
         open={showOverlapWarning}
         title="Overlapping Invoice Period"
-        description={`This period overlaps with ${overlaps.length} existing invoice${overlaps.length > 1 ? 's' : ''} (${overlaps.map((o) => `$${(o.amountDueCents / 100).toFixed(2)}`).join(', ')}). Continue anyway?`}
+        description={`This period overlaps with ${overlaps.length} existing invoice${overlaps.length > 1 ? 's' : ''} (${overlaps.map((o) => `$${(o.amountDueCents / 100).toFixed(2)}${o.discardable ? ' draft' : ''}`).join(', ')}).${discardableOverlaps.length ? ' Delete the draft from ClauTime and Stripe to bill its time again, or continue anyway.' : ' Continue anyway?'}`}
         confirmLabel="Continue"
         cancelLabel="Cancel"
         onConfirm={handleOverlapContinue}
         onCancel={() => setShowOverlapWarning(false)}
+        secondaryLabel={discardableOverlaps.length ? 'Delete draft' : undefined}
+        onSecondary={handleDiscardOverlaps}
       />
 
       {/* ACH Not Enabled Error */}

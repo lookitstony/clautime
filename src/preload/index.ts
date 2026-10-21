@@ -350,7 +350,7 @@ const api = {
       ipcRenderer.invoke('invoice:getById', localId),
     syncLocalStatus: (
       localId: number
-    ): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice>> =>
+    ): Promise<IpcResult<import('../shared/types/invoice').LocalInvoice | null>> =>
       ipcRenderer.invoke('invoice:syncLocalStatus', localId),
     syncAllStatuses: (): Promise<IpcResult<number>> =>
       ipcRenderer.invoke('invoice:syncAllStatuses'),

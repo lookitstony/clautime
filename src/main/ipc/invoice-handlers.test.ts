@@ -12,6 +12,7 @@ import { sessions } from '../db/schema/sessions'
 import { invoices } from '../db/schema/invoices'
 import { manualTimeEntries } from '../db/schema/manual-time-entries'
 import { sessionBillingRefs } from '../db/schema/session-history'
+import { providerOperations, providerOperationResolutions } from '../db/schema/provider-operations'
 import { AppError } from '../../shared/types/ipc'
 import type { CreatedDraft, ProviderStatusRead } from '../services/stripe-operation-service'
 import { portableBillingFromLocal } from '../services/invoice-portable-billing'
@@ -280,4 +281,25 @@ it('keeps operation error codes for the renderer', async () => {
     success: false,
     error: { code: 'PROVIDER_OPERATION_UNCERTAIN', message: 'Review the existing operation' }
   })
+})
+
+it('never re-saves a draft discarded while its save was in flight', () => {
+  const operationId = randomUUID()
+  db.insert(providerOperations)
+    .values({
+      id: operationId,
+      accountId: account.accountId,
+      testMode: 1,
+      kind: 'create-invoice',
+      requestJson: '{}'
+    })
+    .run()
+  db.insert(providerOperationResolutions)
+    .values({ operationId, resolution: 'cancelled', proofJson: '{}' })
+    .run()
+  expect(() => persistDraft(7, created, operationId)).toThrow(
+    expect.objectContaining({ code: 'PROVIDER_OPERATION_CANCELLED' })
+  )
+  expect(saveInvoice).not.toHaveBeenCalled()
+  expect(db.select().from(sessionBillingRefs).all()).toEqual([])
 })

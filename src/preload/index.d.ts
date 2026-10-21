@@ -272,7 +272,7 @@ interface InvoiceApi {
   }): Promise<IpcResult<GenerateLineItemsResult>>
   getAll(filters?: { clientId?: number; status?: string }): Promise<IpcResult<LocalInvoice[]>>
   getById(localId: number): Promise<IpcResult<LocalInvoiceDetail | null>>
-  syncLocalStatus(localId: number): Promise<IpcResult<LocalInvoice>>
+  syncLocalStatus(localId: number): Promise<IpcResult<LocalInvoice | null>>
   syncAllStatuses(): Promise<IpcResult<number>>
   delete(localId: number): Promise<IpcResult<void>>
   getStripeMode(): Promise<IpcResult<'live' | 'test'>>

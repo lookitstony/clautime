@@ -25,6 +25,8 @@ import { recordProviderObservation } from './folder-sync-invoice-records'
 import { retainCustomerReference, scopedCustomerReference } from './invoice-provider-scope'
 import { assertSharedBillingReady } from './folder-sync-billing-guard'
 import { aiService } from './ai-service'
+import { draftDiscardRefusal, isStripeMissing } from './invoice-operation-resolution'
+import { providerOperationResolution } from './provider-operation-store'
 import { AppError } from '../../shared/types/ipc'
 import { clientAlias } from '../../shared/presentation-alias'
 import { computeBucketedHumanMinutes } from '../../shared/earnings'
@@ -639,6 +641,7 @@ export const invoiceService = {
       periodEnd: row.periodEnd,
       testMode: !!row.testMode,
       createdAt: row.createdAt,
+      discardable: this.isDiscardable(row),
       lineItems: items.map((item) => ({
         id: item.id,
         lineDate: item.lineDate,
@@ -654,13 +657,22 @@ export const invoiceService = {
   /**
    * Sync a single invoice's status from Stripe.
    */
-  async syncStatus(localId: number): Promise<LocalInvoice> {
+  async syncStatus(localId: number): Promise<LocalInvoice | null> {
     const db = getDb()
     const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
     if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
 
+    let read: ProviderStatusRead
+    try {
+      read = await stripeService.getInvoiceStatus(row.stripeInvoiceId)
+    } catch (err) {
+      if (!isStripeMissing(err) || draftDiscardRefusal(db, row)) throw err
+      // Deleted in Stripe: released like syncAllStatuses does. Null means it is gone.
+      await stripeService.discardDraftInvoice(localId, false)
+      return null
+    }
     // Monotonic: a stale read never regresses a paid/void status imported from another computer.
-    recordStatusRead(db, await stripeService.getInvoiceStatus(row.stripeInvoiceId))
+    recordStatusRead(db, read)
 
     const all = this.getAll()
     return all.find((inv) => inv.id === localId)!
@@ -671,26 +683,58 @@ export const invoiceService = {
    */
   async syncAllStatuses(): Promise<number> {
     const db = getDb()
-    const openInvoices = db
+    // Invoices from the other Stripe mode always fail the account check, so skip them.
+    const batch = db
       .select()
       .from(invoices)
       .where(
         and(
           ne(invoices.status, 'paid'),
           ne(invoices.status, 'void'),
-          ne(invoices.status, 'uncollectible')
+          ne(invoices.status, 'uncollectible'),
+          eq(invoices.testMode, credentialService.isStripeTestMode() ? 1 : 0)
         )
       )
+      .orderBy(desc(invoices.createdAt))
+      .limit(20) // Rate limit: max 20 per batch, newest first
       .all()
+    if (batch.length === 0) return 0
+
+    let context: Awaited<ReturnType<typeof stripeService.readStatusContext>>
+    try {
+      context = await stripeService.readStatusContext()
+    } catch (err) {
+      log.warn('Invoice status sync skipped:', err)
+      return 0
+    }
+    // Read from Stripe a few at a time; record results one by one.
+    const reads: PromiseSettledResult<ProviderStatusRead>[] = []
+    for (let i = 0; i < batch.length; i += 5)
+      reads.push(
+        ...(await Promise.allSettled(
+          batch
+            .slice(i, i + 5)
+            .map((inv) => stripeService.getInvoiceStatus(inv.stripeInvoiceId, context))
+        ))
+      )
 
     let updated = 0
-    // Rate limit: max 20 per batch
-    const batch = openInvoices.slice(0, 20)
-    for (const inv of batch) {
+    for (const [i, inv] of batch.entries()) {
       try {
-        const read = await stripeService.getInvoiceStatus(inv.stripeInvoiceId)
-        if (recordStatusRead(db, read).changed) updated++
+        const read = reads[i]
+        if (read.status === 'rejected') throw read.reason
+        if (recordStatusRead(db, read.value).changed) updated++
       } catch (err) {
+        // A draft deleted in Stripe reads as missing; release its time once Stripe confirms it.
+        if (isStripeMissing(err) && !draftDiscardRefusal(db, inv)) {
+          try {
+            await stripeService.discardDraftInvoice(inv.id, false)
+            updated++
+            continue
+          } catch (discardErr) {
+            log.warn(`Draft ${inv.stripeInvoiceId} not discarded:`, discardErr)
+          }
+        }
         log.warn(`Failed to sync invoice ${inv.stripeInvoiceId}:`, err)
       }
     }
@@ -699,13 +743,36 @@ export const invoiceService = {
     return updated
   },
 
+  /** A draft Delete removes from Stripe too: discardable here, with a key for its Stripe mode. */
+  isDiscardable(row: typeof invoices.$inferSelect): boolean {
+    return (
+      !draftDiscardRefusal(getDb(), row) &&
+      credentialService.hasStripeKey() &&
+      !!row.testMode === credentialService.isStripeTestMode()
+    )
+  },
+
   /**
-   * Hide a local invoice. Its saved lines and billed-work audit remain intact.
+   * Delete a draft ClauTime created from Stripe and ClauTime, so its time is billable again.
+   * Any other invoice (or a shared or unsettled draft) is hidden; its saved lines and billed-work
+   * audit remain intact.
    */
-  deleteInvoice(localId: number): void {
+  async deleteInvoice(localId: number): Promise<void> {
     const db = getDb()
     const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
     if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
+    if (this.isDiscardable(row)) {
+      try {
+        await stripeService.discardDraftInvoice(localId, true)
+        return
+      } catch (err) {
+        const now = db.select().from(invoices).where(eq(invoices.id, localId)).get()
+        // A concurrent discard (the list's status sync) already released it.
+        if (!now && providerOperationResolution(db, row.operationId!)) return
+        // Shared or unsettled by the folder-sync import that ran first: hide as before.
+        if (!now || !draftDiscardRefusal(db, now)) throw err
+      }
+    }
 
     db.transaction((tx) => {
       retainInvoiceBillingRefs(tx)
@@ -807,7 +874,8 @@ export const invoiceService = {
         periodStart: r.periodStart!,
         periodEnd: r.periodEnd!,
         amountDueCents: r.amountDueCents,
-        createdAt: r.createdAt
+        createdAt: r.createdAt,
+        discardable: this.isDiscardable(r)
       }))
   }
 }
