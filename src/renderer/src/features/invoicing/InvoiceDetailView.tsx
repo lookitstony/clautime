@@ -54,9 +54,13 @@ export function InvoiceDetailView({
       if (!r.success) throw new Error(r.error.message)
       return r.data
     },
-    onSuccess: () => {
+    onSuccess: (synced) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      toast.success('Status updated')
+      if (synced) toast.success('Status updated')
+      else {
+        toast.success('Stripe deleted this draft; its time is billable again')
+        onBack()
+      }
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Sync failed')
   })
@@ -99,11 +103,25 @@ export function InvoiceDetailView({
       toast.success('Invoice deleted')
       onBack()
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Delete failed')
+    onError: (err) => {
+      // The draft may have been released by the list's status sync meanwhile.
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    }
   })
 
-  if (isLoading || !invoice) {
+  if (isLoading) {
     return <div className="p-6 text-center text-[var(--text-muted)]">Loading invoice...</div>
+  }
+  if (!invoice) {
+    return (
+      <div className="space-y-3 p-6 text-center text-[var(--text-muted)]">
+        <p>This invoice is no longer in ClauTime.</p>
+        <Button size="sm" variant="ghost" onClick={onBack}>
+          <ArrowLeft className="mr-1 h-4 w-4" /> Back to invoices
+        </Button>
+      </div>
+    )
   }
 
   const displayStatus = getDisplayStatus(invoice)
@@ -352,8 +370,12 @@ export function InvoiceDetailView({
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete Invoice"
-        description={`Permanently delete this invoice record for $${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName}? This removes it from ClauTime but does not affect Stripe.`}
+        title={invoice.discardable ? 'Delete Draft' : 'Delete Invoice'}
+        description={
+          invoice.discardable
+            ? `Delete this draft for $${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName} from ClauTime and Stripe? Its time becomes billable again so you can create a new invoice.`
+            : `Permanently delete this invoice record for $${(invoice.amountDueCents / 100).toFixed(2)} to ${invoice.clientName}? This removes it from ClauTime but does not affect Stripe.`
+        }
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="destructive"

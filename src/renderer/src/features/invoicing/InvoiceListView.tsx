@@ -1,7 +1,15 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, ExternalLink, Download, ArrowUp, ArrowDown } from 'lucide-react'
+import {
+  Plus,
+  ExternalLink,
+  Download,
+  ArrowUp,
+  ArrowDown,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -93,6 +101,8 @@ function getDisplayStatus(inv: LocalInvoice): string {
   return inv.status
 }
 
+const PAGE_SIZES = [10, 25, 50]
+
 interface InvoiceListViewProps {
   onCreateNew: () => void
   onSelectInvoice: (id: number) => void
@@ -112,6 +122,8 @@ export function InvoiceListView({
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('all')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0])
+  const [paging, setPaging] = useState({ filterKey: '', page: 0 })
 
   const toggleStatus = (status: StatusFilter) => {
     setActiveStatuses((prev) => {
@@ -154,13 +166,23 @@ export function InvoiceListView({
   const { data: invoices = [], isLoading } = useQuery({
     queryKey: ['invoices'],
     queryFn: async () => {
-      // Auto-sync non-terminal invoice statuses from Stripe, then fetch all
-      await window.api.invoice.syncAllStatuses().catch(() => {})
       const r = await window.api.invoice.getAll()
       return r.success ? r.data : []
+    }
+  })
+
+  // Sync non-terminal statuses from Stripe in the background; refresh the list only on changes.
+  const statusSync = useQuery({
+    queryKey: ['invoice-status-sync'],
+    queryFn: async () => {
+      const r = await window.api.invoice.syncAllStatuses()
+      return r.success ? r.data : 0
     },
     staleTime: 30_000 // Re-sync at most every 30s
   })
+  useEffect(() => {
+    if (statusSync.data) queryClient.invalidateQueries({ queryKey: ['invoices'], exact: true })
+  }, [statusSync.data, statusSync.dataUpdatedAt, queryClient])
 
   const sortedInvoices = useMemo(() => {
     const range = getPeriodRange(periodPreset, customStart, customEnd)
@@ -193,7 +215,33 @@ export function InvoiceListView({
       return sortDir === 'asc' ? cmp : -cmp
     })
     return sorted
-  }, [invoices, sortKey, sortDir, activeStatuses, clientFilter, periodPreset, customStart, customEnd])
+  }, [
+    invoices,
+    sortKey,
+    sortDir,
+    activeStatuses,
+    clientFilter,
+    periodPreset,
+    customStart,
+    customEnd
+  ])
+
+  // Back to the first page whenever the filters or sort change.
+  const filterKey = JSON.stringify([
+    sortKey,
+    sortDir,
+    [...activeStatuses],
+    clientFilter,
+    periodPreset,
+    customStart,
+    customEnd,
+    pageSize
+  ])
+  const page = paging.filterKey === filterKey ? paging.page : 0
+  const setPage = (next: number) => setPaging({ filterKey, page: next })
+  const pageCount = Math.max(1, Math.ceil(sortedInvoices.length / pageSize))
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageInvoices = sortedInvoices.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
   // Totals over the currently-filtered set.
   const totals = useMemo(() => {
@@ -253,10 +301,7 @@ export function InvoiceListView({
             </SelectContent>
           </Select>
 
-          <Select
-            value={periodPreset}
-            onValueChange={(v) => setPeriodPreset(v as PeriodPreset)}
-          >
+          <Select value={periodPreset} onValueChange={(v) => setPeriodPreset(v as PeriodPreset)}>
             <SelectTrigger className="h-8 w-[140px] text-[12px]">
               <SelectValue />
             </SelectTrigger>
@@ -382,7 +427,7 @@ export function InvoiceListView({
               </tr>
             </thead>
             <tbody>
-              {sortedInvoices.map((inv: LocalInvoice) => {
+              {pageInvoices.map((inv: LocalInvoice) => {
                 const displayStatus = getDisplayStatus(inv)
                 return (
                   <tr
@@ -436,6 +481,52 @@ export function InvoiceListView({
               })}
             </tbody>
           </table>
+          {sortedInvoices.length > PAGE_SIZES[0] && (
+            <div className="flex items-center justify-between border-t border-[var(--surface-border)] px-4 py-2 text-[12px] text-[var(--text-muted)]">
+              <div className="flex items-center gap-2">
+                <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                  <SelectTrigger className="h-7 w-[90px] text-[12px]" aria-label="Rows per page">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {PAGE_SIZES.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} / page
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span>
+                  {currentPage * pageSize + 1}–
+                  {Math.min((currentPage + 1) * pageSize, sortedInvoices.length)} of{' '}
+                  {sortedInvoices.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={currentPage === 0}
+                  onClick={() => setPage(currentPage - 1)}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span>
+                  Page {currentPage + 1} of {pageCount}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={currentPage >= pageCount - 1}
+                  onClick={() => setPage(currentPage + 1)}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

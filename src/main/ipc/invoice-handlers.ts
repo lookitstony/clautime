@@ -7,7 +7,10 @@ import { getDb } from '../db'
 import { invoices } from '../db/schema/invoices'
 import { eq } from 'drizzle-orm'
 import { retainInvoiceBillingRefs } from '../services/session-billing'
-import { requireProviderAccount } from '../services/provider-operation-store'
+import {
+  providerOperationResolution,
+  requireProviderAccount
+} from '../services/provider-operation-store'
 import { pendingInvoiceOperations } from '../services/pending-invoice-operations'
 import { AppError, ipcSuccess, ipcError, type IpcResult } from '../../shared/types/ipc'
 import {
@@ -18,6 +21,7 @@ import {
 import { localBillingForSave } from '../services/invoice-portable-billing'
 import {
   journalInvoiceRecordsSafely,
+  providerIntentHasConflict,
   recordProviderObservation
 } from '../services/folder-sync-invoice-records'
 import type {
@@ -51,6 +55,15 @@ export function persistDraft(clientId: number, created: CreatedDraft, operationI
     throw new AppError('PROVIDER_RESULT_CONFLICT', 'The Stripe status belongs to another invoice.')
   const db = getDb()
   const localId = db.transaction((tx) => {
+    // A draft discarded while this save was in flight stays discarded.
+    if (
+      providerOperationResolution(tx as unknown as ReturnType<typeof getDb>, operationId) &&
+      !providerIntentHasConflict(tx as unknown as ReturnType<typeof getDb>, operationId)
+    )
+      throw new AppError(
+        'PROVIDER_OPERATION_CANCELLED',
+        'This draft was deleted. Create a new draft instead.'
+      )
     const existing = tx
       .select()
       .from(invoices)
@@ -446,7 +459,7 @@ export function registerInvoiceHandlers(): void {
 
   ipcMain.handle(
     'invoice:syncLocalStatus',
-    async (_event, localId: number): Promise<IpcResult<LocalInvoice>> => {
+    async (_event, localId: number): Promise<IpcResult<LocalInvoice | null>> => {
       try {
         const result = await invoiceService.syncStatus(localId)
         return ipcSuccess(result)
@@ -472,11 +485,11 @@ export function registerInvoiceHandlers(): void {
       if (typeof localId !== 'number' || localId <= 0) {
         return ipcError('INVALID_ID', 'Invalid invoice ID')
       }
-      invoiceService.deleteInvoice(localId)
+      await invoiceService.deleteInvoice(localId)
       return ipcSuccess(undefined)
     } catch (error) {
       log.error('IPC invoice:delete failed:', error)
-      return ipcError('INVOICE_DELETE_ERROR', String(error))
+      return providerError('INVOICE_DELETE_ERROR', error)
     }
   })
 
