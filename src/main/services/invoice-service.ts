@@ -25,6 +25,7 @@ import { recordProviderObservation } from './folder-sync-invoice-records'
 import { retainCustomerReference, scopedCustomerReference } from './invoice-provider-scope'
 import { assertSharedBillingReady } from './folder-sync-billing-guard'
 import { aiService } from './ai-service'
+import { extractTicketId } from './ticket-id'
 import { draftDiscardRefusal, isStripeMissing } from './invoice-operation-resolution'
 import { providerOperationResolution } from './provider-operation-store'
 import { AppError } from '../../shared/types/ipc'
@@ -287,6 +288,7 @@ export const invoiceService = {
 
     // Stripe caps line item descriptions at 500 characters (hard).
     const STRIPE_LINE_DESC_LIMIT = 500
+    const invoiceTickets = new Set<string>()
 
     for (const group of sortedGroups) {
       // Skip days with negligible time (under 3 minutes = rounds to 0.0h)
@@ -301,10 +303,9 @@ export const invoiceService = {
       const dayCommitMsgs =
         commitsByDayProject.get(`${group.dateKey}::${group.projectId ?? 0}`) ?? []
       const ticketsForGroup = [
-        ...new Set(
-          dayCommitMsgs.map((m) => m.match(/\b[A-Z]{2,10}-\d{1,6}\b/)?.[0]).filter(Boolean)
-        )
+        ...new Set(dayCommitMsgs.map(extractTicketId).filter((t): t is string => t !== null))
       ]
+      for (const t of ticketsForGroup) invoiceTickets.add(t)
 
       const header = `${dateFormatted} ${group.projectName}:`
       // When N tickets > MAX_PER_TICKET_LINES (4), ai-service returns a single
@@ -392,50 +393,8 @@ export const invoiceService = {
     const uniqueProjects = [...new Set(lineItems.flatMap((li) => li.projectNames))]
     const periodLabel = `${formatDateShort(startDate)} – ${formatDateShort(endDate)}`
 
-    // Collect all tickets mentioned in descriptions
-    // Match ticket-like tokens (e.g. PROJ-2643, WI-7), then drop common
-    // non-ticket prefixes that share the same shape (UTF-8, ISO-8859, etc.).
-    const ticketPattern = /\b[A-Z]{2,10}-\d{1,6}\b/g
-    const NON_TICKET_PREFIXES = new Set([
-      'UTF',
-      'ASCII',
-      'ISO',
-      'COVID',
-      'HTTP',
-      'HTTPS',
-      'IPV',
-      'TLS',
-      'SSL',
-      'AES',
-      'RSA',
-      'SHA',
-      'MD',
-      'RFC',
-      'OAUTH',
-      'JWT',
-      'API',
-      'REST',
-      'JSON',
-      'XML',
-      'YAML',
-      'CSV',
-      'HTML',
-      'CSS',
-      'JS',
-      'TS',
-      'EOL'
-    ])
-    const isLikelyTicket = (token: string): boolean => {
-      const prefix = token.split('-')[0].toUpperCase()
-      return !NON_TICKET_PREFIXES.has(prefix)
-    }
-    const allTickets = [
-      ...new Set(
-        lineItems.flatMap((li) =>
-          (li.description.match(ticketPattern) ?? []).filter(isLikelyTicket)
-        )
-      )
-    ]
+    // Tickets leading the commit messages of the billed day+project groups
+    const allTickets = [...invoiceTickets]
 
     // Stripe's invoice description field has no documented public limit; treat
     // 500 as the safe budget (matches their 500-char cap on line item

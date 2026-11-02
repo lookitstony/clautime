@@ -6,10 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-## [1.3.3] - 2026-10-21
+## [1.3.3] - 2026-11-02
 
 ### Fixed
 
+- Invoice lines and the invoice memo now pick up tickets whose key contains a digit, like `TRI3-4856`. A ticket counts only when it starts the commit message and is followed by `:` or a space, so IDs later in a message (`TM-015`) and words like `Auto-detect` are no longer read as tickets.
 - Deleting a draft invoice now deletes it from Stripe too and makes its time billable again. Before, Delete only hid the draft, so its time stayed locked and a new invoice for the period reported no billable time. A draft already deleted in Stripe is released the next time statuses sync. If a hidden draft is still locking a period, use **Delete draft** in the overlap warning when creating the invoice.
 - Drafts shared through folder sync, or without a Stripe key, are still hidden instead of deleted.
 

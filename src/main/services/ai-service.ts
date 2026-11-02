@@ -9,6 +9,7 @@ import { gitService } from './git-service'
 import { projects } from '../db/schema/projects'
 import { credentialService } from './credential-service'
 import { settingsService } from './settings-service'
+import { extractTicketId } from './ticket-id'
 import {
   DEFAULT_AI_SUMMARY_INSTRUCTIONS,
   DEFAULT_AI_BRIEF_INSTRUCTIONS
@@ -893,52 +894,6 @@ export const aiService = {
       return null
     }
   }
-}
-
-// Common technical-spec tokens shaped like tickets (UTF-8, ISO-8859, COVID-19,
-// HTTP-2, etc.) but never actual issue keys. Excluded from ticket extraction.
-const NON_TICKET_PREFIXES = new Set([
-  'UTF',
-  'ASCII',
-  'ISO',
-  'COVID',
-  'HTTP',
-  'HTTPS',
-  'IPV',
-  'TLS',
-  'SSL',
-  'AES',
-  'RSA',
-  'SHA',
-  'MD',
-  'RFC',
-  'OAUTH',
-  'JWT',
-  'API',
-  'REST',
-  'JSON',
-  'XML',
-  'YAML',
-  'CSV',
-  'HTML',
-  'CSS',
-  'JS',
-  'TS',
-  'EOL'
-])
-
-/** Extract ticket/work item ID from a commit message, or return null. */
-function extractTicketId(message: string): string | null {
-  // Match patterns like JIRA-123, FEAT-789, BUG-101, PROJ-1234, #456
-  const match =
-    message.match(/^([A-Z]+-\d+)\b/i) ??
-    message.match(/\b([A-Z]{2,}-\d+)\b/i) ??
-    message.match(/^(#\d+)\b/)
-  if (!match) return null
-  const candidate = match[1].toUpperCase()
-  const prefix = candidate.split('-')[0]
-  if (NON_TICKET_PREFIXES.has(prefix)) return null
-  return candidate
 }
 
 /**
