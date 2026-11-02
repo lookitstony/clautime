@@ -25,6 +25,9 @@ import { recordProviderObservation } from './folder-sync-invoice-records'
 import { retainCustomerReference, scopedCustomerReference } from './invoice-provider-scope'
 import { assertSharedBillingReady } from './folder-sync-billing-guard'
 import { aiService } from './ai-service'
+import { extractTicketId } from './ticket-id'
+import { draftDiscardRefusal, isStripeMissing } from './invoice-operation-resolution'
+import { providerOperationResolution } from './provider-operation-store'
 import { AppError } from '../../shared/types/ipc'
 import { clientAlias } from '../../shared/presentation-alias'
 import { computeBucketedHumanMinutes } from '../../shared/earnings'
@@ -285,6 +288,7 @@ export const invoiceService = {
 
     // Stripe caps line item descriptions at 500 characters (hard).
     const STRIPE_LINE_DESC_LIMIT = 500
+    const invoiceTickets = new Set<string>()
 
     for (const group of sortedGroups) {
       // Skip days with negligible time (under 3 minutes = rounds to 0.0h)
@@ -299,10 +303,9 @@ export const invoiceService = {
       const dayCommitMsgs =
         commitsByDayProject.get(`${group.dateKey}::${group.projectId ?? 0}`) ?? []
       const ticketsForGroup = [
-        ...new Set(
-          dayCommitMsgs.map((m) => m.match(/\b[A-Z]{2,10}-\d{1,6}\b/)?.[0]).filter(Boolean)
-        )
+        ...new Set(dayCommitMsgs.map(extractTicketId).filter((t): t is string => t !== null))
       ]
+      for (const t of ticketsForGroup) invoiceTickets.add(t)
 
       const header = `${dateFormatted} ${group.projectName}:`
       // When N tickets > MAX_PER_TICKET_LINES (4), ai-service returns a single
@@ -390,50 +393,8 @@ export const invoiceService = {
     const uniqueProjects = [...new Set(lineItems.flatMap((li) => li.projectNames))]
     const periodLabel = `${formatDateShort(startDate)} – ${formatDateShort(endDate)}`
 
-    // Collect all tickets mentioned in descriptions
-    // Match ticket-like tokens (e.g. PROJ-2643, WI-7), then drop common
-    // non-ticket prefixes that share the same shape (UTF-8, ISO-8859, etc.).
-    const ticketPattern = /\b[A-Z]{2,10}-\d{1,6}\b/g
-    const NON_TICKET_PREFIXES = new Set([
-      'UTF',
-      'ASCII',
-      'ISO',
-      'COVID',
-      'HTTP',
-      'HTTPS',
-      'IPV',
-      'TLS',
-      'SSL',
-      'AES',
-      'RSA',
-      'SHA',
-      'MD',
-      'RFC',
-      'OAUTH',
-      'JWT',
-      'API',
-      'REST',
-      'JSON',
-      'XML',
-      'YAML',
-      'CSV',
-      'HTML',
-      'CSS',
-      'JS',
-      'TS',
-      'EOL'
-    ])
-    const isLikelyTicket = (token: string): boolean => {
-      const prefix = token.split('-')[0].toUpperCase()
-      return !NON_TICKET_PREFIXES.has(prefix)
-    }
-    const allTickets = [
-      ...new Set(
-        lineItems.flatMap((li) =>
-          (li.description.match(ticketPattern) ?? []).filter(isLikelyTicket)
-        )
-      )
-    ]
+    // Tickets leading the commit messages of the billed day+project groups
+    const allTickets = [...invoiceTickets]
 
     // Stripe's invoice description field has no documented public limit; treat
     // 500 as the safe budget (matches their 500-char cap on line item
@@ -639,6 +600,7 @@ export const invoiceService = {
       periodEnd: row.periodEnd,
       testMode: !!row.testMode,
       createdAt: row.createdAt,
+      discardable: this.isDiscardable(row),
       lineItems: items.map((item) => ({
         id: item.id,
         lineDate: item.lineDate,
@@ -654,13 +616,22 @@ export const invoiceService = {
   /**
    * Sync a single invoice's status from Stripe.
    */
-  async syncStatus(localId: number): Promise<LocalInvoice> {
+  async syncStatus(localId: number): Promise<LocalInvoice | null> {
     const db = getDb()
     const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
     if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
 
+    let read: ProviderStatusRead
+    try {
+      read = await stripeService.getInvoiceStatus(row.stripeInvoiceId)
+    } catch (err) {
+      if (!isStripeMissing(err) || draftDiscardRefusal(db, row)) throw err
+      // Deleted in Stripe: released like syncAllStatuses does. Null means it is gone.
+      await stripeService.discardDraftInvoice(localId, false)
+      return null
+    }
     // Monotonic: a stale read never regresses a paid/void status imported from another computer.
-    recordStatusRead(db, await stripeService.getInvoiceStatus(row.stripeInvoiceId))
+    recordStatusRead(db, read)
 
     const all = this.getAll()
     return all.find((inv) => inv.id === localId)!
@@ -671,26 +642,58 @@ export const invoiceService = {
    */
   async syncAllStatuses(): Promise<number> {
     const db = getDb()
-    const openInvoices = db
+    // Invoices from the other Stripe mode always fail the account check, so skip them.
+    const batch = db
       .select()
       .from(invoices)
       .where(
         and(
           ne(invoices.status, 'paid'),
           ne(invoices.status, 'void'),
-          ne(invoices.status, 'uncollectible')
+          ne(invoices.status, 'uncollectible'),
+          eq(invoices.testMode, credentialService.isStripeTestMode() ? 1 : 0)
         )
       )
+      .orderBy(desc(invoices.createdAt))
+      .limit(20) // Rate limit: max 20 per batch, newest first
       .all()
+    if (batch.length === 0) return 0
+
+    let context: Awaited<ReturnType<typeof stripeService.readStatusContext>>
+    try {
+      context = await stripeService.readStatusContext()
+    } catch (err) {
+      log.warn('Invoice status sync skipped:', err)
+      return 0
+    }
+    // Read from Stripe a few at a time; record results one by one.
+    const reads: PromiseSettledResult<ProviderStatusRead>[] = []
+    for (let i = 0; i < batch.length; i += 5)
+      reads.push(
+        ...(await Promise.allSettled(
+          batch
+            .slice(i, i + 5)
+            .map((inv) => stripeService.getInvoiceStatus(inv.stripeInvoiceId, context))
+        ))
+      )
 
     let updated = 0
-    // Rate limit: max 20 per batch
-    const batch = openInvoices.slice(0, 20)
-    for (const inv of batch) {
+    for (const [i, inv] of batch.entries()) {
       try {
-        const read = await stripeService.getInvoiceStatus(inv.stripeInvoiceId)
-        if (recordStatusRead(db, read).changed) updated++
+        const read = reads[i]
+        if (read.status === 'rejected') throw read.reason
+        if (recordStatusRead(db, read.value).changed) updated++
       } catch (err) {
+        // A draft deleted in Stripe reads as missing; release its time once Stripe confirms it.
+        if (isStripeMissing(err) && !draftDiscardRefusal(db, inv)) {
+          try {
+            await stripeService.discardDraftInvoice(inv.id, false)
+            updated++
+            continue
+          } catch (discardErr) {
+            log.warn(`Draft ${inv.stripeInvoiceId} not discarded:`, discardErr)
+          }
+        }
         log.warn(`Failed to sync invoice ${inv.stripeInvoiceId}:`, err)
       }
     }
@@ -699,13 +702,36 @@ export const invoiceService = {
     return updated
   },
 
+  /** A draft Delete removes from Stripe too: discardable here, with a key for its Stripe mode. */
+  isDiscardable(row: typeof invoices.$inferSelect): boolean {
+    return (
+      !draftDiscardRefusal(getDb(), row) &&
+      credentialService.hasStripeKey() &&
+      !!row.testMode === credentialService.isStripeTestMode()
+    )
+  },
+
   /**
-   * Hide a local invoice. Its saved lines and billed-work audit remain intact.
+   * Delete a draft ClauTime created from Stripe and ClauTime, so its time is billable again.
+   * Any other invoice (or a shared or unsettled draft) is hidden; its saved lines and billed-work
+   * audit remain intact.
    */
-  deleteInvoice(localId: number): void {
+  async deleteInvoice(localId: number): Promise<void> {
     const db = getDb()
     const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
     if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
+    if (this.isDiscardable(row)) {
+      try {
+        await stripeService.discardDraftInvoice(localId, true)
+        return
+      } catch (err) {
+        const now = db.select().from(invoices).where(eq(invoices.id, localId)).get()
+        // A concurrent discard (the list's status sync) already released it.
+        if (!now && providerOperationResolution(db, row.operationId!)) return
+        // Shared or unsettled by the folder-sync import that ran first: hide as before.
+        if (!now || !draftDiscardRefusal(db, now)) throw err
+      }
+    }
 
     db.transaction((tx) => {
       retainInvoiceBillingRefs(tx)
@@ -807,7 +833,8 @@ export const invoiceService = {
         periodStart: r.periodStart!,
         periodEnd: r.periodEnd!,
         amountDueCents: r.amountDueCents,
-        createdAt: r.createdAt
+        createdAt: r.createdAt,
+        discardable: this.isDiscardable(r)
       }))
   }
 }

@@ -2064,7 +2064,7 @@ it.each(['/legacy/missing.jsonl', null])(
     sessionService.updateSession(first.id, { description: 'Edited legacy child' })
     expect(db.select().from(sessionLegacyRecords).all()).toEqual(snapshots)
     expect(db.select().from(invoiceLineItems).all()).toEqual(lines)
-    invoiceService.deleteInvoice(invoiceId)
+    await invoiceService.deleteInvoice(invoiceId)
     expect(
       (await invoiceService.generateLineItems(client.id, '2026-03-01', '2026-03-10')).lineItems
     ).toEqual([])
@@ -2212,7 +2212,7 @@ it('preserves invoice snapshots and excludes billed descendants after repeated s
   expect(
     (await invoiceService.generateLineItems(client.id, '2026-03-01', '2026-03-10')).lineItems
   ).toEqual([])
-  invoiceService.deleteInvoice(invoiceId)
+  await invoiceService.deleteInvoice(invoiceId)
   expect(
     (await invoiceService.generateLineItems(client.id, '2026-03-01', '2026-03-10')).lineItems
   ).toEqual([])
@@ -2329,7 +2329,7 @@ it('newly appended work stays billable after invoicing the earlier interval', as
     lineItems: next.lineItems.map((line, sortOrder) => ({ ...line, sortOrder }))
   })
   const frozen = db.select().from(sessionBillingRefs).all()
-  invoiceService.deleteInvoice(secondInvoice)
+  await invoiceService.deleteInvoice(secondInvoice)
   sessionService.splitSession(row.id, '2026-03-04T10:05:00Z')
   capture('/review/growing', [30])
   expect((await sessionService.rebuildSessionsFromRaw()).errors).toBeUndefined()
@@ -2451,7 +2451,7 @@ it('freezes legacy billing bounds once during migration and preserves them acros
   const row = sessionService.getAllSessions()[0]
   sessionService.updateSession(row.id, { clientId: client.id })
   const localId = invoice(client.id, row.id)
-  invoiceService.deleteInvoice(localId)
+  await invoiceService.deleteInvoice(localId)
   sqlite.exec('ALTER TABLE session_billing_refs DROP COLUMN billed_ranges')
   sqlite.exec('ALTER TABLE session_splits DROP COLUMN legacy_record_id')
   sqlite.exec('DROP TABLE session_replacements')

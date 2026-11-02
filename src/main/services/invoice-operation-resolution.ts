@@ -1,5 +1,5 @@
 import type Stripe from 'stripe'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import {
   providerOperations,
@@ -7,7 +7,10 @@ import {
   providerOperationResults,
   providerOperationRejections
 } from '../db/schema/provider-operations'
-import { invoices } from '../db/schema/invoices'
+import { invoices, invoiceLineItems } from '../db/schema/invoices'
+import { sessionBillingRefs } from '../db/schema/session-history'
+import { syncChanges } from '../db/schema/folder-sync'
+import { invoiceSyncId, providerIntentHasConflict } from './folder-sync-invoice-records'
 import { AppError } from '../../shared/types/ipc'
 import type { JsonObject } from './folder-sync-protocol'
 import {
@@ -120,12 +123,14 @@ async function verifyDeleted(read: () => Promise<{ deleted?: boolean }>): Promis
 /**
  * Cancel an unfinished create-invoice operation with proof that it left no effect. `stripe` is
  * needed only when a draft invoice was created (to verify it was deleted); it must hold the
- * operation's own account and mode. Reads only; never a provider write.
+ * operation's own account and mode. Reads only; never a provider write. `savedDraftId` is set
+ * only by discardSavedDraft: that saved draft is then removed with the cancellation.
  */
 export async function cancelInvoiceOperation<S extends Record<string, unknown>>(
   db: Db<S>,
   operationId: string,
-  provider: { stripe: Stripe; expectedTestMode: boolean } | null
+  provider: { stripe: Stripe; expectedTestMode: boolean } | null,
+  savedDraftId?: number
 ): Promise<CancellationProof> {
   const operation = db
     .select()
@@ -137,11 +142,16 @@ export async function cancelInvoiceOperation<S extends Record<string, unknown>>(
       'INVOICE_OPERATION_NOT_FOUND',
       'This saved invoice operation is unavailable.'
     )
-  const existing = providerOperationResolution(db, operationId)
-  if (existing) return JSON.parse(existing.proofJson) as CancellationProof
-  if (
+  const savedId = () =>
     db.select({ id: invoices.id }).from(invoices).where(eq(invoices.operationId, operationId)).get()
-  )
+      ?.id
+  const existing = providerOperationResolution(db, operationId)
+  // A concurrent discard of the same draft may have finished first.
+  if (existing && (savedDraftId === undefined || savedId() === undefined))
+    return JSON.parse(existing.proofJson) as CancellationProof
+  if (savedDraftId !== undefined && savedId() === undefined)
+    notCancellable('This draft is no longer saved here. Refresh the invoice list.')
+  if (savedId() !== savedDraftId)
     notCancellable('This draft is already saved as an invoice. Void or review it instead.')
   const settlement = createOperationSettlement(db, operationId)
   if (settlement.uncertain.length)
@@ -209,13 +219,134 @@ export async function cancelInvoiceOperation<S extends Record<string, unknown>>(
   // Re-read synchronously with the recording: a resume that ran during the Stripe reads may have
   // started or completed another step.
   const now = createOperationSettlement(db, operationId)
+  const finished = providerOperationResolution(db, operationId)
+  // A concurrent discard of the same draft committed during the Stripe reads.
+  if (savedDraftId !== undefined && savedId() === undefined && finished)
+    return JSON.parse(finished.proofJson) as CancellationProof
   if (
     now.uncertain.length ||
     now.invoiceId !== settlement.invoiceId ||
     now.itemIds.join() !== settlement.itemIds.join() ||
-    db.select({ id: invoices.id }).from(invoices).where(eq(invoices.operationId, operationId)).get()
+    savedId() !== savedDraftId
   )
     notCancellable('This draft changed while it was being checked. Review it and try again.')
-  recordProviderResolution(db, operationId, proof as unknown as JsonObject)
+  db.transaction((tx) => {
+    if (savedDraftId !== undefined) {
+      // Shared while Stripe was being checked: roll back so the shared header keeps its billed work.
+      // (A Stripe draft already deleted by this discard stays deleted; it can never be paid.)
+      if (isSharedInvoice(tx as unknown as Db<S>, settlement.invoiceId!))
+        notCancellable('This draft is shared through folder sync and cannot be discarded here.')
+      // The saved draft and its billed-work references go with it, so its time is billable again.
+      tx.delete(sessionBillingRefs)
+        .where(eq(sessionBillingRefs.stripeInvoiceId, settlement.invoiceId!))
+        .run()
+      tx.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, savedDraftId)).run()
+      tx.delete(invoices).where(eq(invoices.id, savedDraftId)).run()
+    }
+    recordProviderResolution(tx as unknown as Db<S>, operationId, proof as unknown as JsonObject)
+  })
   return proof
+}
+
+/** Shared through folder sync: discarding it here would leave other computers a dead draft. */
+function isSharedInvoice<S extends Record<string, unknown>>(db: Db<S>, invoiceId: string): boolean {
+  return !!db
+    .select({ id: syncChanges.id })
+    .from(syncChanges)
+    .where(
+      and(eq(syncChanges.entityType, 'invoice'), eq(syncChanges.entityId, invoiceSyncId(invoiceId)))
+    )
+    .get()
+}
+
+/**
+ * Why a saved invoice cannot be discarded, from local facts only (no Stripe call), or null when
+ * discardSavedDraft may try. Callers that get a reason keep the old hide-only delete.
+ */
+export function draftDiscardRefusal<S extends Record<string, unknown>>(
+  db: Db<S>,
+  row: { status: string; operationId: string | null; stripeInvoiceId: string }
+): string | null {
+  if (row.status !== 'draft' || !row.operationId)
+    return 'Only a draft created by ClauTime can be discarded. Void it instead.'
+  if (isSharedInvoice(db, row.stripeInvoiceId))
+    return 'This draft is shared through folder sync and cannot be discarded here.'
+  if (providerIntentHasConflict(db, row.operationId))
+    return 'This draft has a folder sync conflict. Review it in Settings first.'
+  const settlement = createOperationSettlement(db, row.operationId)
+  if (settlement.uncertain.length || settlement.invoiceId !== row.stripeInvoiceId)
+    return 'Stripe may have completed part of this draft. Sync it and try again.'
+  return null
+}
+
+/** Stripe's answer for an object that does not exist (a deleted draft reads this way). */
+export const isStripeMissing = isMissing
+
+/**
+ * Discard a saved draft invoice ClauTime created, with the same draft-deleted proof as cancelling
+ * an unfinished one. With `deleteInStripe` (an explicit user delete), a draft Stripe still has is
+ * deleted first, with any of its items left unattached; a draft never emails the customer.
+ * Without it, nothing is written to Stripe: Stripe must already show the draft and items deleted.
+ * Refused for a finalized invoice or one shared through folder sync.
+ */
+export async function discardSavedDraft<S extends Record<string, unknown>>(
+  db: Db<S>,
+  localInvoiceId: number,
+  provider: { stripe: Stripe; expectedTestMode: boolean } | null,
+  deleteInStripe: boolean
+): Promise<CancellationProof> {
+  const row = db.select().from(invoices).where(eq(invoices.id, localInvoiceId)).get()
+  if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localInvoiceId} not found`)
+  const refusal = draftDiscardRefusal(db, row)
+  if (refusal) notCancellable(refusal)
+  if (!provider)
+    throw new AppError('STRIPE_NO_KEY', 'Add the Stripe key for this invoice before deleting it.')
+  const operationId = row.operationId!
+  const invoiceId = row.stripeInvoiceId
+  const operation = db
+    .select()
+    .from(providerOperations)
+    .where(eq(providerOperations.id, operationId))
+    .get()!
+  requireProviderAccount(await readStripeContext(provider.stripe, provider.expectedTestMode), {
+    accountId: operation.accountId,
+    testMode: !!operation.testMode
+  })
+  if (deleteInStripe) {
+    type Deletable = { deleted?: boolean; status?: string | null; invoice?: unknown }
+    const read = async (get: () => Promise<unknown>): Promise<Deletable | null> => {
+      try {
+        const found = (await get()) as Deletable
+        return found.deleted ? null : found
+      } catch (error) {
+        if (isMissing(error)) return null
+        throw error
+      }
+    }
+    const current = await read(() => provider.stripe.invoices.retrieve(invoiceId))
+    if (current) {
+      if (current.status !== 'draft')
+        notCancellable(`Stripe shows this invoice as ${current.status}. Void it instead.`)
+      try {
+        await provider.stripe.invoices.del(invoiceId)
+      } catch (error) {
+        if (!isMissing(error)) throw error
+      }
+    }
+    // A leftover item would be swept into the customer's next invoice. Only an unattached one (or
+    // one still on this draft) is this draft's own; an item on another invoice is never touched.
+    for (const itemId of createOperationSettlement(db, operationId).itemIds) {
+      const item = await read(() => provider.stripe.invoiceItems.retrieve(itemId))
+      if (!item) continue
+      const attached = typeof item.invoice === 'string' ? item.invoice : null
+      if (attached && attached !== invoiceId)
+        notCancellable(`Stripe moved item ${itemId} to invoice ${attached}. Review it in Stripe.`)
+      try {
+        await provider.stripe.invoiceItems.del(itemId)
+      } catch (error) {
+        if (!isMissing(error)) throw error
+      }
+    }
+  }
+  return cancelInvoiceOperation(db, operationId, provider, localInvoiceId)
 }

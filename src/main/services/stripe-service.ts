@@ -4,6 +4,7 @@ import log from 'electron-log/main.js'
 import { credentialService } from './credential-service'
 import { getDb } from '../db'
 import { clients } from '../db/schema/clients'
+import { invoices } from '../db/schema/invoices'
 import { AppError } from '../../shared/types/ipc'
 import type { StripeCustomerInfo, CreateInvoiceRequest } from '../../shared/types/invoice'
 import { isSyncUuid } from './folder-sync-protocol'
@@ -18,7 +19,8 @@ import {
   voidInvoiceOperation,
   type CreatedDraft,
   type InvoiceClient,
-  type ProviderStatusRead
+  type ProviderStatusRead,
+  type StripeContext
 } from './stripe-operation-service'
 import {
   checkBeforeSend,
@@ -31,7 +33,12 @@ import { findClientByPortableId, portableIdOfClientRow } from './folder-sync-bui
 import type { ProviderAccount } from './provider-operation-store'
 import { requestFromFrozenInvoice } from './pending-invoice-operations'
 import { completeInvoiceLines, refreshClientStripeInvoices } from './invoice-stripe-import'
-import { cancelInvoiceOperation, type CancellationProof } from './invoice-operation-resolution'
+import {
+  cancelInvoiceOperation,
+  discardSavedDraft,
+  draftDiscardRefusal,
+  type CancellationProof
+} from './invoice-operation-resolution'
 
 let cachedStripe: Stripe | null = null
 let cachedKey: string | null = null
@@ -240,6 +247,26 @@ export const stripeService = {
   },
 
   /**
+   * Discard a saved draft so its time can be invoiced again. With `deleteInStripe`, the Stripe
+   * draft is deleted first; otherwise Stripe must already show it deleted.
+   */
+  async discardDraftInvoice(localId: number, deleteInStripe: boolean): Promise<CancellationProof> {
+    const db = getDb()
+    const row = db.select().from(invoices).where(eq(invoices.id, localId)).get()
+    if (!row) throw new AppError('INVOICE_NOT_FOUND', `Invoice ${localId} not found`)
+    // Local refusals first, so a draft that can never be discarded costs no sync pass.
+    const refusal = draftDiscardRefusal(db, row)
+    if (refusal) throw new AppError('PROVIDER_OPERATION_NOT_CANCELLABLE', refusal)
+    await importBeforeInvoiceWrite(db)
+    const provider = credentialService.hasStripeKey()
+      ? { stripe: getStripeClient(), expectedTestMode: credentialService.isStripeTestMode() }
+      : null
+    const proof = await discardSavedDraft(db, localId, provider, deleteInStripe)
+    log.info(`Discarded draft invoice id=${localId}, stripe=${proof.invoiceId}`)
+    return proof
+  },
+
+  /**
    * Finalize and send an invoice. Returns the retrieved status with its provenance. Shared
    * history is imported first; until a send attempt starts, the invoice's saved and shared
    * records, its draft operation and the current Stripe draft are checked.
@@ -262,12 +289,24 @@ export const stripeService = {
   /**
    * Get the current status of an invoice.
    */
-  async getInvoiceStatus(invoiceId: string): Promise<ProviderStatusRead> {
+  /** The key's account and mode, read once for a batch of status reads. */
+  async readStatusContext(): Promise<StripeContext> {
+    return readStripeContext(getStripeClient(), credentialService.isStripeTestMode())
+  },
+
+  async getInvoiceStatus(invoiceId: string, shared?: StripeContext): Promise<ProviderStatusRead> {
     validateInvoiceId(invoiceId)
     const stripe = getStripeClient()
-    const context = await readStripeContext(stripe, credentialService.isStripeTestMode())
+    const context =
+      shared ?? (await readStripeContext(stripe, credentialService.isStripeTestMode()))
     checkSavedInvoiceAccount(getDb(), invoiceId, context)
     const invoice = await stripe.invoices.retrieve(invoiceId)
+    // A deleted draft reads like a missing one, so callers can release it the same way.
+    if ((invoice as { deleted?: boolean }).deleted)
+      throw Object.assign(new Error(`No such invoice: '${invoiceId}'`), {
+        code: 'resource_missing',
+        statusCode: 404
+      })
     if (invoice.livemode !== !context.testMode)
       throw new AppError(
         'STRIPE_ACCOUNT_MISMATCH',

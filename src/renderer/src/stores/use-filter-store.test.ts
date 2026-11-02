@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useFilterStore } from './use-filter-store'
 
 beforeEach(() => {
@@ -6,6 +6,12 @@ beforeEach(() => {
 })
 
 describe('useFilterStore', () => {
+  it('defaults to this week on a fresh launch', async () => {
+    vi.resetModules()
+    const { useFilterStore: fresh } = await import('./use-filter-store')
+    expect(fresh.getState().datePreset).toBe('this-week')
+  })
+
   it('starts with all filters null', () => {
     const state = useFilterStore.getState()
     expect(state.datePreset).toBeNull()

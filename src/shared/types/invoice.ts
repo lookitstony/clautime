@@ -163,6 +163,8 @@ export interface LocalInvoice {
 
 /** Local invoice with line items */
 export interface LocalInvoiceDetail extends LocalInvoice {
+  /** A ClauTime draft that Delete removes from Stripe too, releasing its billed time. */
+  discardable?: boolean
   lineItems: Array<{
     id: number
     lineDate: string | null
@@ -182,4 +184,6 @@ export interface InvoiceOverlap {
   periodEnd: string
   amountDueCents: number
   createdAt: string
+  /** A ClauTime draft that can be deleted from Stripe to release its time. */
+  discardable?: boolean
 }

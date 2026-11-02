@@ -9,7 +9,8 @@ import type Stripe from 'stripe'
 import { clients } from '../db/schema/clients'
 import { projects } from '../db/schema/projects'
 import { sessions } from '../db/schema/sessions'
-import { invoices } from '../db/schema/invoices'
+import { invoices, invoiceLineItems } from '../db/schema/invoices'
+import { sessionBillingRefs } from '../db/schema/session-history'
 import { retainCustomerReference } from './invoice-provider-scope'
 import { pendingInvoiceOperations } from './pending-invoice-operations'
 import {
@@ -28,7 +29,10 @@ import {
   voidInvoiceOperation,
   type InvoiceClient
 } from './stripe-operation-service'
-import { cancelInvoiceOperation } from './invoice-operation-resolution'
+import { cancelInvoiceOperation, discardSavedDraft } from './invoice-operation-resolution'
+import { invoiceSyncId, portableBilledRanges } from './folder-sync-invoice-records'
+import { billingRange, unbilledSessions } from './session-billing'
+import { eq } from 'drizzle-orm'
 
 type Row = Record<string, unknown> & { id: string }
 
@@ -49,6 +53,8 @@ function fakeStripe() {
     lose: new Set<string>(),
     /** Stripe refuses these writes before executing them (nothing saved under the key). */
     reject: new Map<string, Error>(),
+    /** Whether deleting a draft also deletes its items (unverified Stripe behavior). */
+    cascadeItems: true,
     seq: 0
   }
   const keys = new Map<string, unknown>()
@@ -151,7 +157,13 @@ function fakeStripe() {
         write('invoices.voidInvoice', (_: unknown, id?: string) =>
           Object.assign(invoice(id!), { status: 'void' })
         )
-      )
+      ),
+      del: vi.fn(async (id: string) => {
+        state.writes.push({ method: 'invoices.del', key: '' })
+        state.invoices.splice(state.invoices.indexOf(invoice(id)), 1)
+        if (state.cascadeItems) state.items = state.items.filter((row) => row.invoice !== id)
+        return { id, deleted: true }
+      })
     },
     invoiceItems: {
       create: vi.fn(
@@ -177,6 +189,13 @@ function fakeStripe() {
         const found = state.items.find((row) => row.id === id)
         if (!found) throw missing()
         return { ...found }
+      }),
+      del: vi.fn(async (id: string) => {
+        const found = state.items.findIndex((row) => row.id === id)
+        if (found < 0) throw missing()
+        state.writes.push({ method: 'invoiceItems.del', key: '' })
+        state.items.splice(found, 1)
+        return { id, deleted: true }
       })
     }
   }
@@ -1025,5 +1044,207 @@ describe('amounts Stripe accepts', () => {
     ).rejects.toMatchObject({ code: 'INVALID_LINE_ITEM' })
     expect(pendingInvoiceOperations(db)).toEqual([])
     expect(fake.state.writes).toEqual([])
+  })
+})
+
+describe('discardSavedDraft', () => {
+  const provider = () => ({ stripe: fake.stripe, expectedTestMode: true })
+  const sessionRow = (id: number) => db.select().from(sessions).where(eq(sessions.id, id)).get()!
+  const notFound = () =>
+    Object.assign(new Error('No such invoice'), { code: 'resource_missing', statusCode: 404 })
+  /** A folder-sync invoice header for this Stripe invoice. */
+  const shareInvoice = (invoiceId: string) =>
+    sqlite
+      .prepare(
+        "INSERT INTO sync_changes (id, workspace_id, kind, entity_type, entity_id, change_json, origin, recorded_at) VALUES ('c1', 'w1', 'fact', 'invoice', ?, '{}', 'imported', 'x')"
+      )
+      .run(invoiceSyncId(invoiceId))
+  async function savedDraft(): Promise<{
+    localId: number
+    operationId: string
+    invoiceId: string
+  }> {
+    const request = draftRequest()
+    const invoiceId = (await create(request)).draft.invoiceId
+    const localId = db
+      .insert(invoices)
+      .values({
+        clientId: 7,
+        stripeInvoiceId: invoiceId,
+        operationId: request.operationId,
+        testMode: 1
+      })
+      .returning()
+      .get().id
+    db.insert(invoiceLineItems)
+      .values({ invoiceId: localId, description: 'Day one', amountCents: 15000, sessionIds: '11' })
+      .run()
+    db.insert(sessionBillingRefs)
+      .values({
+        sessionId: 11,
+        stripeInvoiceId: invoiceId,
+        testMode: 1,
+        billedRanges: [billingRange(sessionRow(11))]
+      })
+      .run()
+    return { localId, operationId: request.operationId, invoiceId }
+  }
+
+  it('deletes the Stripe draft and releases its saved invoice and billed time', async () => {
+    const { localId, operationId, invoiceId } = await savedDraft()
+    // Locked by both the saved invoice's references and the operation's frozen ranges.
+    expect(unbilledSessions(db, [sessionRow(11)], true)).toEqual([])
+    expect(portableBilledRanges(db, true)).not.toEqual([])
+    expect(await discardSavedDraft(db, localId, provider(), true)).toMatchObject({
+      basis: 'draft-deleted',
+      invoiceId
+    })
+    expect(fake.state.invoices).toEqual([])
+    expect(fake.state.items).toEqual([])
+    expect(db.select().from(invoices).all()).toEqual([])
+    expect(db.select().from(invoiceLineItems).all()).toEqual([])
+    expect(db.select().from(sessionBillingRefs).all()).toEqual([])
+    expect(db.select().from(providerOperationResolutions).all()).toMatchObject([{ operationId }])
+    expect(pendingInvoiceOperations(db)).toEqual([])
+    expect(portableBilledRanges(db, true)).toEqual([])
+    expect(unbilledSessions(db, [sessionRow(11)], true)).toMatchObject([
+      { id: 11, durationMinutes: 90 }
+    ])
+  })
+
+  it('without deleting in Stripe, writes nothing and releases only what Stripe already deleted', async () => {
+    const { localId } = await savedDraft()
+    const writesBefore = fake.state.writes.length
+    await expect(discardSavedDraft(db, localId, provider(), false)).rejects.toMatchObject({
+      code: 'PROVIDER_OPERATION_NOT_CANCELLABLE'
+    })
+    // The user deletes the draft in Stripe, but its items are left behind.
+    fake.state.invoices.splice(0)
+    await expect(discardSavedDraft(db, localId, provider(), false)).rejects.toMatchObject({
+      message: expect.stringContaining('invoice item')
+    })
+    expect(fake.state.writes).toHaveLength(writesBefore)
+    expect(db.select().from(invoices).all()).toHaveLength(1)
+    fake.state.items.splice(0)
+    await discardSavedDraft(db, localId, provider(), false)
+    expect(fake.state.writes).toHaveLength(writesBefore)
+    expect(db.select().from(sessionBillingRefs).all()).toEqual([])
+  })
+
+  it('deletes leftover items of its own draft but never an item on another invoice', async () => {
+    const { localId } = await savedDraft()
+    fake.state.invoices.splice(0)
+    fake.state.items[0].invoice = 'in_other'
+    await expect(discardSavedDraft(db, localId, provider(), true)).rejects.toMatchObject({
+      message: expect.stringContaining('in_other')
+    })
+    expect(fake.state.items[0].invoice).toBe('in_other')
+    expect(db.select().from(sessionBillingRefs).all()).toHaveLength(1)
+    fake.state.items[0].invoice = null
+    await discardSavedDraft(db, localId, provider(), true)
+    expect(fake.state.items).toEqual([])
+    expect(db.select().from(invoices).all()).toEqual([])
+  })
+
+  it('returns the stored proof to a concurrent discard that finds the draft gone', async () => {
+    const { localId, operationId } = await savedDraft()
+    const proof = await discardSavedDraft(db, localId, provider(), true)
+    expect(await cancelInvoiceOperation(db, operationId, provider(), localId)).toEqual(proof)
+  })
+
+  it('lets a discard waiting on Stripe reads finish when another one commits first', async () => {
+    const { localId } = await savedDraft()
+    fake.state.invoices.splice(0)
+    fake.state.items.splice(0)
+    let reached!: () => void
+    let release!: () => void
+    const atRead = new Promise<void>((resolve) => (reached = resolve))
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    fake.mock.invoices.retrieve.mockImplementationOnce(async () => {
+      reached()
+      await gate
+      throw notFound()
+    })
+    const waiting = discardSavedDraft(db, localId, provider(), false)
+    await atRead
+    const first = await discardSavedDraft(db, localId, provider(), false)
+    release()
+    expect(await waiting).toEqual(first)
+  })
+
+  it('rolls the discard back when the draft becomes shared during the Stripe reads', async () => {
+    const { localId, invoiceId } = await savedDraft()
+    fake.state.invoices.splice(0)
+    fake.state.items.splice(0)
+    fake.mock.invoices.retrieve.mockImplementationOnce(async () => {
+      shareInvoice(invoiceId)
+      throw notFound()
+    })
+    await expect(discardSavedDraft(db, localId, provider(), false)).rejects.toMatchObject({
+      message: expect.stringContaining('folder sync')
+    })
+    expect(db.select().from(invoices).all()).toHaveLength(1)
+    expect(db.select().from(sessionBillingRefs).all()).toHaveLength(1)
+    expect(db.select().from(providerOperationResolutions).all()).toEqual([])
+  })
+
+  it('deletes items Stripe left on the deleted draft', async () => {
+    const { localId } = await savedDraft()
+    fake.state.cascadeItems = false
+    await discardSavedDraft(db, localId, provider(), true)
+    expect(writes('invoiceItems.del')).toHaveLength(2)
+    expect(fake.state.items).toEqual([])
+    expect(db.select().from(invoices).all()).toEqual([])
+  })
+
+  it('needs the key and account of the draft, and writes nothing without them', async () => {
+    const { localId } = await savedDraft()
+    const writesBefore = fake.state.writes.length
+    await expect(discardSavedDraft(db, localId, null, true)).rejects.toMatchObject({
+      code: 'STRIPE_NO_KEY'
+    })
+    fake.state.accountId = 'acct_other'
+    await expect(discardSavedDraft(db, localId, provider(), true)).rejects.toMatchObject({
+      code: 'STRIPE_ACCOUNT_MISMATCH'
+    })
+    expect(fake.state.writes).toHaveLength(writesBefore)
+    expect(db.select().from(invoices).all()).toHaveLength(1)
+  })
+
+  it('refuses a draft with a folder sync conflict', async () => {
+    const { localId, operationId } = await savedDraft()
+    sqlite
+      .prepare(
+        "INSERT INTO sync_record_states (workspace_id, entity_type, entity_id, state_json) VALUES ('w1', 'provider-intent', ?, ?)"
+      )
+      .run(operationId, JSON.stringify({ kind: 'create-invoice', conflicts: ['c1'] }))
+    await expect(discardSavedDraft(db, localId, provider(), true)).rejects.toMatchObject({
+      message: expect.stringContaining('conflict')
+    })
+    expect(fake.state.invoices).toHaveLength(1)
+  })
+
+  it('refuses a draft shared through folder sync', async () => {
+    const { localId, invoiceId } = await savedDraft()
+    shareInvoice(invoiceId)
+    await expect(discardSavedDraft(db, localId, provider(), true)).rejects.toMatchObject({
+      message: expect.stringContaining('folder sync')
+    })
+    expect(fake.state.invoices).toHaveLength(1)
+  })
+
+  it('never discards an invoice Stripe finalized', async () => {
+    const { localId } = await savedDraft()
+    fake.state.invoices[0].status = 'open'
+    await expect(discardSavedDraft(db, localId, provider(), true)).rejects.toMatchObject({
+      code: 'PROVIDER_OPERATION_NOT_CANCELLABLE',
+      message: expect.stringContaining('open')
+    })
+    expect(fake.state.invoices).toHaveLength(1)
+    expect(db.select().from(sessionBillingRefs).all()).toHaveLength(1)
+    db.update(invoices).set({ status: 'open' }).run()
+    await expect(discardSavedDraft(db, localId, provider(), true)).rejects.toMatchObject({
+      code: 'PROVIDER_OPERATION_NOT_CANCELLABLE'
+    })
   })
 })

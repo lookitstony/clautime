@@ -18,6 +18,9 @@ interface ConfirmDialogProps {
   variant?: 'default' | 'destructive'
   onConfirm: () => void
   onCancel: () => void
+  /** Optional destructive action shown between Cancel and Confirm. */
+  secondaryLabel?: string
+  onSecondary?: () => void
 }
 
 export function ConfirmDialog({
@@ -28,7 +31,9 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   variant = 'default',
   onConfirm,
-  onCancel
+  onCancel,
+  secondaryLabel,
+  onSecondary
 }: ConfirmDialogProps): React.JSX.Element {
   return (
     <AlertDialog
@@ -54,6 +59,15 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </AlertDialogCancel>
+          {secondaryLabel && onSecondary && (
+            <AlertDialogAction
+              onClick={onSecondary}
+              variant="destructive"
+              className="bg-red-500/90 text-white hover:bg-red-500"
+            >
+              {secondaryLabel}
+            </AlertDialogAction>
+          )}
           <AlertDialogAction
             onClick={onConfirm}
             variant={variant}

@@ -25,7 +25,8 @@ interface FilterState {
 }
 
 export const useFilterStore = create<FilterState>()((set, get) => ({
-  datePreset: null,
+  // Start on this week so the first load doesn't pull every session; Clear filters shows all time.
+  datePreset: 'this-week',
   startDate: null,
   endDate: null,
   clientId: null,
